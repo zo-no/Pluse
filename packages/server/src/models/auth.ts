@@ -63,12 +63,33 @@ export function hasAuth(): boolean {
   return !!row
 }
 
+export function setUsername(username: string): void {
+  const db = getDb()
+  db.run(
+    `INSERT OR REPLACE INTO auth (id, kind, value, created_at) VALUES ('username', 'username', ?, ?)`,
+    [username.trim(), new Date().toISOString()],
+  )
+}
+
+export function getUsername(): string | null {
+  const db = getDb()
+  const row = db.query<{ value: string }, []>(
+    `SELECT value FROM auth WHERE id = 'username' AND kind = 'username'`
+  ).get()
+  return row?.value?.trim() || null
+}
+
 export function setPassword(password: string): void {
   const db = getDb()
   db.run(
     `INSERT OR REPLACE INTO auth (id, kind, value, created_at) VALUES ('password', 'password', ?, ?)`,
     [hashPassword(password), new Date().toISOString()],
   )
+}
+
+export function setCredentials(input: { username?: string | null; password: string }): void {
+  if (input.username?.trim()) setUsername(input.username)
+  setPassword(input.password)
 }
 
 export function getOrCreateApiToken(): string {
@@ -95,8 +116,10 @@ export function verifyApiToken(token: string): boolean {
   return timingSafeHexCompare(token, row.value)
 }
 
-export function loginWithPassword(password: string): { sessionToken: string; csrfToken: string } | null {
+export function loginWithPassword(password: string, username?: string | null): { sessionToken: string; csrfToken: string } | null {
   const db = getDb()
+  const configuredUsername = getUsername()
+  if (configuredUsername && configuredUsername !== (username?.trim() || '')) return null
   const row = db.query<{ value: string }, []>(
     `SELECT value FROM auth WHERE id = 'password' AND kind = 'password'`
   ).get()

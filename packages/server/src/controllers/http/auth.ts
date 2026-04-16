@@ -6,6 +6,7 @@ import {
   clearCsrfCookie,
   clearSessionCookie,
   deleteAuthSession,
+  getUsername,
   hasAuth,
   loginWithPassword,
   loginWithToken,
@@ -28,7 +29,7 @@ function sc(n: number): ContentfulStatusCode {
 }
 
 const LoginSchema = z.union([
-  z.object({ password: z.string().min(1) }),
+  z.object({ username: z.string().trim().min(1).optional(), password: z.string().min(1) }),
   z.object({ token: z.string().min(1) }),
 ])
 
@@ -46,7 +47,7 @@ authRouter.post('/auth/login', async (c) => {
   if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
 
   const session = 'password' in parsed.data
-    ? loginWithPassword(parsed.data.password)
+    ? loginWithPassword(parsed.data.password, parsed.data.username)
     : loginWithToken(parsed.data.token)
 
   if (!session) return c.json(errBody('Invalid credentials'), sc(401))
@@ -70,6 +71,7 @@ authRouter.get('/api/auth/me', (c) => {
   const data: AuthMe = {
     authenticated,
     setupRequired: !hasAuth(),
+    username: getUsername(),
   }
   return c.json(ok(data))
 })

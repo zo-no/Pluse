@@ -68,7 +68,7 @@ export function getAuthMe(): Promise<ApiResult<AuthMe>> {
   return request<AuthMe>('GET', '/auth/me')
 }
 
-export function login(body: { password?: string; token?: string }): Promise<ApiResult<{ ok: true }>> {
+export function login(body: { username?: string; password?: string; token?: string }): Promise<ApiResult<{ ok: true }>> {
   return fetch('/auth/login', {
     method: 'POST',
     credentials: 'include',

@@ -4,13 +4,14 @@ import * as api from '@/api/client'
 
 export function LoginPage() {
   const navigate = useNavigate()
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [token, setToken] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   async function handlePasswordLogin(event: React.FormEvent) {
     event.preventDefault()
-    const result = await api.login({ password })
+    const result = await api.login({ username, password })
     if (!result.ok) {
       setError(result.error)
       return
@@ -35,6 +36,8 @@ export function LoginPage() {
         <p>单端口、本地优先，项目 / 会话 / 任务共用同一个工作域。</p>
 
         <form className="pulse-login-form" onSubmit={handlePasswordLogin}>
+          <label>用户名</label>
+          <input value={username} onChange={(event) => setUsername(event.target.value)} />
           <label>密码</label>
           <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           <button type="submit" className="pulse-button">密码登录</button>

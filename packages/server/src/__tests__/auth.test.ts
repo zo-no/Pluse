@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import type { Project } from '@melody-sync/types'
-import { getOrCreateApiToken, loginWithPassword, setPassword } from '../models/auth'
+import { getOrCreateApiToken, loginWithPassword, setCredentials, setPassword } from '../models/auth'
 import { GET, POST, makeWorkDir, resetTestDb, setupTestDb } from './helpers'
 
 beforeAll(() => setupTestDb())
@@ -54,5 +54,13 @@ describe('auth middleware', () => {
     )
     expect(allowed.status).toBe(201)
     expect(allowed.json.ok).toBe(true)
+  })
+
+  it('requires the configured username when username auth is enabled', () => {
+    setCredentials({ username: 'zono', password: '021115' })
+
+    expect(loginWithPassword('021115')).toBeNull()
+    expect(loginWithPassword('021115', 'other')).toBeNull()
+    expect(loginWithPassword('021115', 'zono')).not.toBeNull()
   })
 })
