@@ -177,7 +177,7 @@ export function ensureBuiltinProjects(): void {
   const inbox = upsertProjectRecord({
     id: INBOX_PROJECT_ID,
     name: 'Inbox',
-    goal: 'Default project for uncategorized sessions and short-term follow-up work.',
+    goal: '默认收纳临时会话和短期跟进事项。',
     workDir: inboxWorkDir,
     archived: false,
     pinned: true,
@@ -190,7 +190,7 @@ export function ensureBuiltinProjects(): void {
   upsertProjectRecord({
     id: SYSTEM_PROJECT_ID,
     name: 'System',
-    goal: 'Internal Pulse runtime tasks.',
+    goal: '系统内部运行任务。',
     workDir: getSystemRuntimeDir(),
     archived: false,
     pinned: false,

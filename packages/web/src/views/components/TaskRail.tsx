@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Task } from '@melody-sync/types'
 import * as api from '@/api/client'
+import { CheckIcon, ClockIcon, CloseIcon, PlayIcon, RailIcon, SparkIcon } from './icons'
 
 type RailTab = 'Session' | 'Project' | 'All'
 
@@ -104,10 +105,10 @@ export function TaskRail({ projectId, projectName, sessionId, onRequestClose }: 
   }
 
   const emptyCopy = tab === 'Session'
-    ? '当前会话还没有需要在聊天里持续跟踪的短期任务。'
+    ? '暂无会话任务'
     : tab === 'Project'
-      ? '当前项目还没有项目级调度或周期任务。'
-      : '当前项目还没有任务。'
+      ? '暂无项目任务'
+      : '暂无任务'
 
   return (
     <aside className="pulse-rail">
@@ -117,15 +118,19 @@ export function TaskRail({ projectId, projectName, sessionId, onRequestClose }: 
           <strong>{projectName || '当前项目'}</strong>
         </div>
         <button type="button" className="pulse-icon-button" onClick={onRequestClose} aria-label="关闭任务栏">
-          ✕
+          <CloseIcon className="pulse-icon" />
         </button>
       </div>
 
       <div className="pulse-rail-head">
-        <div>
-          <span className="pulse-section-kicker">工作流</span>
-          <h2>{title}</h2>
-          <p>{projectName ? `${projectName} · ${tasks.length} 条` : '选择项目后显示任务'}</p>
+        <div className="pulse-rail-title">
+          <span className="pulse-rail-mark" aria-hidden="true">
+            <RailIcon className="pulse-icon" />
+          </span>
+          <div>
+            <h2>{title}</h2>
+            <p>{projectName ? `${projectName} · ${tasks.length}` : '选择项目后显示任务'}</p>
+          </div>
         </div>
         <div className="pulse-tabs">
           {(['Session', 'Project', 'All'] as RailTab[]).map((value) => (
@@ -143,26 +148,34 @@ export function TaskRail({ projectId, projectName, sessionId, onRequestClose }: 
 
       <div className="pulse-task-list">
         {tasks.length > 0 ? tasks.map((task) => (
-          <article key={task.id} className="pulse-task-card">
+          <article key={task.id} className="pulse-task-card pulse-task-line">
             <div className="pulse-task-head">
               <strong>{task.title}</strong>
               <span className={`pulse-task-status is-${task.status}`}>{formatTaskStatus(task.status)}</span>
             </div>
-            <p>{task.description || task.waitingInstructions || '暂无补充说明。'}</p>
+            {task.description || task.waitingInstructions ? (
+              <p>{task.description || task.waitingInstructions}</p>
+            ) : null}
             <div className="pulse-task-meta">
-              <span>{task.assignee === 'ai' ? 'AI' : '人工'}</span>
-              <span>{formatTaskKind(task.kind)}</span>
+              <span className="pulse-meta-inline">
+                <SparkIcon className="pulse-icon pulse-inline-icon" />
+                {task.assignee === 'ai' ? 'AI' : '人工'}
+              </span>
+              <span className="pulse-meta-inline">
+                <ClockIcon className="pulse-icon pulse-inline-icon" />
+                {formatTaskKind(task.kind)}
+              </span>
               <span>{task.surface === 'chat_short' ? '会话' : '项目'}</span>
             </div>
             <div className="pulse-task-actions">
               {task.assignee === 'human' && task.status !== 'done' ? (
-                <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void handleDone(task.id)}>
-                  完成
+                <button type="button" className="pulse-row-action" onClick={() => void handleDone(task.id)} aria-label="完成任务" title="完成任务">
+                  <CheckIcon className="pulse-icon" />
                 </button>
               ) : null}
               {task.assignee === 'ai' && task.status !== 'running' ? (
-                <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void handleRun(task.id)}>
-                  运行
+                <button type="button" className="pulse-row-action" onClick={() => void handleRun(task.id)} aria-label="运行任务" title="运行任务">
+                  <PlayIcon className="pulse-icon" />
                 </button>
               ) : null}
             </div>

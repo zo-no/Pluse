@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
 import * as api from '@/api/client'
+import { ClockIcon, SendIcon, SparkIcon } from './icons'
 
 interface ChatViewProps {
   sessionId: string
@@ -168,32 +169,32 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   }
 
   return (
-      <div className="pulse-page pulse-session-page">
+    <div className="pulse-page pulse-session-page">
       <div className="pulse-chat-shell">
-        <header className="pulse-chat-head">
-          <div className="pulse-chat-heading">
-            <span className="pulse-section-kicker">当前会话</span>
-            <h1>{session.name}</h1>
-            <p>{session.activeRunId ? '当前回合仍在运行，会自动刷新输出。' : '等待新的输入。'}</p>
-            <div className="pulse-chat-meta">
-              <span className="pulse-inline-pill">{session.tool ?? 'codex'}</span>
-              {session.model ? <span className="pulse-inline-pill">{session.model}</span> : null}
-              {session.effort ? <span className="pulse-inline-pill">{session.effort}</span> : null}
-              {latestRun ? (
-                <span className={`pulse-inline-pill${latestRun.state === 'running' ? ' is-running' : ''}`}>
-                  {formatRunState(latestRun.state)}
-                </span>
-              ) : null}
-            </div>
+        <div className="pulse-chat-head pulse-chat-head-compact">
+          <div className="pulse-chat-meta">
+            <span className="pulse-inline-pill">
+              <SparkIcon className="pulse-icon pulse-inline-icon" />
+              {session.tool ?? 'codex'}
+            </span>
+            {session.model ? <span className="pulse-inline-pill">{session.model}</span> : null}
+            {session.effort ? <span className="pulse-inline-pill">{session.effort}</span> : null}
+            {latestRun ? (
+              <span className={`pulse-inline-pill${latestRun.state === 'running' ? ' is-running' : ''}`}>
+                <ClockIcon className="pulse-icon pulse-inline-icon" />
+                {formatRunState(latestRun.state)}
+              </span>
+            ) : null}
           </div>
-        </header>
+          <span className="pulse-chat-head-note">{session.activeRunId ? '自动刷新中' : '可继续输入'}</span>
+        </div>
 
         <div className="pulse-thread">
           <div className="pulse-thread-inner">
             {events.length === 0 ? (
               <div className="pulse-empty-state pulse-chat-empty">
-                <h2>还没有消息</h2>
-                <p>从这里开始当前任务，Pulse 会沿着这个项目的上下文继续执行。</p>
+                <h2>开始当前任务</h2>
+                <p>Pulse 会沿着这个项目的上下文继续。</p>
               </div>
             ) : null}
             {events.map((event) => <EventCard key={event.seq} event={event} />)}
@@ -203,9 +204,8 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
 
         <footer className="pulse-composer">
           <div className="pulse-composer-toolbar">
-            <span className="pulse-composer-kicker">发送给当前会话</span>
             <div className="pulse-inline-status">
-              {session.activeRunId ? <span>当前有运行中的回合。</span> : <span>Ctrl / Cmd + Enter 发送</span>}
+              {session.activeRunId ? <span>当前有运行中的回合</span> : <span>Cmd / Ctrl + Enter</span>}
               {latestRun ? <span>最近一次运行：{formatRunState(latestRun.state)}</span> : null}
             </div>
           </div>
@@ -244,6 +244,7 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
               )}
             </div>
             <button type="button" className="pulse-button" onClick={() => void handleSend()} disabled={sending}>
+              <SendIcon className="pulse-icon" />
               {sending ? '发送中…' : '发送'}
             </button>
           </div>

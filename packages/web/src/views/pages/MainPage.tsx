@@ -3,13 +3,18 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Session, Task } from '@melody-sync/types'
 import * as api from '@/api/client'
 import { ChatView } from '@/views/components/ChatView'
+import { ClockIcon, FolderIcon, MenuIcon, RailIcon, SidebarIcon, SparkIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TaskRail } from '@/views/components/TaskRail'
 import { LoginPage } from './LoginPage'
 
 function shortPath(value?: string | null): string {
   if (!value) return ''
-  return value.replace(/^\/Users\/[^/]+/, '~')
+  const normalized = value.replace(/^\/Users\/[^/]+/, '~')
+  const isHome = normalized.startsWith('~/')
+  const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
+  if (parts.length <= 3) return normalized
+  return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
 function formatDateTime(value?: string): string {
@@ -34,22 +39,17 @@ function formatOutputStatus(status: string): string {
 }
 
 function scheduleSummary(schedule: ProjectOverview['schedule']): string {
-  if (!schedule) return '当前项目还没有启用中的周期触发。'
+  if (!schedule) return '暂无周期触发'
   if (schedule.lastRunAt && schedule.nextRunAt) {
-    return `上次触发 ${formatDateTime(schedule.lastRunAt)}，下次触发 ${formatDateTime(schedule.nextRunAt)}。`
+    return `${formatDateTime(schedule.lastRunAt)} -> ${formatDateTime(schedule.nextRunAt)}`
   }
   if (schedule.nextRunAt) {
-    return `下次触发 ${formatDateTime(schedule.nextRunAt)}。`
+    return `下次 ${formatDateTime(schedule.nextRunAt)}`
   }
   if (schedule.lastRunAt) {
-    return `最近一次触发 ${formatDateTime(schedule.lastRunAt)}。`
+    return `最近 ${formatDateTime(schedule.lastRunAt)}`
   }
-  return '已配置调度，但还没有触发记录。'
-}
-
-function shortGoal(value?: string | null): string {
-  if (!value) return ''
-  return value.length > 44 ? `${value.slice(0, 44)}…` : value
+  return '已配置，未触发'
 }
 
 function WorkspaceSection(props: {
@@ -84,8 +84,11 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
         <p>{output.summary || (output.kind === 'session_run' ? '该次会话运行已完成，输出可在对应会话里继续查看。' : '该次任务运行已完成。')}</p>
       </div>
       <div className="pulse-output-row-meta">
-        <span>{output.kind === 'session_run' ? '会话输出' : '任务输出'}</span>
-        <span>{formatDateTime(output.completedAt)}</span>
+        <span>{output.kind === 'session_run' ? '会话' : '任务'}</span>
+        <span className="pulse-meta-inline">
+          <ClockIcon className="pulse-icon pulse-inline-icon" />
+          {formatDateTime(output.completedAt)}
+        </span>
       </div>
     </>
   )
@@ -105,12 +108,20 @@ function ProjectTaskRow({ task }: { task: Task }) {
           <strong>{task.title}</strong>
           <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
         </div>
-        <p>{task.description || task.waitingInstructions || '暂无补充说明。'}</p>
+        {task.description || task.waitingInstructions ? (
+          <p>{task.description || task.waitingInstructions}</p>
+        ) : null}
       </div>
       <div className="pulse-task-row-chips">
-        <span className="pulse-inline-pill">{task.kind === 'scheduled' ? '定时' : task.kind === 'recurring' ? '周期' : '单次'}</span>
-        <span className="pulse-inline-pill">{task.assignee === 'ai' ? 'AI' : '人工'}</span>
-        <span className="pulse-inline-pill">{task.enabled ? '已启用' : '已暂停'}</span>
+        <span className="pulse-meta-inline">
+          <SparkIcon className="pulse-icon pulse-inline-icon" />
+          {task.assignee === 'ai' ? 'AI' : '人工'}
+        </span>
+        <span className="pulse-meta-inline">
+          <ClockIcon className="pulse-icon pulse-inline-icon" />
+          {task.kind === 'scheduled' ? '定时' : task.kind === 'recurring' ? '周期' : '单次'}
+        </span>
+        {!task.enabled ? <span>已暂停</span> : null}
       </div>
     </article>
   )
@@ -201,17 +212,15 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
   return (
     <div className="pulse-page pulse-project-page">
       <div className="pulse-detail-shell">
-        <header className="pulse-detail-hero">
+        <header className="pulse-detail-hero pulse-detail-hero-flat">
           <div className="pulse-detail-hero-main">
-            <span className="pulse-section-kicker">项目详情</span>
-            <div className="pulse-detail-title-row">
-              <h1>{overview.project.name}</h1>
-              {overview.project.pinned ? <span className="pulse-inline-pill">固定显示</span> : null}
-              <span className="pulse-inline-pill">{overview.brainTask?.enabled ? 'AI 大脑已启用' : 'AI 大脑未启用'}</span>
-            </div>
             <p className="pulse-detail-summary">
-              {overview.project.goal || '这个项目还没有写目标。'}
+              {overview.project.goal || '尚未设置项目目标。'}
             </p>
+            <div className="pulse-detail-title-row">
+              {overview.project.pinned ? <span className="pulse-inline-pill">固定</span> : null}
+              <span className="pulse-inline-pill">{overview.brainTask?.enabled ? 'AI 大脑' : '未启用'}</span>
+            </div>
           </div>
           <div className="pulse-detail-actions">
             <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void toggleBrain()}>
@@ -224,7 +233,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
         </header>
 
         <div className="pulse-detail-grid">
-          <WorkspaceSection title="工作目录" hint="项目身份固定绑定在这个目录里。">
+          <WorkspaceSection title="工作目录">
             <div className="pulse-info-block">
               <div className="pulse-info-path">{shortPath(overview.project.workDir)}</div>
               <div className="pulse-info-copy">{overview.project.workDir}</div>
@@ -241,7 +250,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="统计" hint="会话、短期任务和项目调度共享同一个 projectId。">
+          <WorkspaceSection title="概览">
             <div className="pulse-metric-grid">
               <article className="pulse-metric-item">
                 <span>会话</span>
@@ -258,20 +267,20 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="调度 / 触发" hint="优先展示 Project Brain，其次显示已启用的项目调度。">
+          <WorkspaceSection title="调度">
             <div className="pulse-trigger-row">
               <div className="pulse-trigger-item">
-                <span>当前触发器</span>
+                <span>触发器</span>
                 <strong>{overview.brainTask?.enabled ? 'Project Brain' : overview.schedule ? '项目调度任务' : '未配置'}</strong>
               </div>
               <div className="pulse-trigger-item">
-                <span>调度状态</span>
+                <span>状态</span>
                 <strong>{scheduleSummary(overview.schedule)}</strong>
               </div>
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="等待中事项" hint="这里展示 blocked 或带等待说明的项目级任务。">
+          <WorkspaceSection title="等待">
             <div className="pulse-note-list">
               {overview.waitingTasks.length > 0 ? overview.waitingTasks.map((task) => (
                 <div key={task.id} className="pulse-note-item">
@@ -282,34 +291,33 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                   <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
                 </div>
               )) : (
-                <div className="pulse-empty-state">暂无等待中的项目级事项。</div>
+                <div className="pulse-empty-state">暂无等待事项</div>
               )}
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="项目任务" hint="周期任务和调度任务只在项目页展示。">
+          <WorkspaceSection title="项目任务">
             <div className="pulse-task-list">
               {overview.projectTasks.length > 0 ? overview.projectTasks.map((task) => (
                 <ProjectTaskRow key={task.id} task={task} />
               )) : (
-                <div className="pulse-empty-state">这个项目还没有项目级任务。</div>
+                <div className="pulse-empty-state">暂无项目任务</div>
               )}
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="最近输出" hint="会话运行和任务运行会汇总成一条最近输出时间线。">
+          <WorkspaceSection title="最近输出">
             <div className="pulse-output-list">
               {overview.recentOutputs.length > 0 ? overview.recentOutputs.map((output) => (
                 <OutputRow key={`${output.kind}:${output.id}`} output={output} />
               )) : (
-                <div className="pulse-empty-state">还没有可回看的运行输出。</div>
+                <div className="pulse-empty-state">暂无输出</div>
               )}
             </div>
           </WorkspaceSection>
 
           <WorkspaceSection
-            title="系统 Prompt / AI 大脑"
-            hint="项目级 Prompt 会注入到会话和调度流程里。"
+            title="AI 大脑 / Prompt"
             action={overview.brainTask ? <span className="pulse-inline-pill">{overview.brainTask.enabled ? '运行中' : '已暂停'}</span> : null}
           >
             <div className="pulse-form-grid">
@@ -325,18 +333,21 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="会话列表" hint="这些会话共享同一个项目上下文和工作目录。">
+          <WorkspaceSection title="会话">
             <div className="pulse-session-grid">
               {overview.sessions.length > 0 ? overview.sessions.map((session) => (
                 <Link key={session.id} className="pulse-session-row" to={`/sessions/${session.id}`}>
                   <div>
                     <strong>{session.name}</strong>
-                    <p>{session.activeRunId ? '当前有运行中的回合。' : '打开这个会话继续处理。'}</p>
+                    {session.activeRunId ? <p>运行中</p> : null}
                   </div>
-                  <span>{formatDateTime(session.updatedAt)}</span>
+                  <span className="pulse-meta-inline">
+                    <ClockIcon className="pulse-icon pulse-inline-icon" />
+                    {formatDateTime(session.updatedAt)}
+                  </span>
                 </Link>
               )) : (
-                <div className="pulse-empty-state">这个项目还没有会话。</div>
+                <div className="pulse-empty-state">还没有会话</div>
               )}
             </div>
           </WorkspaceSection>
@@ -379,27 +390,26 @@ function WorkspaceHeader(props: {
 }) {
   const title = props.activeSession?.name || props.activeProject?.name || 'Pulse'
   const subtitle = props.activeSession
-    ? `${props.activeProject?.name ?? props.activeSession.projectId} · ${props.activeSession.activeRunId ? '运行中' : '会话'}`
+      ? `${props.activeProject?.name ?? props.activeSession.projectId}${props.activeSession.activeRunId ? ' · 运行中' : ''}`
     : props.activeProject
-      ? (shortGoal(props.activeProject.goal) || shortPath(props.activeProject.workDir))
-      : '单端口本地工作区'
+      ? ''
+      : '本地工作台'
 
   return (
     <header className="pulse-header">
       <div className="pulse-header-primary">
         <button type="button" className="pulse-icon-button pulse-mobile-only" onClick={props.onToggleSidebar} aria-label="打开侧栏">
-          ☰
+          <MenuIcon className="pulse-icon" />
         </button>
         <button type="button" className="pulse-wordmark" onClick={props.onOpenWorkspace}>
           <span>Pulse</span>
-          <small>本地工作台</small>
         </button>
       </div>
 
       <div className="pulse-header-center">
         <div className="pulse-header-context">
           <strong>{title}</strong>
-          <span>{subtitle}</span>
+          {subtitle ? <span>{subtitle}</span> : null}
         </div>
       </div>
 
@@ -407,25 +417,29 @@ function WorkspaceHeader(props: {
         {props.showSidebarToggle ? (
           <button
             type="button"
-            className={`pulse-header-action${props.sidebarVisible ? ' is-active' : ''}`}
+            className={`pulse-icon-button pulse-header-action-icon${props.sidebarVisible ? ' is-active' : ''}`}
             onClick={props.onToggleSidebar}
+            aria-label="切换侧栏"
+            title="切换侧栏"
           >
-            会话栏
+            <SidebarIcon className="pulse-icon" />
           </button>
         ) : null}
-        <span className="pulse-status-pill">本地</span>
+        <span className="pulse-header-presence" aria-hidden="true" />
         {props.activeProject && props.activeSession ? (
-          <button type="button" className="pulse-header-action" onClick={props.onOpenProject}>
-            项目
+          <button type="button" className="pulse-icon-button pulse-header-action-icon" onClick={props.onOpenProject} aria-label="打开项目" title="打开项目">
+            <FolderIcon className="pulse-icon" />
           </button>
         ) : null}
         {props.showRailToggle ? (
           <button
             type="button"
-            className={`pulse-header-action pulse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
+            className={`pulse-icon-button pulse-header-action-icon pulse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
+            aria-label="切换任务栏"
+            title="切换任务栏"
           >
-            任务栏
+            <RailIcon className="pulse-icon" />
           </button>
         ) : null}
       </div>

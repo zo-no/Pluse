@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Project, Session } from '@melody-sync/types'
 import * as api from '@/api/client'
+import { ClockIcon, CloseIcon, FolderIcon, PlusIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
@@ -14,7 +15,11 @@ interface SessionListProps {
 
 function shortPath(value?: string | null): string {
   if (!value) return ''
-  return value.replace(/^\/Users\/[^/]+/, '~')
+  const normalized = value.replace(/^\/Users\/[^/]+/, '~')
+  const isHome = normalized.startsWith('~/')
+  const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
+  if (parts.length <= 3) return normalized
+  return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
 function formatSidebarTime(value?: string): string {
@@ -25,6 +30,11 @@ function formatSidebarTime(value?: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function shortGoal(value?: string | null): string {
+  if (!value) return ''
+  return value.length > 28 ? `${value.slice(0, 28)}…` : value
 }
 
 export function SessionList({
@@ -98,7 +108,7 @@ export function SessionList({
           <strong>工作区</strong>
         </div>
         <button type="button" className="pulse-icon-button" onClick={onRequestClose} aria-label="关闭侧栏">
-          ✕
+          <CloseIcon className="pulse-icon" />
         </button>
       </div>
 
@@ -126,11 +136,11 @@ export function SessionList({
               <div className="pulse-sidebar-header-row">
                 <div>
                   <h2>{activeProject?.name ?? '当前项目'}</h2>
-                  <p>{activeProject ? shortPath(activeProject.workDir) : '先打开项目，再开始会话。'}</p>
+                  <p>{activeProject ? shortPath(activeProject.workDir) : '先打开项目'}</p>
                 </div>
                 {activeProject ? (
-                  <Link className="pulse-sidebar-chip-link" to={`/projects/${activeProject.id}`} onClick={onNavigate}>
-                    项目
+                  <Link className="pulse-sidebar-chip-link pulse-sidebar-icon-chip" to={`/projects/${activeProject.id}`} onClick={onNavigate} aria-label="打开项目">
+                    <FolderIcon className="pulse-icon" />
                   </Link>
                 ) : null}
               </div>
@@ -162,15 +172,17 @@ export function SessionList({
                     <span className="pulse-sidebar-dot" aria-hidden="true" />
                     <div className="pulse-sidebar-item-main">
                       <strong>{session.name}</strong>
-                      <p>{session.activeRunId ? '当前有运行中的回合。' : '继续这个会话。'}</p>
-                    </div>
-                    <div className="pulse-sidebar-item-meta">
-                      {session.activeRunId ? <span className="pulse-sidebar-badge is-running">运行中</span> : null}
-                      <span>{formatSidebarTime(session.updatedAt)}</span>
+                      <div className="pulse-sidebar-item-meta">
+                        {session.activeRunId ? <span className="pulse-sidebar-badge is-running">运行</span> : null}
+                        <span className="pulse-meta-inline">
+                          <ClockIcon className="pulse-icon pulse-inline-icon" />
+                          {formatSidebarTime(session.updatedAt)}
+                        </span>
+                      </div>
                     </div>
                   </Link>
                 )) : (
-                  <div className="pulse-empty-state pulse-sidebar-empty">这个项目还没有会话。</div>
+                  <div className="pulse-empty-state pulse-sidebar-empty">还没有会话</div>
                 )}
               </div>
             </section>
@@ -181,10 +193,10 @@ export function SessionList({
               <div className="pulse-sidebar-header-row">
                 <div>
                   <h2>项目</h2>
-                  <p>先打开工作目录，再继续会话。</p>
+                  <p>工作目录</p>
                 </div>
-                <button type="button" className="pulse-sidebar-chip-link" onClick={() => setNewProjectOpen((value) => !value)}>
-                  {newProjectOpen ? '收起' : '打开'}
+                <button type="button" className="pulse-sidebar-chip-link pulse-sidebar-icon-chip" onClick={() => setNewProjectOpen((value) => !value)} aria-label={newProjectOpen ? '收起创建项目' : '打开创建项目'}>
+                  <PlusIcon className="pulse-icon" />
                 </button>
               </div>
 
@@ -218,11 +230,10 @@ export function SessionList({
                     <span className="pulse-sidebar-dot" aria-hidden="true" />
                     <div className="pulse-sidebar-item-main">
                       <strong>{project.name}</strong>
-                      <p>{project.goal || '继续在这个项目里处理任务与会话。'}</p>
-                    </div>
-                    <div className="pulse-sidebar-item-meta">
-                      {project.pinned ? <span className="pulse-sidebar-badge">固定</span> : null}
-                      <span>{shortPath(project.workDir)}</span>
+                      <div className="pulse-sidebar-item-meta">
+                        {project.pinned ? <span className="pulse-sidebar-badge">固定</span> : null}
+                        <span>{shortGoal(project.goal) || shortPath(project.workDir)}</span>
+                      </div>
                     </div>
                   </Link>
                 ))}
