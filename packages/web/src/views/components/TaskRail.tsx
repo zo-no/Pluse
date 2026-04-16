@@ -113,7 +113,7 @@ export function TaskRail({ projectId, projectName, sessionId, onRequestClose }: 
     <aside className="pulse-rail">
       <div className="pulse-mobile-panel-header">
         <div>
-          <span className="pulse-section-kicker">任务</span>
+          <span className="pulse-section-kicker">任务地图</span>
           <strong>{projectName || '当前项目'}</strong>
         </div>
         <button type="button" className="pulse-icon-button" onClick={onRequestClose} aria-label="关闭任务栏">

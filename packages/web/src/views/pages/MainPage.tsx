@@ -203,14 +203,14 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
       <div className="pulse-detail-shell">
         <header className="pulse-detail-hero">
           <div className="pulse-detail-hero-main">
-            <span className="pulse-section-kicker">长期项目</span>
+            <span className="pulse-section-kicker">项目详情</span>
             <div className="pulse-detail-title-row">
               <h1>{overview.project.name}</h1>
               {overview.project.pinned ? <span className="pulse-inline-pill">固定显示</span> : null}
               <span className="pulse-inline-pill">{overview.brainTask?.enabled ? 'AI 大脑已启用' : 'AI 大脑未启用'}</span>
             </div>
             <p className="pulse-detail-summary">
-              {overview.project.goal || '这个项目还没有写目标。建议补一句，让会话和调度器始终对齐同一个方向。'}
+              {overview.project.goal || '这个项目还没有写目标。'}
             </p>
           </div>
           <div className="pulse-detail-actions">
@@ -224,7 +224,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
         </header>
 
         <div className="pulse-detail-grid">
-          <WorkspaceSection title="工作目录" hint="项目身份固定绑定在这个目录里，当前只读展示。">
+          <WorkspaceSection title="工作目录" hint="项目身份固定绑定在这个目录里。">
             <div className="pulse-info-block">
               <div className="pulse-info-path">{shortPath(overview.project.workDir)}</div>
               <div className="pulse-info-copy">{overview.project.workDir}</div>
@@ -241,7 +241,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="统计" hint="所有会话、短期任务和项目级调度都落在同一个 projectId 下。">
+          <WorkspaceSection title="统计" hint="会话、短期任务和项目调度共享同一个 projectId。">
             <div className="pulse-metric-grid">
               <article className="pulse-metric-item">
                 <span>会话</span>
@@ -258,7 +258,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="调度 / 触发" hint="优先展示 Project Brain，没有时回退到第一个启用中的周期或定时任务。">
+          <WorkspaceSection title="调度 / 触发" hint="优先展示 Project Brain，其次显示已启用的项目调度。">
             <div className="pulse-trigger-row">
               <div className="pulse-trigger-item">
                 <span>当前触发器</span>
@@ -271,7 +271,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="等待中事项" hint="这里展示显式 blocked 或带等待说明的项目级任务。">
+          <WorkspaceSection title="等待中事项" hint="这里展示 blocked 或带等待说明的项目级任务。">
             <div className="pulse-note-list">
               {overview.waitingTasks.length > 0 ? overview.waitingTasks.map((task) => (
                 <div key={task.id} className="pulse-note-item">
@@ -287,7 +287,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="项目任务" hint="周期任务和调度任务只在项目页展示，不混进会话右栏。">
+          <WorkspaceSection title="项目任务" hint="周期任务和调度任务只在项目页展示。">
             <div className="pulse-task-list">
               {overview.projectTasks.length > 0 ? overview.projectTasks.map((task) => (
                 <ProjectTaskRow key={task.id} task={task} />
@@ -297,7 +297,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             </div>
           </WorkspaceSection>
 
-          <WorkspaceSection title="最近输出" hint="会话运行和任务运行会混合成一条最近输出时间线。">
+          <WorkspaceSection title="最近输出" hint="会话运行和任务运行会汇总成一条最近输出时间线。">
             <div className="pulse-output-list">
               {overview.recentOutputs.length > 0 ? overview.recentOutputs.map((output) => (
                 <OutputRow key={`${output.kind}:${output.id}`} output={output} />
@@ -309,7 +309,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
 
           <WorkspaceSection
             title="系统 Prompt / AI 大脑"
-            hint="项目级 Prompt 会注入到会话和调度流程里，AI 大脑负责周期复盘。"
+            hint="项目级 Prompt 会注入到会话和调度流程里。"
             action={overview.brainTask ? <span className="pulse-inline-pill">{overview.brainTask.enabled ? '运行中' : '已暂停'}</span> : null}
           >
             <div className="pulse-form-grid">
@@ -410,7 +410,7 @@ function WorkspaceHeader(props: {
             className={`pulse-header-action${props.sidebarVisible ? ' is-active' : ''}`}
             onClick={props.onToggleSidebar}
           >
-            侧栏
+            会话栏
           </button>
         ) : null}
         <span className="pulse-status-pill">本地</span>
@@ -425,7 +425,7 @@ function WorkspaceHeader(props: {
             className={`pulse-header-action pulse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
           >
-            任务
+            任务栏
           </button>
         ) : null}
       </div>
@@ -635,7 +635,14 @@ export function MainPage() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          auth.authenticated
+            ? <Navigate to="/" replace />
+            : <LoginPage onAuthenticated={setAuth} />
+        }
+      />
       <Route path="/*" element={<Shell auth={auth} />} />
     </Routes>
   )

@@ -54,7 +54,10 @@ function EventCard({ event }: { event: SessionEvent }) {
 
   return (
     <details className="pulse-event-card">
-      <summary>{label}</summary>
+      <summary>
+        <span>{label}</span>
+        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+      </summary>
       <pre>{event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''}</pre>
     </details>
   )
@@ -169,8 +172,9 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
       <div className="pulse-chat-shell">
         <header className="pulse-chat-head">
           <div className="pulse-chat-heading">
-            <span className="pulse-section-kicker">会话</span>
+            <span className="pulse-section-kicker">当前会话</span>
             <h1>{session.name}</h1>
+            <p>{session.activeRunId ? '当前回合仍在运行，会自动刷新输出。' : '等待新的输入。'}</p>
             <div className="pulse-chat-meta">
               <span className="pulse-inline-pill">{session.tool ?? 'codex'}</span>
               {session.model ? <span className="pulse-inline-pill">{session.model}</span> : null}
@@ -189,7 +193,7 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
             {events.length === 0 ? (
               <div className="pulse-empty-state pulse-chat-empty">
                 <h2>还没有消息</h2>
-                <p>先发出第一条指令，当前会话会沿着这个项目的上下文继续工作。</p>
+                <p>从这里开始当前任务，Pulse 会沿着这个项目的上下文继续执行。</p>
               </div>
             ) : null}
             {events.map((event) => <EventCard key={event.seq} event={event} />)}
