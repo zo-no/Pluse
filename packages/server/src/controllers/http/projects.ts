@@ -1,0 +1,106 @@
+import { Hono } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import { z } from 'zod'
+import type { ApiResult, OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@melody-sync/types'
+import { getProject } from '../../models/project'
+import { archiveProject, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
+
+function ok<T>(data: T): ApiResult<T> {
+  return { ok: true, data }
+}
+
+function errBody(error: string): ApiResult<never> {
+  return { ok: false, error }
+}
+
+function sc(n: number): ContentfulStatusCode {
+  return n as ContentfulStatusCode
+}
+
+const OpenProjectSchema = z.object({
+  workDir: z.string().min(1),
+  name: z.string().min(1).optional(),
+  goal: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  pinned: z.boolean().optional(),
+})
+
+const UpdateProjectSchema = z.object({
+  name: z.string().min(1).optional(),
+  goal: z.string().nullable().optional(),
+  systemPrompt: z.string().nullable().optional(),
+  pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+})
+
+export const projectsRouter = new Hono()
+
+projectsRouter.get('/projects', (c) => {
+  try {
+    return c.json(ok<Project[]>(listVisibleProjects()))
+  } catch (error) {
+    return c.json(errBody(String(error)), sc(500))
+  }
+})
+
+projectsRouter.post('/projects/open', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json(errBody('Invalid JSON body'), sc(400))
+  }
+  const parsed = OpenProjectSchema.safeParse(body)
+  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
+  try {
+    return c.json(ok<Project>(openProject(parsed.data as OpenProjectInput)), sc(201))
+  } catch (error) {
+    return c.json(errBody(String(error)), sc(500))
+  }
+})
+
+projectsRouter.get('/projects/:id', (c) => {
+  const project = getProject(c.req.param('id'))
+  if (!project || project.visibility === 'system') {
+    return c.json(errBody('Project not found'), sc(404))
+  }
+  return c.json(ok(project))
+})
+
+projectsRouter.get('/projects/:id/overview', (c) => {
+  try {
+    const overview = getProjectOverview(c.req.param('id'))
+    if (!overview || overview.project.visibility === 'system') {
+      return c.json(errBody('Project not found'), sc(404))
+    }
+    return c.json(ok<ProjectOverview>(overview))
+  } catch (error) {
+    return c.json(errBody(String(error)), sc(500))
+  }
+})
+
+projectsRouter.patch('/projects/:id', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json(errBody('Invalid JSON body'), sc(400))
+  }
+  const parsed = UpdateProjectSchema.safeParse(body)
+  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
+  try {
+    return c.json(ok(updateProject(c.req.param('id'), parsed.data as UpdateProjectInput)))
+  } catch (error) {
+    const message = String(error)
+    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+  }
+})
+
+projectsRouter.post('/projects/:id/archive', (c) => {
+  try {
+    return c.json(ok(archiveProject(c.req.param('id'))))
+  } catch (error) {
+    const message = String(error)
+    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+  }
+})

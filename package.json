@@ -1,0 +1,14 @@
+{
+  "name": "pulse-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "pnpm --filter @melody-sync/web build:watch & pnpm --filter @melody-sync/server dev",
+    "dev:server": "pnpm --filter @melody-sync/server dev",
+    "dev:web": "pnpm --filter @melody-sync/web build:watch",
+    "build": "pnpm --filter @melody-sync/types build && pnpm --filter @melody-sync/web build && pnpm --filter @melody-sync/server build",
+    "typecheck": "pnpm --recursive typecheck",
+    "test": "pnpm --filter @melody-sync/server test"
+  },
+  "packageManager": "pnpm@10.0.0"
+}
