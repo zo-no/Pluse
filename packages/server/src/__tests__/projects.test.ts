@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { cpSync, existsSync, readFileSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Project, ProjectManifest, ProjectOverview, Session, Task } from '@melody-sync/types'
+import type { Project, ProjectManifest, ProjectOverview, Session, Task } from '@pluse/types'
 import { createRun, updateRun } from '../models/run'
 import { completeTaskRun, createTaskRun } from '../models/task-run'
 import { GET, PATCH, POST, makeWorkDir, resetTestDb, setupTestDb } from './helpers'
@@ -41,7 +41,7 @@ describe('POST /api/projects/open', () => {
     expect(created.workDir).toBe(workDir)
     expect(created.pinned).toBe(true)
 
-    const manifestPath = join(workDir, '.pulse', 'project.json')
+    const manifestPath = join(workDir, '.pluse', 'project.json')
     expect(existsSync(manifestPath)).toBe(true)
 
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as ProjectManifest
@@ -63,7 +63,7 @@ describe('POST /api/projects/open', () => {
     expect(moved.workDir).toBe(movedDir)
 
     const copiedDir = makeWorkDir('copied')
-    cpSync(join(movedDir, '.pulse'), join(copiedDir, '.pulse'), { recursive: true })
+    cpSync(join(movedDir, '.pluse'), join(copiedDir, '.pluse'), { recursive: true })
     const copied = await openProject(copiedDir)
     expect(copied.id).not.toBe(created.id)
     expect(copied.workDir).toBe(copiedDir)
@@ -78,13 +78,13 @@ describe('project updates and overview', () => {
     const updated = await PATCH<Project>(`/api/projects/${project.id}`, {
       name: 'Overview Project Renamed',
       goal: 'Track merged work',
-      systemPrompt: 'Use Pulse tools when helpful.',
+      systemPrompt: 'Use Pluse tools when helpful.',
       pinned: true,
     })
     expect(updated.status).toBe(200)
     expect(updated.json.ok).toBe(true)
     if (!updated.json.ok) return
-    expect(updated.json.data.systemPrompt).toBe('Use Pulse tools when helpful.')
+    expect(updated.json.data.systemPrompt).toBe('Use Pluse tools when helpful.')
 
     const session = await POST<Session>('/api/sessions', {
       projectId: project.id,

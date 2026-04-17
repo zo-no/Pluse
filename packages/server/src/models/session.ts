@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { Session, CreateSessionInput, UpdateSessionInput, QueuedMessage } from '@melody-sync/types'
+import type { Session, CreateSessionInput, UpdateSessionInput, QueuedMessage } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { Task } from '@melody-sync/types'
+import type { Task } from '@pluse/types'
 import * as api from '@/api/client'
 import { CheckIcon, CloseIcon, PlayIcon, RailIcon } from './icons'
 import { TaskDetail } from './TaskDetail'
@@ -118,32 +118,32 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null
 
   return (
-    <aside className="pulse-rail">
-      <div className="pulse-rail-list-pane">
-        <div className="pulse-mobile-panel-header">
+    <aside className="pluse-rail">
+      <div className="pluse-rail-list-pane">
+        <div className="pluse-mobile-panel-header">
           <div>
-            <span className="pulse-section-kicker">任务地图</span>
+            <span className="pluse-section-kicker">任务地图</span>
             <strong>{projectName || '当前项目'}</strong>
           </div>
-          <button type="button" className="pulse-icon-button" onClick={onRequestClose} aria-label="关闭任务栏">
-            <CloseIcon className="pulse-icon" />
+          <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label="关闭任务栏">
+            <CloseIcon className="pluse-icon" />
           </button>
         </div>
 
-        <div className="pulse-rail-head">
-          <div className="pulse-rail-head-row">
-            <div className="pulse-rail-head-info">
-              <span className="pulse-rail-mark" aria-hidden="true">
-                <RailIcon className="pulse-icon" />
+        <div className="pluse-rail-head">
+          <div className="pluse-rail-head-row">
+            <div className="pluse-rail-head-info">
+              <span className="pluse-rail-mark" aria-hidden="true">
+                <RailIcon className="pluse-icon" />
               </span>
-              <span className="pulse-rail-head-label">{projectName ? `${projectName} · ${tasks.length}` : title}</span>
+              <span className="pluse-rail-head-label">{projectName ? `${projectName} · ${tasks.length}` : title}</span>
             </div>
-            <div className="pulse-tabs">
+            <div className="pluse-tabs">
               {(['Session', 'Project', 'All'] as RailTab[]).map((value) => (
                 <button
                   key={value}
                   type="button"
-                  className={`pulse-tab${tab === value ? ' is-active' : ''}`}
+                  className={`pluse-tab${tab === value ? ' is-active' : ''}`}
                   onClick={() => setTab(value)}
                 >
                   {tabLabel(value)}
@@ -153,52 +153,52 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
           </div>
         </div>
 
-        <div className="pulse-task-list">
+        <div className="pluse-task-list">
           {tasks.length > 0 ? tasks.map((task) => (
             <article
               key={task.id}
-              className={`pulse-task-card pulse-task-compact${selectedTaskId === task.id ? ' is-selected' : ''}`}
+              className={`pluse-task-card pluse-task-compact${selectedTaskId === task.id ? ' is-selected' : ''}`}
               onClick={() => setSelectedTaskId(selectedTaskId === task.id ? null : task.id)}
             >
-              <div className="pulse-task-compact-row">
-                <div className="pulse-task-compact-main">
+              <div className="pluse-task-compact-row">
+                <div className="pluse-task-compact-main">
                   <strong>{task.title}</strong>
                   {task.assignee === 'human' && task.waitingInstructions && (
-                    <p className="pulse-task-compact-hint">{task.waitingInstructions}</p>
+                    <p className="pluse-task-compact-hint">{task.waitingInstructions}</p>
                   )}
-                  <div className="pulse-task-compact-meta">
-                    <span className={`pulse-task-status is-${task.status}`}>{formatTaskStatus(task.status)}</span>
-                    <span className="pulse-meta-dot">·</span>
-                    <span className="pulse-meta-inline">{task.assignee === 'ai' ? 'AI' : '人工'}</span>
-                    <span className="pulse-meta-dot">·</span>
-                    <span className="pulse-meta-inline">{formatTaskKind(task.kind)}</span>
+                  <div className="pluse-task-compact-meta">
+                    <span className={`pluse-task-status is-${task.status}`}>{formatTaskStatus(task.status)}</span>
+                    <span className="pluse-meta-dot">·</span>
+                    <span className="pluse-meta-inline">{task.assignee === 'ai' ? 'AI' : '人工'}</span>
+                    <span className="pluse-meta-dot">·</span>
+                    <span className="pluse-meta-inline">{formatTaskKind(task.kind)}</span>
                   </div>
                 </div>
-                <div className="pulse-task-compact-actions" onClick={(e) => e.stopPropagation()}>
+                <div className="pluse-task-compact-actions" onClick={(e) => e.stopPropagation()}>
                   {task.assignee === 'human' && task.status !== 'done' ? (
-                    <button type="button" className="pulse-row-action" onClick={() => void handleDone(task.id)} aria-label="完成任务" title="完成任务">
-                      <CheckIcon className="pulse-icon" />
+                    <button type="button" className="pluse-row-action" onClick={() => void handleDone(task.id)} aria-label="完成任务" title="完成任务">
+                      <CheckIcon className="pluse-icon" />
                     </button>
                   ) : null}
                   {task.assignee === 'ai' && task.status !== 'running' ? (
-                    <button type="button" className="pulse-row-action" onClick={() => void handleRun(task.id)} aria-label="运行任务" title="运行任务">
-                      <PlayIcon className="pulse-icon" />
+                    <button type="button" className="pluse-row-action" onClick={() => void handleRun(task.id)} aria-label="运行任务" title="运行任务">
+                      <PlayIcon className="pluse-icon" />
                     </button>
                   ) : null}
                 </div>
               </div>
             </article>
           )) : (
-            <div className="pulse-empty-state pulse-rail-empty">{emptyCopy}</div>
+            <div className="pluse-empty-state pluse-rail-empty">{emptyCopy}</div>
           )}
         </div>
 
-        {error ? <p className="pulse-error">{error}</p> : null}
+        {error ? <p className="pluse-error">{error}</p> : null}
       </div>
 
       {selectedTask && createPortal(
-        <div className="pulse-modal-backdrop" onClick={() => setSelectedTaskId(null)}>
-          <div className="pulse-modal-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="pluse-modal-backdrop" onClick={() => setSelectedTaskId(null)}>
+          <div className="pluse-modal-panel" onClick={(e) => e.stopPropagation()}>
             <TaskDetail
               task={selectedTask}
               allTasks={tasks}

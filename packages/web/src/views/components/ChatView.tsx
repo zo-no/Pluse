@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { MessageAttachment, RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
+import type { MessageAttachment, RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@pluse/types'
 import * as api from '@/api/client'
 import type { UploadedAsset } from '@/api/client'
 import { AttachIcon, SendIcon } from './icons'
@@ -39,13 +39,13 @@ function ToolUseCard({ event }: { event: SessionEvent }) {
   }
 
   return (
-    <details className="pulse-event-card pulse-tool-card">
+    <details className="pluse-event-card pluse-tool-card">
       <summary>
-        <span className="pulse-tool-label">
-          <span className="pulse-tool-icon">⚙</span>
+        <span className="pluse-tool-label">
+          <span className="pluse-tool-icon">⚙</span>
           {toolName}
         </span>
-        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
       </summary>
       <pre>{inputPreview}</pre>
     </details>
@@ -70,13 +70,13 @@ function ToolResultCard({ event }: { event: SessionEvent }) {
   }
 
   return (
-    <details className={`pulse-event-card pulse-tool-result-card${isError ? ' is-error' : ''}`}>
+    <details className={`pluse-event-card pluse-tool-result-card${isError ? ' is-error' : ''}`}>
       <summary>
-        <span className="pulse-tool-label">
-          <span className="pulse-tool-icon">{isError ? '✗' : '✓'}</span>
+        <span className="pluse-tool-label">
+          <span className="pluse-tool-icon">{isError ? '✗' : '✓'}</span>
           工具结果
         </span>
-        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
       </summary>
       <pre>{content}</pre>
     </details>
@@ -86,13 +86,13 @@ function ToolResultCard({ event }: { event: SessionEvent }) {
 function ReasoningCard({ event }: { event: SessionEvent }) {
   const raw = event.content ?? event.bodyPreview ?? ''
   return (
-    <details className="pulse-event-card pulse-reasoning-card">
+    <details className="pluse-event-card pluse-reasoning-card">
       <summary>
-        <span className="pulse-tool-label">
-          <span className="pulse-tool-icon">💭</span>
+        <span className="pluse-tool-label">
+          <span className="pluse-tool-icon">💭</span>
           思考过程
         </span>
-        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
       </summary>
       <pre>{raw}</pre>
     </details>
@@ -103,21 +103,21 @@ function EventCard({ event }: { event: SessionEvent }) {
   if (event.type === 'message') {
     if (event.role === 'user') {
       return (
-        <div className="pulse-message-row is-user">
-          <div className="pulse-message-stack">
-            <div className="pulse-user-bubble">{event.content}</div>
-            <span className="pulse-message-time">{formatTime(event.timestamp)}</span>
+        <div className="pluse-message-row is-user">
+          <div className="pluse-message-stack">
+            <div className="pluse-user-bubble">{event.content}</div>
+            <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
           </div>
         </div>
       )
     }
 
     return (
-      <div className="pulse-message-row is-assistant">
-        <div className="pulse-assistant-copy pulse-markdown">
+      <div className="pluse-message-row is-assistant">
+        <div className="pluse-assistant-copy pluse-markdown">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
         </div>
-        <span className="pulse-message-time">{formatTime(event.timestamp)}</span>
+        <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
       </div>
     )
   }
@@ -135,10 +135,10 @@ function EventCard({ event }: { event: SessionEvent }) {
         : '事件'
 
   return (
-    <details className="pulse-event-card">
+    <details className="pluse-event-card">
       <summary>
         <span>{label}</span>
-        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
       </summary>
       <pre>{event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''}</pre>
     </details>
@@ -350,17 +350,17 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   }
 
   if (!session) {
-    return <div className="pulse-page pulse-page-loading">正在加载会话…</div>
+    return <div className="pluse-page pluse-page-loading">正在加载会话…</div>
   }
 
   return (
-    <div className="pulse-page pulse-session-page">
-      <div className="pulse-chat-shell">
+    <div className="pluse-page pluse-session-page">
+      <div className="pluse-chat-shell">
 
-        <div className="pulse-thread">
-          <div className="pulse-thread-inner">
+        <div className="pluse-thread">
+          <div className="pluse-thread-inner">
             {events.length === 0 ? (
-              <div className="pulse-empty-state pulse-chat-empty">
+              <div className="pluse-empty-state pluse-chat-empty">
                 <h2>开始当前任务</h2>
                 <p>Pulse 会沿着这个项目的上下文继续。</p>
               </div>
@@ -370,31 +370,31 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
           </div>
         </div>
 
-        <footer className="pulse-composer">
-          <div className="pulse-composer-toolbar">
-            <div className="pulse-inline-status">
+        <footer className="pluse-composer">
+          <div className="pluse-composer-toolbar">
+            <div className="pluse-inline-status">
               {session.activeRunId ? <span>当前有运行中的回合</span> : <span>Cmd / Ctrl + Enter</span>}
               {latestRun ? <span>最近一次运行：{formatRunState(latestRun.state)}</span> : null}
             </div>
           </div>
           {pendingFiles.length > 0 && (
-            <div className="pulse-attachment-strip">
+            <div className="pluse-attachment-strip">
               {pendingFiles.map((file, i) => {
                 const url = previewUrls[i]
                 const isImage = file.type.startsWith('image/')
                 return (
-                  <div key={i} className="pulse-attachment-item">
+                  <div key={i} className="pluse-attachment-item">
                     {isImage && url ? (
-                      <img src={url} alt={file.name} className="pulse-attachment-thumb" />
+                      <img src={url} alt={file.name} className="pluse-attachment-thumb" />
                     ) : (
-                      <div className="pulse-attachment-file-chip">
-                        <span className="pulse-attachment-file-name">{file.name}</span>
-                        <span className="pulse-attachment-file-type">{getFileTypeLabel(file)}</span>
+                      <div className="pluse-attachment-file-chip">
+                        <span className="pluse-attachment-file-name">{file.name}</span>
+                        <span className="pluse-attachment-file-type">{getFileTypeLabel(file)}</span>
                       </div>
                     )}
                     <button
                       type="button"
-                      className="pulse-attachment-remove-btn"
+                      className="pluse-attachment-remove-btn"
                       onClick={() => removeFile(i)}
                       aria-label="移除"
                     >×</button>
@@ -436,8 +436,8 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
             style={{ display: 'none' }}
             onChange={(e) => { if (e.target.files) addFiles(Array.from(e.target.files)); e.target.value = '' }}
           />
-          <div className="pulse-composer-actions">
-            <div className="pulse-runtime-controls pulse-runtime-controls-inline">
+          <div className="pluse-composer-actions">
+            <div className="pluse-runtime-controls pluse-runtime-controls-inline">
               <select value={session.tool ?? 'codex'} onChange={(event) => void patchSession({ tool: event.target.value })}>
                 {runtimeTools.map((tool) => (
                   <option key={tool.id} value={tool.id}>{tool.name}</option>
@@ -458,21 +458,21 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
                 </select>
               )}
             </div>
-            <div className="pulse-composer-send-group">
+            <div className="pluse-composer-send-group">
               <button
                 type="button"
-                className="pulse-icon-button"
+                className="pluse-icon-button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={sending || !!session.activeRunId || pendingFiles.length >= MAX_ATTACHMENTS}
                 aria-label="附加文件"
                 title="附加文件"
               >
-                <AttachIcon className="pulse-icon" />
+                <AttachIcon className="pluse-icon" />
               </button>
               {session.activeRunId ? (
                 <button
                   type="button"
-                  className="pulse-button pulse-button-danger"
+                  className="pluse-button pluse-button-danger"
                   onClick={() => void handleCancel()}
                   disabled={cancelling}
                   aria-label={cancelling ? '取消中' : '停止'}
@@ -483,18 +483,18 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
               ) : null}
               <button
                 type="button"
-                className="pulse-icon-button pulse-send-btn"
+                className="pluse-icon-button pluse-send-btn"
                 onClick={() => void handleSend()}
                 disabled={sending || !!session.activeRunId}
                 aria-label={sending ? '发送中' : '发送'}
                 title="发送 (Cmd+Enter)"
               >
-                <SendIcon className="pulse-icon" />
+                <SendIcon className="pluse-icon" />
               </button>
             </div>
           </div>
-          {uploadError ? <p className="pulse-error">{uploadError}</p> : null}
-          {error ? <p className="pulse-error">{error}</p> : null}
+          {uploadError ? <p className="pluse-error">{uploadError}</p> : null}
+          {error ? <p className="pluse-error">{error}</p> : null}
         </footer>
       </div>
     </div>

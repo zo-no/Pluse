@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import type { Project, Session, Task } from '@melody-sync/types'
+import type { Project, Session, Task } from '@pluse/types'
 import { GET, PATCH, POST, DEL, makeWorkDir, resetTestDb, setupTestDb } from './helpers'
 import { enqueueFollowUp, getFollowUpQueue, getSession, listSessionsWithPendingQueue } from '../models/session'
 import { recoverFollowUpQueues } from '../runtime/session-runner'

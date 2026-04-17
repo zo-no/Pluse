@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Task, TaskLog, TaskOp, TaskRun } from '@melody-sync/types'
+import type { Task, TaskLog, TaskOp, TaskRun } from '@pluse/types'
 import * as api from '@/api/client'
 import { CloseIcon, PlayIcon, CheckIcon } from './icons'
 
@@ -113,34 +113,34 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
   const tabLabel: Record<Tab, string> = { info: '信息', history: '历史', ops: '日志' }
 
   return (
-    <div className="pulse-task-detail">
+    <div className="pluse-task-detail">
       {/* Header */}
-      <div className="pulse-task-detail-header">
-        <div className="pulse-task-detail-title">
+      <div className="pluse-task-detail-header">
+        <div className="pluse-task-detail-title">
           <h3>{task.title}</h3>
-          <div className="pulse-task-detail-meta">
-            <span className={`pulse-task-status is-${task.status}`}>{formatStatus(task.status)}</span>
-            <span className="pulse-assignee-tag" data-assignee={task.assignee}>
+          <div className="pluse-task-detail-meta">
+            <span className={`pluse-task-status is-${task.status}`}>{formatStatus(task.status)}</span>
+            <span className="pluse-assignee-tag" data-assignee={task.assignee}>
               {task.assignee === 'ai' ? 'AI' : '人工'}
             </span>
-            <span className="pulse-kind-tag">{task.kind === 'recurring' ? '周期' : task.kind === 'scheduled' ? '定时' : '单次'}</span>
+            <span className="pluse-kind-tag">{task.kind === 'recurring' ? '周期' : task.kind === 'scheduled' ? '定时' : '单次'}</span>
           </div>
         </div>
-        <button type="button" className="pulse-icon-button" onClick={onClose} aria-label="关闭">
-          <CloseIcon className="pulse-icon" />
+        <button type="button" className="pluse-icon-button" onClick={onClose} aria-label="关闭">
+          <CloseIcon className="pluse-icon" />
         </button>
       </div>
 
       {/* Toast */}
-      {toast && <div className="pulse-task-detail-toast">{toast}</div>}
+      {toast && <div className="pluse-task-detail-toast">{toast}</div>}
 
       {/* Tabs */}
-      <div className="pulse-tabs pulse-task-detail-tabs">
+      <div className="pluse-tabs pluse-task-detail-tabs">
         {tabs.map((t) => (
           <button
             key={t}
             type="button"
-            className={`pulse-tab${tab === t ? ' is-active' : ''}`}
+            className={`pluse-tab${tab === t ? ' is-active' : ''}`}
             onClick={() => setTab(t)}
           >
             {tabLabel[t]}
@@ -149,49 +149,49 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
       </div>
 
       {/* Body */}
-      <div className="pulse-task-detail-body">
+      <div className="pluse-task-detail-body">
 
         {/* Info tab */}
         {tab === 'info' && (
-          <div className="pulse-task-detail-info">
+          <div className="pluse-task-detail-info">
             {task.waitingInstructions && (
-              <div className="pulse-detail-field pulse-detail-field-highlight">
+              <div className="pluse-detail-field pluse-detail-field-highlight">
                 <label>待办说明</label>
                 <p>{task.waitingInstructions}</p>
               </div>
             )}
             {task.description && (
-              <div className="pulse-detail-field">
+              <div className="pluse-detail-field">
                 <label>描述</label>
                 <p>{task.description}</p>
               </div>
             )}
             {blockedByTask && (
-              <div className="pulse-detail-field">
+              <div className="pluse-detail-field">
                 <label>等待任务</label>
-                <p className="pulse-detail-field-blocked">{blockedByTask.title}</p>
+                <p className="pluse-detail-field-blocked">{blockedByTask.title}</p>
               </div>
             )}
             {task.executor && (
-              <div className="pulse-detail-field">
+              <div className="pluse-detail-field">
                 <label>执行器</label>
                 {task.executor.kind === 'ai_prompt' && (
-                  <pre className="pulse-detail-pre">{task.executor.prompt}</pre>
+                  <pre className="pluse-detail-pre">{task.executor.prompt}</pre>
                 )}
                 {task.executor.kind === 'script' && (
-                  <pre className="pulse-detail-pre">{task.executor.command}</pre>
+                  <pre className="pluse-detail-pre">{task.executor.command}</pre>
                 )}
               </div>
             )}
             {task.scheduleConfig && (
-              <div className="pulse-detail-field">
+              <div className="pluse-detail-field">
                 <label>调度</label>
                 <p>
                   {task.scheduleConfig.kind === 'recurring' && (
                     <>
                       {task.scheduleConfig.cron}
                       {task.scheduleConfig.nextRunAt && (
-                        <span className="pulse-detail-field-sub"> · 下次 {formatTime(task.scheduleConfig.nextRunAt)}</span>
+                        <span className="pluse-detail-field-sub"> · 下次 {formatTime(task.scheduleConfig.nextRunAt)}</span>
                       )}
                     </>
                   )}
@@ -200,55 +200,55 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
               </div>
             )}
             {task.completionOutput && (
-              <div className="pulse-detail-field">
+              <div className="pluse-detail-field">
                 <label>上次输出</label>
-                <pre className="pulse-detail-pre">{task.completionOutput}</pre>
+                <pre className="pluse-detail-pre">{task.completionOutput}</pre>
               </div>
             )}
             {!task.waitingInstructions && !task.description && !task.executor &&
               !task.scheduleConfig && !task.completionOutput && !blockedByTask && (
-              <p className="pulse-detail-empty">暂无详细信息</p>
+              <p className="pluse-detail-empty">暂无详细信息</p>
             )}
           </div>
         )}
 
         {/* History tab */}
         {tab === 'history' && (
-          <div className="pulse-task-detail-history">
+          <div className="pluse-task-detail-history">
             {runs.length === 0 && logs.length === 0 && (
-              <p className="pulse-detail-empty">暂无执行记录</p>
+              <p className="pluse-detail-empty">暂无执行记录</p>
             )}
             {runs.map((run) => {
               const log = logs.find((l) => l.startedAt === run.startedAt)
               const isExpanded = expandedRunId === run.id
               return (
-                <div key={run.id} className="pulse-run-entry">
+                <div key={run.id} className="pluse-run-entry">
                   <button
                     type="button"
-                    className="pulse-run-entry-row"
+                    className="pluse-run-entry-row"
                     onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
                   >
-                    <div className="pulse-run-entry-left">
+                    <div className="pluse-run-entry-left">
                       {run.status === 'running' && (
-                        <span className="pulse-run-dot is-running" />
+                        <span className="pluse-run-dot is-running" />
                       )}
-                      <span className={`pulse-run-status is-${run.status}`}>
+                      <span className={`pluse-run-status is-${run.status}`}>
                         {formatStatus(run.status)}
                       </span>
-                      <span className="pulse-run-trigger">{run.triggeredBy}</span>
+                      <span className="pluse-run-trigger">{run.triggeredBy}</span>
                     </div>
-                    <div className="pulse-run-entry-right">
-                      <span className="pulse-run-time">{formatTime(run.startedAt)}</span>
+                    <div className="pluse-run-entry-right">
+                      <span className="pluse-run-time">{formatTime(run.startedAt)}</span>
                       {run.completedAt && (
-                        <span className="pulse-run-duration">
+                        <span className="pluse-run-duration">
                           {Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s
                         </span>
                       )}
                     </div>
                   </button>
-                  {run.error && <p className="pulse-run-error">{run.error}</p>}
+                  {run.error && <p className="pluse-run-error">{run.error}</p>}
                   {isExpanded && log?.output && (
-                    <pre className="pulse-run-output">{log.output.slice(0, 2000)}{log.output.length > 2000 ? '\n…' : ''}</pre>
+                    <pre className="pluse-run-output">{log.output.slice(0, 2000)}{log.output.length > 2000 ? '\n…' : ''}</pre>
                   )}
                 </div>
               )
@@ -258,17 +258,17 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
 
         {/* Ops tab */}
         {tab === 'ops' && (
-          <div className="pulse-task-detail-ops">
-            {ops.length === 0 && <p className="pulse-detail-empty">暂无操作记录</p>}
+          <div className="pluse-task-detail-ops">
+            {ops.length === 0 && <p className="pluse-detail-empty">暂无操作记录</p>}
             {ops.map((op) => (
-              <div key={op.id} className="pulse-op-entry">
-                <span className="pulse-op-time">{formatTime(op.createdAt)}</span>
-                <span className="pulse-op-actor">[{op.actor}]</span>
-                <span className="pulse-op-label">{formatOp(op.op)}</span>
+              <div key={op.id} className="pluse-op-entry">
+                <span className="pluse-op-time">{formatTime(op.createdAt)}</span>
+                <span className="pluse-op-actor">[{op.actor}]</span>
+                <span className="pluse-op-label">{formatOp(op.op)}</span>
                 {op.fromStatus && op.toStatus && (
-                  <span className="pulse-op-transition">{op.fromStatus} → {op.toStatus}</span>
+                  <span className="pluse-op-transition">{op.fromStatus} → {op.toStatus}</span>
                 )}
-                {op.note && <span className="pulse-op-note">{op.note}</span>}
+                {op.note && <span className="pluse-op-note">{op.note}</span>}
               </div>
             ))}
           </div>
@@ -276,27 +276,27 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
       </div>
 
       {/* Actions */}
-      <div className="pulse-task-detail-actions">
-        <div className="pulse-task-detail-actions-left">
+      <div className="pluse-task-detail-actions">
+        <div className="pluse-task-detail-actions-left">
           {task.assignee === 'ai' && task.status !== 'done' && task.status !== 'cancelled' && (
             <button
               type="button"
-              className={`pulse-toggle${task.enabled ? ' is-on' : ''}`}
+              className={`pluse-toggle${task.enabled ? ' is-on' : ''}`}
               onClick={() => void handleToggleEnabled()}
               title={task.enabled ? '暂停调度' : '恢复调度'}
               aria-label={task.enabled ? '暂停' : '恢复'}
             />
           )}
           {confirmDelete ? (
-            <div className="pulse-confirm-inline">
+            <div className="pluse-confirm-inline">
               <span>确认删除？</span>
-              <button type="button" className="pulse-button pulse-button-danger pulse-button-xs" onClick={() => void handleDeleteConfirmed()}>删除</button>
-              <button type="button" className="pulse-button pulse-button-xs" onClick={() => setConfirmDelete(false)}>取消</button>
+              <button type="button" className="pluse-button pluse-button-danger pluse-button-xs" onClick={() => void handleDeleteConfirmed()}>删除</button>
+              <button type="button" className="pluse-button pluse-button-xs" onClick={() => setConfirmDelete(false)}>取消</button>
             </div>
           ) : (
             <button
               type="button"
-              className="pulse-delete-btn"
+              className="pluse-delete-btn"
               onClick={() => setConfirmDelete(true)}
               title="删除任务"
             >
@@ -305,10 +305,10 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
           )}
         </div>
 
-        <div className="pulse-task-detail-actions-right">
+        <div className="pluse-task-detail-actions-right">
           {task.assignee === 'human' && task.status === 'pending' && (
             doneExpanded ? (
-              <div className="pulse-done-inline">
+              <div className="pluse-done-inline">
                 <input
                   autoFocus
                   type="text"
@@ -316,40 +316,40 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
                   onChange={(e) => setDoneOutput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') void handleDone() }}
                   placeholder="备注（可选）"
-                  className="pulse-done-input"
+                  className="pluse-done-input"
                 />
-                <button type="button" className="pulse-button pulse-button-success pulse-button-xs" onClick={() => void handleDone()}>
+                <button type="button" className="pluse-button pluse-button-success pluse-button-xs" onClick={() => void handleDone()}>
                   确认
                 </button>
-                <button type="button" className="pulse-button pulse-button-xs" onClick={() => { setDoneExpanded(false); setDoneOutput('') }}>
+                <button type="button" className="pluse-button pluse-button-xs" onClick={() => { setDoneExpanded(false); setDoneOutput('') }}>
                   取消
                 </button>
               </div>
             ) : (
-              <button type="button" className="pulse-button pulse-button-success" onClick={() => setDoneExpanded(true)}>
-                <CheckIcon className="pulse-icon" />
+              <button type="button" className="pluse-button pluse-button-success" onClick={() => setDoneExpanded(true)}>
+                <CheckIcon className="pluse-icon" />
                 完成
               </button>
             )
           )}
 
           {task.assignee === 'ai' && task.status === 'running' && (
-            <span className="pulse-running-indicator">
-              <span className="pulse-running-dot" />
+            <span className="pluse-running-indicator">
+              <span className="pluse-running-dot" />
               运行中
             </span>
           )}
 
           {task.assignee === 'ai' && (task.status === 'pending' || task.status === 'failed' || task.status === 'cancelled') && (
-            <button type="button" className="pulse-button pulse-button-primary" onClick={() => void handleRun()}>
-              <PlayIcon className="pulse-icon" />
+            <button type="button" className="pluse-button pluse-button-primary" onClick={() => void handleRun()}>
+              <PlayIcon className="pluse-icon" />
               {task.status === 'failed' ? '重试' : '运行'}
             </button>
           )}
         </div>
       </div>
 
-      {error && <p className="pulse-error">{error}</p>}
+      {error && <p className="pluse-error">{error}</p>}
     </div>
   )
 }

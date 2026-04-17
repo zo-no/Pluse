@@ -9,8 +9,8 @@ import { taskCommand } from './controllers/cli/task'
 const program = new Command()
 
 program
-  .name('pulse')
-  .description('Pulse CLI — manage projects, sessions, and tasks')
+  .name('pluse')
+  .description('Pluse CLI — manage projects, sessions, and tasks')
   .version('0.1.0')
 
 program.addCommand(authCommand)

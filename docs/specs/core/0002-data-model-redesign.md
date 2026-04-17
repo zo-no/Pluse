@@ -227,7 +227,7 @@ interface ExecutorOptions {
 ```
 
 API：`POST /api/sessions/:id/create-task`
-CLI：`pulse session create-task <sessionId> --title "..." --assignee ai|human`
+CLI：`pluse session create-task <sessionId> --title "..." --assignee ai|human`
 
 ### Task → Session
 
@@ -244,7 +244,7 @@ CLI：`pulse session create-task <sessionId> --title "..." --assignee ai|human`
 ```
 
 API：`POST /api/tasks/:id/create-session`
-CLI：`pulse task create-session <taskId> [--name "..."]`
+CLI：`pluse task create-session <taskId> [--name "..."]`
 
 两者通过 `Task.sessionId ↔ Session.sourceTaskId` 互相指向，切换时 `projectId` 是共同锚点。互转时校验 projectId 一致性，不一致返回 400。
 
@@ -321,9 +321,9 @@ if session.autoRenamePending && session 的 Run 数量 === 1：
 所有执行上下文都先注入这段说明：
 
 ```
-你在 Pulse 系统中运行。
+你在 Pluse 系统中运行。
 
-Pulse 的核心概念：
+Pluse 的核心概念：
 - Project（项目）：工作容器，对应本地文件夹，包含若干会话和任务
 - Session（会话）：与 AI 的持续对话，消息历史保存在会话中
 - Task（任务）：独立工作单元，可由 AI 或人类执行
@@ -334,7 +334,7 @@ Pulse 的核心概念：
     - Session.sourceTaskId 记录会话由哪个任务触发
 - 切换上下文时（会话↔任务），用 projectId 作为锚点查全局状态
 
-运行 `pulse commands` 查看所有可用能力。
+运行 `pluse commands` 查看所有可用能力。
 ```
 
 ### Session 执行上下文
@@ -362,19 +362,19 @@ Pulse 的核心概念：
 工作目录: {workDir}
 
 你正在执行一个自动化任务。
-完成后运行 `pulse task done {taskId} --output "..."` 标记结果。
+完成后运行 `pluse task done {taskId} --output "..."` 标记结果。
 需要人类介入时，创建 Human Task 并说明原因。
-查看任务来源：`pulse task get {taskId}`（originSessionId 字段）。
+查看任务来源：`pluse task get {taskId}`（originSessionId 字段）。
 ```
 
 ---
 
-## `pulse commands` 接口
+## `pluse commands` 接口
 
 ### CLI
 
 ```bash
-pulse commands [--json]
+pluse commands [--json]
 ```
 
 ### API
@@ -394,19 +394,19 @@ GET /api/commands
       "commands": [
         {
           "name": "session list",
-          "cli": "pulse session list --project <id> [--json]",
+          "cli": "pluse session list --project <id> [--json]",
           "api": "GET /api/sessions?projectId=<id>",
           "description": "列出项目下所有会话"
         },
         {
           "name": "session get",
-          "cli": "pulse session get <id> [--json]",
+          "cli": "pluse session get <id> [--json]",
           "api": "GET /api/sessions/<id>",
           "description": "获取会话详情"
         },
         {
           "name": "session create",
-          "cli": "pulse session create --project <id> --name <name> [--json]",
+          "cli": "pluse session create --project <id> --name <name> [--json]",
           "api": "POST /api/sessions",
           "description": "创建新会话"
         }
@@ -418,43 +418,43 @@ GET /api/commands
       "commands": [
         {
           "name": "task list",
-          "cli": "pulse task list --project <id> [--status pending|running|done] [--assignee ai|human] [--json]",
+          "cli": "pluse task list --project <id> [--status pending|running|done] [--assignee ai|human] [--json]",
           "api": "GET /api/tasks?projectId=<id>",
           "description": "列出项目下所有任务"
         },
         {
           "name": "task get",
-          "cli": "pulse task get <id> [--json]",
+          "cli": "pluse task get <id> [--json]",
           "api": "GET /api/tasks/<id>",
           "description": "获取任务详情"
         },
         {
           "name": "task create",
-          "cli": "pulse task create --project <id> --title <title> --assignee ai|human [--description <desc>] [--json]",
+          "cli": "pluse task create --project <id> --title <title> --assignee ai|human [--description <desc>] [--json]",
           "api": "POST /api/tasks",
           "description": "创建新任务"
         },
         {
           "name": "task done",
-          "cli": "pulse task done <id> --output <summary> [--json]",
+          "cli": "pluse task done <id> --output <summary> [--json]",
           "api": "POST /api/tasks/<id>/done",
           "description": "标记任务完成并记录输出"
         },
         {
           "name": "task run",
-          "cli": "pulse task run <id> [--json]",
+          "cli": "pluse task run <id> [--json]",
           "api": "POST /api/tasks/<id>/run",
           "description": "立即触发执行一个 AI Task"
         },
         {
           "name": "task block",
-          "cli": "pulse task block <id> --by <blockerId> [--json]",
+          "cli": "pluse task block <id> --by <blockerId> [--json]",
           "api": "POST /api/tasks/:id/block",
           "description": "设置任务依赖，当前任务等待 blockerId 完成后才能执行"
         },
         {
           "name": "task unblock",
-          "cli": "pulse task unblock <id> [--json]",
+          "cli": "pluse task unblock <id> [--json]",
           "api": "DELETE /api/tasks/:id/block",
           "description": "移除任务的依赖关系"
         }
@@ -466,13 +466,13 @@ GET /api/commands
       "commands": [
         {
           "name": "project list",
-          "cli": "pulse project list [--json]",
+          "cli": "pluse project list [--json]",
           "api": "GET /api/projects",
           "description": "列出所有项目"
         },
         {
           "name": "project get",
-          "cli": "pulse project get <id> [--json]",
+          "cli": "pluse project get <id> [--json]",
           "api": "GET /api/projects/<id>",
           "description": "获取项目详情"
         }
@@ -484,13 +484,13 @@ GET /api/commands
       "commands": [
         {
           "name": "session create-task",
-          "cli": "pulse session create-task <sessionId> --title <title> --assignee ai|human [--json]",
+          "cli": "pluse session create-task <sessionId> --title <title> --assignee ai|human [--json]",
           "api": "POST /api/sessions/:id/create-task",
           "description": "将会话转为任务，复用该会话作为执行上下文"
         },
         {
           "name": "task create-session",
-          "cli": "pulse task create-session <taskId> [--name <name>] [--json]",
+          "cli": "pluse task create-session <taskId> [--name <name>] [--json]",
           "api": "POST /api/tasks/:id/create-session",
           "description": "为任务创建对话会话"
         }
@@ -502,7 +502,7 @@ GET /api/commands
       "commands": [
         {
           "name": "commands",
-          "cli": "pulse commands [--json]",
+          "cli": "pluse commands [--json]",
           "api": "GET /api/commands",
           "description": "列出所有可用命令"
         }
@@ -619,11 +619,11 @@ CREATE INDEX idx_tasks_assignee ON tasks(project_id, assignee, status);
 
 ### 第五步：新增接口
 - 新增 `controllers/http/commands.ts` — `GET /api/commands`
-- 新增 `controllers/cli/commands.ts` — `pulse commands [--json]`
+- 新增 `controllers/cli/commands.ts` — `pluse commands [--json]`
 - `controllers/http/sessions.ts` 新增 `POST /api/sessions/:id/create-task`
 - `controllers/http/tasks.ts` 新增 `POST /api/tasks/:id/create-session`、`POST /api/tasks/:id/block`、`DELETE /api/tasks/:id/block`
-- `controllers/cli/session.ts` 新增 `pulse session create-task`
-- `controllers/cli/task.ts` 新增 `pulse task create-session`、`pulse task block`、`pulse task unblock`
+- `controllers/cli/session.ts` 新增 `pluse session create-task`
+- `controllers/cli/task.ts` 新增 `pluse task create-session`、`pluse task block`、`pluse task unblock`
 
 ### 第六步：Controller 层清理
 - `controllers/http/tasks.ts`：删除 `surface`、`visibleInChat`、`origin`、`originRunId` 字段及过滤参数
@@ -654,7 +654,7 @@ CREATE INDEX idx_tasks_assignee ON tasks(project_id, assignee, status);
 - [x] server 重启后 followUpQueue 未消费的消息恢复执行
 
 **接口**
-- [x] `GET /api/commands` / `pulse commands` 返回按模块分组的命令列表
+- [x] `GET /api/commands` / `pluse commands` 返回按模块分组的命令列表
 - [x] `POST /api/sessions/:id/create-task` 和 `POST /api/tasks/:id/create-session` 可用
 - [x] `POST /api/tasks/:id/block` 和 `DELETE /api/tasks/:id/block` 可用
 - [x] 互转时校验 projectId 一致性，不一致返回 400
@@ -662,7 +662,7 @@ CREATE INDEX idx_tasks_assignee ON tasks(project_id, assignee, status);
 **系统提示**
 - [x] 三层注入顺序正确（系统级 → 项目级 → 执行上下文）
 - [x] Session 和 Task 的执行上下文提示有明确差异
-- [x] 系统提示包含 Pulse 概念说明和 `pulse commands` 入口
+- [x] 系统提示包含 Pluse 概念说明和 `pluse commands` 入口
 
 **前端**
 - [x] TaskRail 无 `surface`/`visibleInChat` 过滤逻辑

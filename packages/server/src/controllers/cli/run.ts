@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { Run } from '@melody-sync/types'
+import type { Run } from '@pluse/types'
 import { getRun, getRunsBySession, cancelRun } from '../../models/run'
 
 // ─── formatting helpers ───────────────────────────────────────────────────────

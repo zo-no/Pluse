@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono'
-import type { ApiResult } from '@melody-sync/types'
+import type { ApiResult } from '@pluse/types'
 import {
   hasAuth,
   parseCsrfCookie,

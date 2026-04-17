@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { CreateTaskInput, Task, UpdateTaskInput } from '@melody-sync/types'
+import type { CreateTaskInput, Task, UpdateTaskInput } from '@pluse/types'
 import { getTaskView, createTaskWithEffects, updateTaskWithEffects, deleteTaskWithEffects, listTaskViews, runTaskNow, markTaskDone, cancelTask } from '../../services/tasks'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
 
@@ -38,7 +38,7 @@ function buildTaskInput(opts: any): CreateTaskInput {
 }
 
 export const taskCommand = new Command('task')
-taskCommand.description('Manage Pulse tasks')
+taskCommand.description('Manage Pluse tasks')
 
 taskCommand
   .command('list')

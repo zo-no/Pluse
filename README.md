@@ -1,4 +1,4 @@
-# Pulse Workspace
+# Pluse Workspace
 
 一个统一的工作空间管理工具。
 
@@ -21,7 +21,7 @@ pnpm install
 **重要**: 必须先构建前端，否则访问 http://localhost:7760 时会看到以下错误：
 
 ```
-Pulse frontend is not built yet. Run `pnpm build` in the workspace.
+Pluse frontend is not built yet. Run `pnpm build` in the workspace.
 ```
 
 构建命令：
@@ -31,7 +31,7 @@ Pulse frontend is not built yet. Run `pnpm build` in the workspace.
 pnpm build
 
 # 或只构建前端
-pnpm --filter @melody-sync/web build
+pnpm --filter @pluse/web build
 ```
 
 ### 3. 启动开发服务器
@@ -75,6 +75,6 @@ packages/
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORT` | 服务器端口 | 7760 |
-| `PULSE_ROOT` | 数据存储目录 | ~/.pulse |
-| `PULSE_DB_PATH` | SQLite 数据库路径 | ~/.pulse/db.sqlite |
-| `PULSE_WEB_DIST` | 前端构建目录 | packages/web/dist |
+| `PLUSE_ROOT` | 数据存储目录 | ~/.pluse |
+| `PLUSE_DB_PATH` | SQLite 数据库路径 | ~/.pluse/db.sqlite |
+| `PLUSE_WEB_DIST` | 前端构建目录 | packages/web/dist |

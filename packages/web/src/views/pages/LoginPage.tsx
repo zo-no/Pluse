@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { AuthMe } from '@melody-sync/types'
+import type { AuthMe } from '@pluse/types'
 import * as api from '@/api/client'
 
 interface LoginPageProps {
@@ -47,12 +47,12 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
   }
 
   return (
-    <div className="pulse-login">
-      <div className="pulse-login-card">
-        <h1>Pulse</h1>
+    <div className="pluse-login">
+      <div className="pluse-login-card">
+        <h1>Pluse</h1>
         <p>单端口、本地优先，项目 / 会话 / 任务共用同一个工作域。</p>
 
-        <form className="pulse-login-form" onSubmit={handlePasswordLogin}>
+        <form className="pluse-login-form" onSubmit={handlePasswordLogin}>
           <label>用户名</label>
           <input
             value={username}
@@ -68,10 +68,10 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
             autoComplete="current-password"
             placeholder="输入密码"
           />
-          <button type="submit" className="pulse-button">密码登录</button>
+          <button type="submit" className="pluse-button">密码登录</button>
         </form>
 
-        <form className="pulse-login-form" onSubmit={handleTokenLogin}>
+        <form className="pluse-login-form" onSubmit={handleTokenLogin}>
           <label>API Token</label>
           <input
             value={token}
@@ -79,10 +79,10 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
             autoComplete="off"
             placeholder="输入 API Token"
           />
-          <button type="submit" className="pulse-button pulse-button-ghost">Token 登录</button>
+          <button type="submit" className="pluse-button pluse-button-ghost">Token 登录</button>
         </form>
 
-        {error && <p className="pulse-error">{error}</p>}
+        {error && <p className="pluse-error">{error}</p>}
       </div>
     </div>
   )

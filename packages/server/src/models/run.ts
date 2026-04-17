@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { Run, CreateRunInput } from '@melody-sync/types'
+import type { Run, CreateRunInput } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {

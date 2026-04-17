@@ -6,17 +6,17 @@
 
 ## 背景
 
-ChatView 输入框目前只支持纯文本。melodysync 的附件方案经过验证：不依赖 CLI 的 `--file` 参数，而是将附件本地路径拼入 prompt 前缀，对 claude 和 codex 行为一致。
+ChatView 输入框目前只支持纯文本。附件方案不依赖 CLI 的 `--file` 参数，而是将附件本地路径拼入 prompt 前缀，对 claude 和 codex 行为一致。
 
 ## 方案设计
 
-### 附件传递机制（同 melodysync）
+### 附件传递机制
 
 发送消息前，将附件引用拼到 prompt 最前面：
 
 ```
-[User attached image: photo.png -> /Users/kual/.pulse/assets/sess_xxx/photo.png]
-[User attached file: report.pdf -> /Users/kual/.pulse/assets/sess_xxx/report.pdf]
+[User attached image: photo.png -> /Users/kual/.pluse/assets/sess_xxx/photo.png]
+[User attached file: report.pdf -> /Users/kual/.pluse/assets/sess_xxx/report.pdf]
 
 用户的消息内容
 ```
@@ -29,7 +29,7 @@ AI 通过 Read 工具（claude）或直接读文件系统（codex）访问附件
 
 - Content-Type: `multipart/form-data`
 - 字段：`file`（文件）、`sessionId`（归属会话）
-- 存储路径：`~/.pulse/assets/{sessionId}/{timestamp}-{filename}`
+- 存储路径：`~/.pluse/assets/{sessionId}/{timestamp}-{filename}`
 - 返回：`{ assetId, filename, savedPath, mimeType, sizeBytes }`
 - 限制：单文件 20MB
 

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
-import type { Run, SessionEvent, UpdateSessionInput, QueuedMessage } from '@melody-sync/types'
+import type { Run, SessionEvent, UpdateSessionInput, QueuedMessage } from '@pluse/types'
 import { appendEvent, listEvents } from '../models/history'
 import { getProject } from '../models/project'
 import { buildSessionSystemPrompt } from '../services/system-prompt'
@@ -15,11 +15,11 @@ import {
 } from '../models/session'
 
 const DEFAULT_TOOL = 'codex'
-const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PULSE_RUN_TIMEOUT_MS'] ?? process.env['MELODYSYNC_RUN_TIMEOUT_MS'], 300_000)
-const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PULSE_RUN_KILL_GRACE_MS'] ?? process.env['MELODYSYNC_RUN_KILL_GRACE_MS'], 15_000)
+const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'] ?? process.env['MELODYSYNC_RUN_TIMEOUT_MS'], 300_000)
+const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'] ?? process.env['MELODYSYNC_RUN_KILL_GRACE_MS'], 15_000)
 const DEFAULT_MODELS: Record<string, string> = {
-  codex: process.env['PULSE_DEFAULT_CODEX_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CODEX_MODEL']?.trim() ?? '',
-  claude: process.env['PULSE_DEFAULT_CLAUDE_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CLAUDE_MODEL']?.trim() ?? '',
+  codex: process.env['PLUSE_DEFAULT_CODEX_MODEL']?.trim() ?? process.env['PULSE_DEFAULT_CODEX_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CODEX_MODEL']?.trim() ?? '',
+  claude: process.env['PLUSE_DEFAULT_CLAUDE_MODEL']?.trim() ?? process.env['PULSE_DEFAULT_CLAUDE_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CLAUDE_MODEL']?.trim() ?? '',
 }
 
 type ActiveRunner = {
@@ -523,9 +523,9 @@ function resolveRunPreferences(
 
 function resolveToolCommand(tool: ToolName): string {
   if (tool === 'claude') {
-    return process.env['PULSE_CLAUDE_COMMAND']?.trim() || process.env['MELODYSYNC_CLAUDE_COMMAND']?.trim() || 'claude'
+    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || process.env['MELODYSYNC_CLAUDE_COMMAND']?.trim() || 'claude'
   }
-  return process.env['PULSE_CODEX_COMMAND']?.trim() || process.env['MELODYSYNC_CODEX_COMMAND']?.trim() || 'codex'
+  return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || process.env['MELODYSYNC_CODEX_COMMAND']?.trim() || 'codex'
 }
 
 function validateProjectWorkingDirectory(projectPath: string): string | null {
@@ -632,7 +632,7 @@ function buildPrompt(sessionId: string, recordedText: string, opts: { nativeResu
     .join('\n\n')
 
   return [
-    'You are continuing an existing Pulse conversation.',
+    'You are continuing an existing Pluse conversation.',
     'Use the prior messages as context and reply only to the latest user message.',
     conversation,
   ].join('\n\n')

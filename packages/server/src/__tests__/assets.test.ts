@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import type { Project, Session } from '@melody-sync/types'
+import type { Project, Session } from '@pluse/types'
 import { POST, GET, makeWorkDir, resetTestDb, setupTestDb, apiReq } from './helpers'
 import { prependAttachmentPaths } from '../controllers/http/assets'
 

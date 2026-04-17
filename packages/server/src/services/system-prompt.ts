@@ -1,17 +1,18 @@
 import { resolve } from 'node:path'
-import type { Project } from '@melody-sync/types'
+import type { Project } from '@pluse/types'
 import { getSetting } from '../models/settings'
 
-function getPulseCliCommand(): string {
-  return process.env['PULSE_CLI_COMMAND']?.trim()
+function getPluseCliCommand(): string {
+  return process.env['PLUSE_CLI_COMMAND']?.trim()
+    || process.env['PULSE_CLI_COMMAND']?.trim()
     || `bun ${resolve(import.meta.dirname, '../cli.ts')}`
 }
 
 // ─── 共用系统说明（所有执行上下文都注入） ───────────────────────────────────
 
-const PULSE_CONCEPT_BLOCK = `你在 Pulse 系统中运行。
+const PLUSE_CONCEPT_BLOCK = `你在 Pluse 系统中运行。
 
-Pulse 的核心概念：
+Pluse 的核心概念：
 - Project（项目）：工作容器，对应本地文件夹，包含若干会话和任务
 - Session（会话）：与 AI 的持续对话，消息历史保存在会话中
 - Task（任务）：独立工作单元，可由 AI 或人类执行
@@ -43,9 +44,9 @@ export function buildSessionSystemPrompt(
   project: Project,
   sessionId: string,
 ): string {
-  const cli = getPulseCliCommand()
+  const cli = getPluseCliCommand()
   const layer3 = [
-    PULSE_CONCEPT_BLOCK,
+    PLUSE_CONCEPT_BLOCK,
     '',
     '当前上下文：会话',
     '',
@@ -73,9 +74,9 @@ export function buildTaskSystemPrompt(
   taskTitle: string,
   sessionId: string,
 ): string {
-  const cli = getPulseCliCommand()
+  const cli = getPluseCliCommand()
   const layer3 = [
-    PULSE_CONCEPT_BLOCK,
+    PLUSE_CONCEPT_BLOCK,
     '',
     '当前上下文：任务执行',
     '',

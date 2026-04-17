@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@melody-sync/types'
+import type { ApiResult, OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@pluse/types'
 import { getProject } from '../../models/project'
 import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 

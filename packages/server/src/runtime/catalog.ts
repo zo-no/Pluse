@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { RuntimeModelCatalog, RuntimeTool } from '@melody-sync/types'
+import type { RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 
 type ToolName = 'codex' | 'claude'
 
@@ -32,11 +32,13 @@ let cachedCodexCatalog: RuntimeModelCatalog | null = null
 
 function resolveToolCommand(tool: ToolName): string {
   if (tool === 'claude') {
-    return process.env['PULSE_CLAUDE_COMMAND']?.trim()
+    return process.env['PLUSE_CLAUDE_COMMAND']?.trim()
+      || process.env['PULSE_CLAUDE_COMMAND']?.trim()
       || process.env['MELODYSYNC_CLAUDE_COMMAND']?.trim()
       || 'claude'
   }
-  return process.env['PULSE_CODEX_COMMAND']?.trim()
+  return process.env['PLUSE_CODEX_COMMAND']?.trim()
+    || process.env['PULSE_CODEX_COMMAND']?.trim()
     || process.env['MELODYSYNC_CODEX_COMMAND']?.trim()
     || 'codex'
 }

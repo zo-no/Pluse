@@ -3,7 +3,7 @@ import { getCommandCatalog } from '../http/commands'
 
 export const commandsCommand = new Command('commands')
 commandsCommand
-  .description('List all available Pulse CLI commands and API endpoints')
+  .description('List all available Pluse CLI commands and API endpoints')
   .option('--json', 'Output as JSON', false)
   .action((opts: { json: boolean }) => {
     const catalog = getCommandCatalog()

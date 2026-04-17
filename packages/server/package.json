@@ -1,9 +1,9 @@
 {
-  "name": "@melody-sync/server",
+  "name": "@pluse/server",
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "pulse": "./src/cli.ts"
+    "pluse": "./src/cli.ts"
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
@@ -12,7 +12,7 @@
     "test": "bun test src/__tests__"
   },
   "dependencies": {
-    "@melody-sync/types": "workspace:*",
+    "@pluse/types": "workspace:*",
     "commander": "^12.1.0",
     "croner": "^10.0.1",
     "hono": "^4.6.0",

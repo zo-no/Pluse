@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { CreateProjectInput, Project, ProjectVisibility, UpdateProjectInput } from '@melody-sync/types'
+import type { CreateProjectInput, Project, ProjectVisibility, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {

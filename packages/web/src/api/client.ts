@@ -21,7 +21,7 @@ import type {
   UpdateProjectInput,
   UpdateSessionInput,
   UpdateTaskInput,
-} from '@melody-sync/types'
+} from '@pluse/types'
 
 const BASE = '/api'
 

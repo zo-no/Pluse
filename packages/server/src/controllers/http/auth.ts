@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, AuthMe } from '@melody-sync/types'
+import type { ApiResult, AuthMe } from '@pluse/types'
 import {
   clearCsrfCookie,
   clearSessionCookie,

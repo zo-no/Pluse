@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { TaskRun } from '@melody-sync/types'
+import type { TaskRun } from '@pluse/types'
 import { getDb } from '../db'
 
 function newId(): string {

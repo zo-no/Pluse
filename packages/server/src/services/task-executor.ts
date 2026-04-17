@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { resolve } from 'node:path'
-import type { AiPromptExecutor, ScriptExecutor, Task } from '@melody-sync/types'
+import type { AiPromptExecutor, ScriptExecutor, Task } from '@pluse/types'
 import { getProject } from '../models/project'
 import { createSession } from '../models/session'
 import { updateTask } from '../models/task'
@@ -180,7 +180,9 @@ async function executeAiPrompt(task: Task, triggeredBy: 'manual' | 'scheduler' |
   const cwd = resolveCwd(task)
   const userPrompt = interpolate(executor.prompt, buildVars(task))
   const systemAppend = buildSystemPrompt(task)
-  const bin = agent === 'claude' ? (process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude') : (process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex')
+  const bin = agent === 'claude'
+    ? (process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude')
+    : (process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex')
   const args = agent === 'claude' ? buildClaudeArgs(task, userPrompt, systemAppend) : buildCodexArgs(task, userPrompt, systemAppend)
   const run = createTaskRun(task.id, task.projectId, triggeredBy, task.sessionId)
 

@@ -1,6 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { SessionEvent } from '@melody-sync/types'
+import type { SessionEvent } from '@pluse/types'
 import { getHistoryRoot } from '../support/paths'
 
 function sessionDir(sessionId: string): string {

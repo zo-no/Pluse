@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Task, TaskRun, UpdateProjectInput } from '@melody-sync/types'
+import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Task, TaskRun, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import {
   createProjectRecord,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Project, Session } from '@melody-sync/types'
+import type { Project, Session } from '@pluse/types'
 import * as api from '@/api/client'
 import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, TrashIcon } from './icons'
 
@@ -179,11 +179,11 @@ export function SessionList({
   function renderSession(session: Session, isArchived = false) {
     if (renamingId === session.id) {
       return (
-        <div key={session.id} className="pulse-sidebar-item pulse-sidebar-row pulse-sidebar-rename-row">
-          <span className="pulse-sidebar-dot" aria-hidden="true" />
+        <div key={session.id} className="pluse-sidebar-item pluse-sidebar-row pluse-sidebar-rename-row">
+          <span className="pluse-sidebar-dot" aria-hidden="true" />
           <input
             ref={renameInputRef}
-            className="pulse-sidebar-rename-input"
+            className="pluse-sidebar-rename-input"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
@@ -197,10 +197,10 @@ export function SessionList({
     }
 
     return (
-      <div key={session.id} className={`pulse-sidebar-item pulse-sidebar-row${session.id === activeSessionId ? ' is-active' : ''}`}>
-        <span className={`pulse-sidebar-dot${session.pinned ? ' is-pinned' : ''}`} aria-hidden="true" />
+      <div key={session.id} className={`pluse-sidebar-item pluse-sidebar-row${session.id === activeSessionId ? ' is-active' : ''}`}>
+        <span className={`pluse-sidebar-dot${session.pinned ? ' is-pinned' : ''}`} aria-hidden="true" />
         <Link
-          className="pulse-sidebar-item-main"
+          className="pluse-sidebar-item-main"
           to={`/sessions/${session.id}`}
           onClick={onNavigate}
           onDoubleClick={(e) => {
@@ -210,62 +210,62 @@ export function SessionList({
           }}
         >
           <strong>{session.name}</strong>
-          <div className="pulse-sidebar-item-meta">
-            {session.activeRunId ? <span className="pulse-sidebar-badge is-running">运行</span> : null}
-            <span className="pulse-meta-inline">
-              <ClockIcon className="pulse-icon pulse-inline-icon" />
+          <div className="pluse-sidebar-item-meta">
+            {session.activeRunId ? <span className="pluse-sidebar-badge is-running">运行</span> : null}
+            <span className="pluse-meta-inline">
+              <ClockIcon className="pluse-icon pluse-inline-icon" />
               {formatSidebarTime(session.updatedAt)}
             </span>
           </div>
         </Link>
-        <div className="pulse-sidebar-item-actions">
+        <div className="pluse-sidebar-item-actions">
           {!isArchived ? (
             <button
               type="button"
-              className={`pulse-sidebar-action-btn${session.pinned ? ' is-active' : ''}`}
+              className={`pluse-sidebar-action-btn${session.pinned ? ' is-active' : ''}`}
               onClick={(e) => { e.preventDefault(); void handlePin(session.id, !session.pinned) }}
               aria-label={session.pinned ? '取消固定' : '固定'}
               title={session.pinned ? '取消固定' : '固定'}
             >
-              <PinIcon className="pulse-icon" />
+              <PinIcon className="pluse-icon" />
             </button>
           ) : null}
           {isArchived ? (
             <button
               type="button"
-              className="pulse-sidebar-action-btn"
+              className="pluse-sidebar-action-btn"
               onClick={(e) => { e.preventDefault(); void handleUnarchive(session.id) }}
               aria-label="取消归档"
               title="取消归档"
             >
-              <ArchiveIcon className="pulse-icon" />
+              <ArchiveIcon className="pluse-icon" />
             </button>
           ) : (
             <button
               type="button"
-              className="pulse-sidebar-action-btn"
+              className="pluse-sidebar-action-btn"
               onClick={(e) => { e.preventDefault(); void handleArchive(session.id) }}
               aria-label="归档"
               title="归档"
             >
-              <ArchiveIcon className="pulse-icon" />
+              <ArchiveIcon className="pluse-icon" />
             </button>
           )}
           {confirmDeleteId === session.id ? (
             <>
               <button
                 type="button"
-                className="pulse-sidebar-action-btn is-danger"
+                className="pluse-sidebar-action-btn is-danger"
                 onClick={(e) => { e.preventDefault(); void handleDelete(session.id) }}
                 disabled={deletingId === session.id}
                 aria-label="确认删除"
                 title="确认删除"
               >
-                <TrashIcon className="pulse-icon" />
+                <TrashIcon className="pluse-icon" />
               </button>
               <button
                 type="button"
-                className="pulse-sidebar-action-btn"
+                className="pluse-sidebar-action-btn"
                 onClick={(e) => { e.preventDefault(); setConfirmDeleteId(null) }}
                 aria-label="取消"
                 title="取消"
@@ -276,12 +276,12 @@ export function SessionList({
           ) : (
             <button
               type="button"
-              className="pulse-sidebar-action-btn is-danger"
+              className="pluse-sidebar-action-btn is-danger"
               onClick={(e) => { e.preventDefault(); setConfirmDeleteId(session.id) }}
               aria-label="删除"
               title="删除"
             >
-              <TrashIcon className="pulse-icon" />
+              <TrashIcon className="pluse-icon" />
             </button>
           )}
         </div>
@@ -290,52 +290,52 @@ export function SessionList({
   }
 
   return (
-    <aside className="pulse-sidebar" ref={sidebarRef}>
-      <div className="pulse-mobile-panel-header">
+    <aside className="pluse-sidebar" ref={sidebarRef}>
+      <div className="pluse-mobile-panel-header">
         <div>
-          <span className="pulse-section-kicker">工作区</span>
+          <span className="pluse-section-kicker">工作区</span>
         </div>
-        <button type="button" className="pulse-icon-button" onClick={onRequestClose} aria-label="关闭侧栏">
-          <CloseIcon className="pulse-icon" />
+        <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label="关闭侧栏">
+          <CloseIcon className="pluse-icon" />
         </button>
       </div>
 
-      <div className="pulse-sidebar-body">
+      <div className="pluse-sidebar-body">
         {/* Project switcher */}
-        <div className="pulse-project-switcher" ref={pickerRef}>
+        <div className="pluse-project-switcher" ref={pickerRef}>
           <button
             type="button"
-            className={`pulse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+            className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
             onClick={() => { setProjectPickerOpen((v) => !v); setNewProjectOpen(false) }}
           >
-            <div className="pulse-project-switcher-label">
+            <div className="pluse-project-switcher-label">
               <strong>{activeProject?.name ?? '选择项目'}</strong>
               <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
             </div>
-            <span className="pulse-project-switcher-chevron" aria-hidden="true">⌄</span>
+            <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
           </button>
 
           {projectPickerOpen ? (
-            <div className="pulse-project-picker">
-              <div className="pulse-project-picker-list">
+            <div className="pluse-project-picker">
+              <div className="pluse-project-picker-list">
                 {projects.map((project) => (
                   <Link
                     key={project.id}
-                    className={`pulse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                    className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
                     to={`/projects/${project.id}`}
                     onClick={() => { setProjectPickerOpen(false); onNavigate?.() }}
                   >
-                    <span className="pulse-sidebar-dot" aria-hidden="true" />
-                    <div className="pulse-project-picker-item-text">
+                    <span className="pluse-sidebar-dot" aria-hidden="true" />
+                    <div className="pluse-project-picker-item-text">
                       <strong>{project.name}</strong>
                       <span>{shortPath(project.workDir)}</span>
                     </div>
                   </Link>
                 ))}
               </div>
-              <div className="pulse-project-picker-footer">
+              <div className="pluse-project-picker-footer">
                 {newProjectOpen ? (
-                  <form className="pulse-sidebar-form" onSubmit={handleCreateProject}>
+                  <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
                     <input
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
@@ -354,17 +354,17 @@ export function SessionList({
                       rows={2}
                     />
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="pulse-button pulse-button-ghost" onClick={() => setNewProjectOpen(false)}>取消</button>
-                      <button type="submit" className="pulse-button" style={{ flex: 1 }}>打开</button>
+                      <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>取消</button>
+                      <button type="submit" className="pluse-button" style={{ flex: 1 }}>打开</button>
                     </div>
                   </form>
                 ) : (
                   <button
                     type="button"
-                    className="pulse-project-picker-add"
+                    className="pluse-project-picker-add"
                     onClick={() => setNewProjectOpen(true)}
                   >
-                    <PlusIcon className="pulse-icon" />
+                    <PlusIcon className="pluse-icon" />
                     添加项目
                   </button>
                 )}
@@ -375,39 +375,39 @@ export function SessionList({
 
         {/* Search */}
         {sessions.length > 0 && (
-          <div className="pulse-sidebar-search">
+          <div className="pluse-sidebar-search">
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索会话…"
-              className="pulse-sidebar-search-input"
+              className="pluse-sidebar-search-input"
             />
           </div>
         )}
 
         {/* Session list */}
-        <section className="pulse-sidebar-section pulse-sidebar-section-list">
-          <div className="pulse-sidebar-list pulse-sidebar-list-dense">
+        <section className="pluse-sidebar-section pluse-sidebar-section-list">
+          <div className="pluse-sidebar-list pluse-sidebar-list-dense">
             {pinnedSessions.length > 0 ? pinnedSessions.map((s) => renderSession(s)) : null}
             {unpinnedSessions.length > 0 ? unpinnedSessions.map((s) => renderSession(s)) : null}
             {sessions.length === 0 ? (
-              <div className="pulse-empty-state pulse-sidebar-empty">还没有会话</div>
+              <div className="pluse-empty-state pluse-sidebar-empty">还没有会话</div>
             ) : filteredSessions.length === 0 ? (
-              <div className="pulse-empty-state pulse-sidebar-empty">无搜索结果</div>
+              <div className="pluse-empty-state pluse-sidebar-empty">无搜索结果</div>
             ) : null}
 
             {archivedSessions.length > 0 ? (
-              <div className="pulse-sidebar-archive-group">
+              <div className="pluse-sidebar-archive-group">
                 <button
                   type="button"
-                  className="pulse-sidebar-archive-toggle"
+                  className="pluse-sidebar-archive-toggle"
                   onClick={() => setArchivedExpanded((v) => !v)}
                 >
                   <span>{archivedExpanded ? '▾' : '▸'} 归档 ({archivedSessions.length})</span>
                 </button>
                 {archivedExpanded ? (
-                  <div className="pulse-sidebar-archive-list">
+                  <div className="pluse-sidebar-archive-list">
                     {archivedSessions.map((s) => renderSession(s, true))}
                   </div>
                 ) : null}
@@ -416,20 +416,20 @@ export function SessionList({
           </div>
         </section>
 
-        <section className="pulse-sidebar-section-new-session">
+        <section className="pluse-sidebar-section-new-session">
           <button
             type="button"
-            className="pulse-sidebar-new-session-btn"
+            className="pluse-sidebar-new-session-btn"
             onClick={() => void handleCreateSession()}
             disabled={!activeProjectId}
             aria-label="开始新会话"
             title="开始新会话"
           >
-            <PlusIcon className="pulse-icon" />
+            <PlusIcon className="pluse-icon" />
           </button>
         </section>
 
-        {error ? <p className="pulse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
+        {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
       </div>
 
     </aside>

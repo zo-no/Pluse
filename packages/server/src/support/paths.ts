@@ -9,8 +9,12 @@ function resolveHomePath(value: string): string {
   return resolve(value)
 }
 
-export function getPulseRoot(): string {
-  return resolveHomePath(process.env['PULSE_ROOT']?.trim() || join(homedir(), '.pulse'))
+export function getPluseRoot(): string {
+  return resolveHomePath(
+    process.env['PLUSE_ROOT']?.trim()
+    || process.env['PULSE_ROOT']?.trim()
+    || join(homedir(), '.pluse'),
+  )
 }
 
 export function ensureDir(path: string): string {
@@ -21,7 +25,11 @@ export function ensureDir(path: string): string {
 }
 
 export function getDbPath(): string {
-  return resolveHomePath(process.env['PULSE_DB_PATH']?.trim() || join(getPulseRoot(), 'db.sqlite'))
+  return resolveHomePath(
+    process.env['PLUSE_DB_PATH']?.trim()
+    || process.env['PULSE_DB_PATH']?.trim()
+    || join(getPluseRoot(), 'db.sqlite'),
+  )
 }
 
 export function getHistoryRoot(): string {
@@ -29,7 +37,7 @@ export function getHistoryRoot(): string {
 }
 
 export function getRunRoot(): string {
-  return ensureDir(join(getPulseRoot(), 'run'))
+  return ensureDir(join(getPluseRoot(), 'run'))
 }
 
 export function getServerMetadataPath(): string {
@@ -37,11 +45,11 @@ export function getServerMetadataPath(): string {
 }
 
 export function getInboxDir(): string {
-  return ensureDir(join(getPulseRoot(), 'inbox'))
+  return ensureDir(join(getPluseRoot(), 'inbox'))
 }
 
 export function getSystemRuntimeDir(): string {
-  return ensureDir(join(getPulseRoot(), 'system', 'runtime'))
+  return ensureDir(join(getPluseRoot(), 'system', 'runtime'))
 }
 
 export function resolveWorkDir(workDir: string): string {
@@ -49,7 +57,7 @@ export function resolveWorkDir(workDir: string): string {
 }
 
 export function getProjectManifestDir(workDir: string): string {
-  return join(resolveWorkDir(workDir), '.pulse')
+  return join(resolveWorkDir(workDir), '.pluse')
 }
 
 export function getProjectManifestPath(workDir: string): string {
@@ -57,11 +65,11 @@ export function getProjectManifestPath(workDir: string): string {
 }
 
 export function getAssetsDir(sessionId: string): string {
-  return ensureDir(join(getPulseRoot(), 'assets', sessionId))
+  return ensureDir(join(getPluseRoot(), 'assets', sessionId))
 }
 
 export function getWebDistRoot(): string {
-  const override = process.env['PULSE_WEB_DIST']?.trim()
+  const override = process.env['PLUSE_WEB_DIST']?.trim() || process.env['PULSE_WEB_DIST']?.trim()
   if (override) return resolveHomePath(override)
 
   const candidates = [

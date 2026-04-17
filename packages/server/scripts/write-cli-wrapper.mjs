@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-const outputPath = resolve(import.meta.dirname, '../dist/pulse')
+const outputPath = resolve(import.meta.dirname, '../dist/pluse')
 mkdirSync(dirname(outputPath), { recursive: true })
 
 const contents = `#!/usr/bin/env bash
@@ -21,7 +21,7 @@ if [ -x "\${HOME}/.bun/bin/bun" ]; then
   exec "\${HOME}/.bun/bin/bun" "\${ROOT_DIR}/cli.js" "$@"
 fi
 
-echo "Pulse CLI requires Bun. Install Bun or set BUN=/absolute/path/to/bun." >&2
+echo "Pluse CLI requires Bun. Install Bun or set BUN=/absolute/path/to/bun." >&2
 exit 1
 `
 

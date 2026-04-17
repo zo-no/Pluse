@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { CreateSessionInput, CreateTaskInput, Session, Task, UpdateSessionInput } from '@melody-sync/types'
+import type { CreateSessionInput, CreateTaskInput, Session, Task, UpdateSessionInput } from '@pluse/types'
 import { getSession } from '../../models/session'
 import { createTask } from '../../models/task'
 import { INBOX_PROJECT_ID } from '../../services/projects'
@@ -11,7 +11,7 @@ function printJson(value: unknown): void {
 }
 
 export const sessionCommand = new Command('session')
-sessionCommand.description('Manage Pulse sessions')
+sessionCommand.description('Manage Pluse sessions')
 
 sessionCommand
   .command('list')

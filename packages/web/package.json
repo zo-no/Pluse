@@ -1,5 +1,5 @@
 {
-  "name": "@melody-sync/web",
+  "name": "@pluse/web",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@melody-sync/types": "workspace:*",
+    "@pluse/types": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

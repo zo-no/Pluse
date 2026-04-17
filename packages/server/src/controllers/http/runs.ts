@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import type { ApiResult } from '@melody-sync/types'
+import type { ApiResult } from '@pluse/types'
 import { getRun, getRunsBySession } from '../../models/run'
 import { cancelActiveRun } from '../../runtime/session-runner'
 

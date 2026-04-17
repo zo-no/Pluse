@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import type { Project } from '@melody-sync/types'
+import type { Project } from '@pluse/types'
 import { getOrCreateApiToken, loginWithPassword, setCredentials, setPassword } from '../models/auth'
 import { GET, POST, makeWorkDir, resetTestDb, setupTestDb } from './helpers'
 

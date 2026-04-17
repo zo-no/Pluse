@@ -1,7 +1,7 @@
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Hono } from 'hono'
-import type { ApiErr } from '@melody-sync/types'
+import type { ApiErr } from '@pluse/types'
 import { authRouter } from './controllers/http/auth'
 import { assetsRouter } from './controllers/http/assets'
 import { commandsRouter } from './controllers/http/commands'
@@ -23,7 +23,7 @@ const webDistRoot = getWebDistRoot()
 
 export const app = new Hono()
 
-app.get('/health', (c) => c.json({ ok: true, service: 'pulse', ts: Date.now() }))
+app.get('/health', (c) => c.json({ ok: true, service: 'pluse', ts: Date.now() }))
 
 app.route('/', authRouter)
 app.use('/api/*', requireAuth)
@@ -37,7 +37,7 @@ app.route('/api', commandsRouter)
 app.route('/api', assetsRouter)
 
 app.onError((err, c) => {
-  console.error('[pulse] unhandled error:', err)
+  console.error('[pluse] unhandled error:', err)
   const body: ApiErr = { ok: false, error: err.message ?? 'Internal server error' }
   return c.json(body, 500)
 })
@@ -64,7 +64,7 @@ app.notFound(async (c) => {
     return new Response(Bun.file(indexPath))
   }
 
-  return c.text('Pulse frontend is not built yet. Run `pnpm build` in the workspace.', 503)
+  return c.text('Pluse frontend is not built yet. Run `pnpm build` in the workspace.', 503)
 })
 
 function writeServerMetadata(port: number): void {
@@ -74,7 +74,7 @@ function writeServerMetadata(port: number): void {
       port,
       pid: process.pid,
       startedAt: new Date().toISOString(),
-      service: 'pulse',
+      service: 'pluse',
     }, null, 2),
   )
 }
@@ -92,7 +92,7 @@ export function startServer(port: number = DEFAULT_PORT): void {
   const server = Bun.serve({ port, fetch: app.fetch })
   const listeningPort = server.port ?? port
   writeServerMetadata(listeningPort)
-  console.log(`[pulse] listening on http://localhost:${listeningPort}`)
+  console.log(`[pluse] listening on http://localhost:${listeningPort}`)
 
   const shutdown = () => {
     stopScheduler()

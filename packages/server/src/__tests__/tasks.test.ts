@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import type { Project, Session, Task } from '@melody-sync/types'
+import type { Project, Session, Task } from '@pluse/types'
 import { DEL, GET, PATCH, POST, makeWorkDir, resetTestDb, setupTestDb } from './helpers'
 
 beforeAll(() => setupTestDb())

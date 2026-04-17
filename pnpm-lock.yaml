@@ -10,7 +10,7 @@ importers:
 
   packages/server:
     dependencies:
-      '@melody-sync/types':
+      '@pluse/types':
         specifier: workspace:*
         version: link:../types
       commander:
@@ -47,7 +47,7 @@ importers:
 
   packages/web:
     dependencies:
-      '@melody-sync/types':
+      '@pluse/types':
         specifier: workspace:*
         version: link:../types
       react:

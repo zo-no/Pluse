@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import type { ApiResult } from '@melody-sync/types'
+import type { ApiResult } from '@pluse/types'
 import { getOrCreateApiToken, hasAuth } from '../models/auth'
 import { getServerMetadataPath } from './paths'
 
@@ -20,7 +20,11 @@ function readServerMetadata(): ServerMetadata | null {
 }
 
 export function getCliMode(): CliMode {
-  const mode = (process.env['PULSE_CLI_MODE']?.trim().toLowerCase() || 'auto') as CliMode
+  const mode = (
+    process.env['PLUSE_CLI_MODE']?.trim().toLowerCase()
+    || process.env['PULSE_CLI_MODE']?.trim().toLowerCase()
+    || 'auto'
+  ) as CliMode
   return mode === 'daemon' || mode === 'offline' ? mode : 'auto'
 }
 
@@ -40,11 +44,11 @@ export async function discoverDaemonBaseUrl(): Promise<string | null> {
 export async function resolveDaemonBaseUrl(mode: CliMode, opts: { requireWrite?: boolean } = {}): Promise<string | null> {
   const baseUrl = await discoverDaemonBaseUrl()
   if (mode === 'daemon' && !baseUrl) {
-    throw new Error('Pulse daemon is not available')
+    throw new Error('Pluse daemon is not available')
   }
   if (mode === 'offline') {
     if (opts.requireWrite && baseUrl) {
-      throw new Error('Offline write operations are blocked while the Pulse daemon is running')
+      throw new Error('Offline write operations are blocked while the Pluse daemon is running')
     }
     return null
   }
@@ -56,7 +60,9 @@ export async function daemonRequest<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const token = process.env['PULSE_API_TOKEN']?.trim() || (hasAuth() ? getOrCreateApiToken() : '')
+  const token = process.env['PLUSE_API_TOKEN']?.trim()
+    || process.env['PULSE_API_TOKEN']?.trim()
+    || (hasAuth() ? getOrCreateApiToken() : '')
   const headers = new Headers(init.headers ?? {})
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init.body && !headers.has('Content-Type')) {

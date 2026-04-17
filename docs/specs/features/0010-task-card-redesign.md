@@ -35,11 +35,11 @@
 **文件**: `packages/web/src/index.css`  
 **文件**: `packages/web/src/views/components/TaskRail.tsx`（CSS class 名微调）
 
-#### 卡片容器 `.pulse-task-list`
+#### 卡片容器 `.pluse-task-list`
 - 改为 `display: flex; flex-direction: column; gap: 6px`（卡片间距）
 - 移除 `padding-right: 2px`，改为 `padding: 4px 0`
 
-#### 卡片本身 `.pulse-task-compact`
+#### 卡片本身 `.pluse-task-compact`
 - 改为独立卡片样式：
   - `background: var(--bg)`
   - `border: 1px solid var(--border)`
@@ -55,23 +55,23 @@
   - `border-color: var(--accent, #4f46e5)`（蓝色边框）
   - `box-shadow: 0 0 0 2px rgba(79,70,229,0.12)`
 
-#### 标题 `.pulse-task-compact-main strong`
+#### 标题 `.pluse-task-compact-main strong`
 - 字号从 12px 改为 13px
 - `font-weight: 600`（加粗）
 - 保留 `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`
 
-#### 元信息行 `.pulse-task-compact-meta`
+#### 元信息行 `.pluse-task-compact-meta`
 - 精简为：状态 badge + 分隔点 + assignee + kind
 - 移除 icon（SparkIcon/ClockIcon），改用纯文字 `AI · 周期` 格式
 - 字号保持 11px，`gap: 4px`
 
-#### 操作按钮 `.pulse-task-compact-actions`
+#### 操作按钮 `.pluse-task-compact-actions`
 - 默认 `opacity: 0`，hover 时 `opacity: 1`（卡片 hover 时显示）
 - 按钮尺寸 28px，`border-radius: 8px`
 
 #### 移除旧的分割线
-- `.pulse-task-card` 的 `border-bottom` 在 compact 模式下不需要（卡片间距代替）
-- 通过 `.pulse-task-compact` 覆盖 `border-bottom: 0`
+- `.pluse-task-card` 的 `border-bottom` 在 compact 模式下不需要（卡片间距代替）
+- 通过 `.pluse-task-compact` 覆盖 `border-bottom: 0`
 
 ### JSX 调整（TaskRail.tsx）
 

@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ApiResult } from '@melody-sync/types'
+import type { ApiResult } from '@pluse/types'
 import { setDb } from '../db'
 import { app } from '../server'
 
@@ -23,9 +23,9 @@ function resetRuntimeRoot(): string {
   if (runtimeRoot) {
     rmSync(runtimeRoot, { recursive: true, force: true })
   }
-  runtimeRoot = mkdtempSync(join(tmpdir(), 'pulse-test-'))
-  process.env['PULSE_ROOT'] = runtimeRoot
-  delete process.env['PULSE_DB_PATH']
+  runtimeRoot = mkdtempSync(join(tmpdir(), 'pluse-test-'))
+  process.env['PLUSE_ROOT'] = runtimeRoot
+  delete process.env['PLUSE_DB_PATH']
   return runtimeRoot
 }
 

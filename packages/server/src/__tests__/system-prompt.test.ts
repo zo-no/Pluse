@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'bun:test'
-import type { Project } from '@melody-sync/types'
+import type { Project } from '@pluse/types'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { resetTestDb, setupTestDb } from './helpers'
 
@@ -20,9 +20,9 @@ const mockProject: Project = {
 }
 
 describe('buildSessionSystemPrompt', () => {
-  it('includes Pulse concept block', () => {
+  it('includes Pluse concept block', () => {
     const prompt = buildSessionSystemPrompt(mockProject, 'sess_abc')
-    expect(prompt).toContain('你在 Pulse 系统中运行')
+    expect(prompt).toContain('你在 Pluse 系统中运行')
     expect(prompt).toContain('Project（项目）')
     expect(prompt).toContain('Session（会话）')
     expect(prompt).toContain('Task（任务）')
@@ -66,15 +66,15 @@ describe('buildSessionSystemPrompt', () => {
       systemPrompt: undefined,
     }
     const prompt = buildSessionSystemPrompt(minimalProject, 'sess_abc')
-    expect(prompt).toContain('你在 Pulse 系统中运行')
+    expect(prompt).toContain('你在 Pluse 系统中运行')
     expect(prompt).toContain('当前上下文：会话')
   })
 })
 
 describe('buildTaskSystemPrompt', () => {
-  it('includes Pulse concept block', () => {
+  it('includes Pluse concept block', () => {
     const prompt = buildTaskSystemPrompt(mockProject, 'task_abc', 'Write tests', 'sess_abc')
-    expect(prompt).toContain('你在 Pulse 系统中运行')
+    expect(prompt).toContain('你在 Pluse 系统中运行')
     expect(prompt).toContain('Task.originSessionId')
   })
 
@@ -119,10 +119,10 @@ describe('Session vs Task prompt difference', () => {
     expect(taskPrompt).toContain('当前上下文：任务执行')
   })
 
-  it('both share the Pulse concept block', () => {
+  it('both share the Pluse concept block', () => {
     const sessionPrompt = buildSessionSystemPrompt(mockProject, 'sess_abc')
     const taskPrompt = buildTaskSystemPrompt(mockProject, 'task_abc', 'Write tests', 'sess_abc')
-    const sharedText = '你在 Pulse 系统中运行'
+    const sharedText = '你在 Pluse 系统中运行'
     expect(sessionPrompt).toContain(sharedText)
     expect(taskPrompt).toContain(sharedText)
   })

@@ -26,6 +26,15 @@
 | 8 | Session Follow-up 队列消费 | — | ✅ done（含于 0002） |
 | 9 | 会话搜索 | 0009-session-search.md | ✅ done |
 
+### 第四批 — v2 重构（Thread 统一模型）
+
+| # | 功能 | Spec | 状态 |
+|---|------|------|------|
+| 10 | Quest 统一对象模型 | core/0003-thread-unified-model.md | 📝 spec ready |
+| 11 | 跨 Agent 上下文模型 | core/0004-cross-agent-context-model.md | 📝 spec ready |
+| 12 | Quest 执行模型 | core/0005-thread-execution-model.md | 📝 spec ready |
+| 13 | Quest 中心信息架构（UI） | features/0011-thread-centric-ia.md | 📝 spec ready |
+
 ---
 
 每个功能开始前需先讨论方案，写 spec，确认后再实现。

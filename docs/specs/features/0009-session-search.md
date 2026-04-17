@@ -8,7 +8,7 @@
 
 前端过滤，不需要后端 API。
 
-SessionList 顶部加搜索框，输入时按 session.name 实时过滤列表。melodysync 也没有实现后端搜索，前端过滤对当前数据量完全够用。
+SessionList 顶部加搜索框，输入时按 session.name 实时过滤列表。前端过滤对当前数据量完全够用，无需后端搜索接口。
 
 ## 验收标准
 

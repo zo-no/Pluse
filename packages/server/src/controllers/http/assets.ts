@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { Hono } from 'hono'
-import type { ApiResult } from '@melody-sync/types'
+import type { ApiResult } from '@pluse/types'
 import { getAssetsDir } from '../../support/paths'
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024 // 20MB

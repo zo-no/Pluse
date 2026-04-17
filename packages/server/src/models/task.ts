@@ -10,7 +10,7 @@ import type {
   TaskKind,
   TaskStatus,
   UpdateTaskInput,
-} from '@melody-sync/types'
+} from '@pluse/types'
 import { getDb } from '../db'
 
 type SqlValue = string | number | bigint | boolean | Uint8Array | null

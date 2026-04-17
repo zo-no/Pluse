@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { OpenProjectInput, Project, UpdateProjectInput } from '@melody-sync/types'
+import type { OpenProjectInput, Project, UpdateProjectInput } from '@pluse/types'
 import { getProject } from '../../models/project'
 import { archiveProject, deleteProjectWithCascade, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
@@ -16,7 +16,7 @@ function printProject(project: { id: string; name: string; workDir: string; goal
 }
 
 export const projectCommand = new Command('project')
-projectCommand.description('Manage Pulse projects')
+projectCommand.description('Manage Pluse projects')
 
 projectCommand
   .command('list')

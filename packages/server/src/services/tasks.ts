@@ -1,4 +1,4 @@
-import type { CreateTaskInput, ListTasksFilter, Task, UpdateTaskInput } from '@melody-sync/types'
+import type { CreateTaskInput, ListTasksFilter, Task, UpdateTaskInput } from '@pluse/types'
 import { createTaskOp, getTaskOps } from '../models/task-op'
 import { getTaskLogs } from '../models/task-log'
 import { createTask, deleteTask, getBlockedByTask, getTask, listTasks, updateTask } from '../models/task'

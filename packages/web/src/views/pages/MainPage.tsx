@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Session, Task } from '@melody-sync/types'
+import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Session, Task } from '@pluse/types'
 import * as api from '@/api/client'
 import { ChatView } from '@/views/components/ChatView'
 import { ClockIcon, MenuIcon, RailIcon, SidebarIcon, SparkIcon } from '@/views/components/icons'
@@ -59,8 +59,8 @@ function WorkspaceSection(props: {
   children: ReactNode
 }) {
   return (
-    <section className="pulse-detail-section">
-      <header className="pulse-detail-section-head">
+    <section className="pluse-detail-section">
+      <header className="pluse-detail-section-head">
         <div>
           <h2>{props.title}</h2>
           {props.hint ? <p>{props.hint}</p> : null}
@@ -76,17 +76,17 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
   const linkTarget = output.sessionId ? `/sessions/${output.sessionId}` : undefined
   const content = (
     <>
-      <div className="pulse-output-row-main">
-        <div className="pulse-output-row-top">
+      <div className="pluse-output-row-main">
+        <div className="pluse-output-row-top">
           <strong>{output.title}</strong>
-          <span className={`pulse-task-status is-${String(output.status).toLowerCase()}`}>{formatOutputStatus(output.status)}</span>
+          <span className={`pluse-task-status is-${String(output.status).toLowerCase()}`}>{formatOutputStatus(output.status)}</span>
         </div>
         <p>{output.summary || (output.kind === 'session_run' ? '该次会话运行已完成，输出可在对应会话里继续查看。' : '该次任务运行已完成。')}</p>
       </div>
-      <div className="pulse-output-row-meta">
+      <div className="pluse-output-row-meta">
         <span>{output.kind === 'session_run' ? '会话' : '任务'}</span>
-        <span className="pulse-meta-inline">
-          <ClockIcon className="pulse-icon pulse-inline-icon" />
+        <span className="pluse-meta-inline">
+          <ClockIcon className="pluse-icon pluse-inline-icon" />
           {formatDateTime(output.completedAt)}
         </span>
       </div>
@@ -94,31 +94,31 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
   )
 
   if (linkTarget) {
-    return <Link className="pulse-output-row" to={linkTarget}>{content}</Link>
+    return <Link className="pluse-output-row" to={linkTarget}>{content}</Link>
   }
 
-  return <div className="pulse-output-row">{content}</div>
+  return <div className="pluse-output-row">{content}</div>
 }
 
 function ProjectTaskRow({ task }: { task: Task }) {
   return (
-    <article className="pulse-task-row">
-      <div className="pulse-task-row-main">
-        <div className="pulse-task-row-top">
+    <article className="pluse-task-row">
+      <div className="pluse-task-row-main">
+        <div className="pluse-task-row-top">
           <strong>{task.title}</strong>
-          <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
+          <span className={`pluse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
         </div>
         {task.description || task.waitingInstructions ? (
           <p>{task.description || task.waitingInstructions}</p>
         ) : null}
       </div>
-      <div className="pulse-task-row-chips">
-        <span className="pulse-meta-inline">
-          <SparkIcon className="pulse-icon pulse-inline-icon" />
+      <div className="pluse-task-row-chips">
+        <span className="pluse-meta-inline">
+          <SparkIcon className="pluse-icon pluse-inline-icon" />
           {task.assignee === 'ai' ? 'AI' : '人工'}
         </span>
-        <span className="pulse-meta-inline">
-          <ClockIcon className="pulse-icon pulse-inline-icon" />
+        <span className="pluse-meta-inline">
+          <ClockIcon className="pluse-icon pluse-inline-icon" />
           {task.kind === 'scheduled' ? '定时' : task.kind === 'recurring' ? '周期' : '单次'}
         </span>
         {!task.enabled ? <span>已暂停</span> : null}
@@ -183,7 +183,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
         executor: {
           kind: 'ai_prompt',
           agent: 'codex',
-          prompt: 'Review the current project state at {workDir}. Summarize the next valuable actions and create any needed Pulse tasks for concrete follow-up work.',
+          prompt: 'Review the current project state at {workDir}. Summarize the next valuable actions and create any needed Pluse tasks for concrete follow-up work.',
         },
       })
       if (!result.ok) { setError(result.error); return }
@@ -204,114 +204,114 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
   }
 
   if (!overview) {
-    return <div className="pulse-page pulse-page-loading">正在加载项目…</div>
+    return <div className="pluse-page pluse-page-loading">正在加载项目…</div>
   }
 
   return (
-    <div className="pulse-page pulse-project-page">
-      <div className="pulse-detail-shell">
-        <div className="pulse-project-tabs-bar">
-          <div className="pulse-project-tab-group">
+    <div className="pluse-page pluse-project-page">
+      <div className="pluse-detail-shell">
+        <div className="pluse-project-tabs-bar">
+          <div className="pluse-project-tab-group">
             <button
               type="button"
-              className={`pulse-project-tab${tab === 'overview' ? ' is-active' : ''}`}
+              className={`pluse-project-tab${tab === 'overview' ? ' is-active' : ''}`}
               onClick={() => setTab('overview')}
             >
               概览
             </button>
             <button
               type="button"
-              className={`pulse-project-tab${tab === 'settings' ? ' is-active' : ''}`}
+              className={`pluse-project-tab${tab === 'settings' ? ' is-active' : ''}`}
               onClick={() => setTab('settings')}
             >
               设置
             </button>
           </div>
-          <div className="pulse-project-tab-meta">
-            <span className="pulse-info-path-sm">{shortPath(overview.project.workDir)}</span>
-            {overview.project.pinned ? <span className="pulse-inline-pill">固定</span> : null}
+          <div className="pluse-project-tab-meta">
+            <span className="pluse-info-path-sm">{shortPath(overview.project.workDir)}</span>
+            {overview.project.pinned ? <span className="pluse-inline-pill">固定</span> : null}
           </div>
         </div>
 
         {tab === 'overview' ? (
-          <div className="pulse-detail-grid">
-            <div className="pulse-overview-row">
-              <div className="pulse-overview-stat">
+          <div className="pluse-detail-grid">
+            <div className="pluse-overview-row">
+              <div className="pluse-overview-stat">
                 <span>会话</span>
                 <strong>{overview.counts.sessions}</strong>
               </div>
-              <div className="pulse-overview-stat">
+              <div className="pluse-overview-stat">
                 <span>短期任务</span>
                 <strong>{overview.counts.chatShortTasks}</strong>
               </div>
-              <div className="pulse-overview-stat">
+              <div className="pluse-overview-stat">
                 <span>项目任务</span>
                 <strong>{overview.counts.projectTasks}</strong>
               </div>
-              <div className="pulse-overview-stat">
+              <div className="pluse-overview-stat">
                 <span>AI 大脑</span>
                 <strong>{overview.brainTask?.enabled ? '运行中' : '未启用'}</strong>
               </div>
-              <div className="pulse-overview-stat">
+              <div className="pluse-overview-stat">
                 <span>调度</span>
-                <strong className="pulse-overview-stat-sm">{scheduleSummary(overview.schedule)}</strong>
+                <strong className="pluse-overview-stat-sm">{scheduleSummary(overview.schedule)}</strong>
               </div>
             </div>
 
             {overview.waitingTasks.length > 0 ? (
               <WorkspaceSection title="等待">
-                <div className="pulse-note-list">
+                <div className="pluse-note-list">
                   {overview.waitingTasks.map((task) => (
-                    <div key={task.id} className="pulse-note-item">
+                    <div key={task.id} className="pluse-note-item">
                       <div>
                         <strong>{task.title}</strong>
                         <p>{task.waitingInstructions || task.description || '等待新的输入后再继续。'}</p>
                       </div>
-                      <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
+                      <span className={`pluse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
                     </div>
                   ))}
                 </div>
               </WorkspaceSection>
             ) : null}
 
-            <div className="pulse-overview-two-col">
+            <div className="pluse-overview-two-col">
               <WorkspaceSection title="会话">
                 {overview.sessions.length > 0 ? (
-                  <div className="pulse-session-grid pulse-overview-scroll-list">
+                  <div className="pluse-session-grid pluse-overview-scroll-list">
                     {overview.sessions.map((session) => (
-                      <Link key={session.id} className="pulse-session-row" to={`/sessions/${session.id}`}>
+                      <Link key={session.id} className="pluse-session-row" to={`/sessions/${session.id}`}>
                         <div>
                           <strong>{session.name}</strong>
                           {session.activeRunId ? <p>运行中</p> : null}
                         </div>
-                        <span className="pulse-meta-inline">
-                          <ClockIcon className="pulse-icon pulse-inline-icon" />
+                        <span className="pluse-meta-inline">
+                          <ClockIcon className="pluse-icon pluse-inline-icon" />
                           {formatDateTime(session.updatedAt)}
                         </span>
                       </Link>
                     ))}
                   </div>
                 ) : (
-                  <p className="pulse-empty-inline">暂无会话</p>
+                  <p className="pluse-empty-inline">暂无会话</p>
                 )}
               </WorkspaceSection>
 
               <WorkspaceSection title="项目任务">
                 {overview.projectTasks.length > 0 ? (
-                  <div className="pulse-task-list pulse-overview-scroll-list">
+                  <div className="pluse-task-list pluse-overview-scroll-list">
                     {overview.projectTasks.map((task) => (
                       <ProjectTaskRow key={task.id} task={task} />
                     ))}
                   </div>
                 ) : (
-                  <p className="pulse-empty-inline">暂无项目任务</p>
+                  <p className="pluse-empty-inline">暂无项目任务</p>
                 )}
               </WorkspaceSection>
             </div>
 
             {overview.recentOutputs.length > 0 ? (
               <WorkspaceSection title="最近输出">
-                <div className="pulse-output-list pulse-output-list-scroll">
+                <div className="pluse-output-list pluse-output-list-scroll">
                   {overview.recentOutputs.map((output) => (
                     <OutputRow key={`${output.kind}:${output.id}`} output={output} />
                   ))}
@@ -320,17 +320,17 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             ) : null}
           </div>
         ) : (
-          <div className="pulse-detail-grid pulse-settings-grid">
-            <div className="pulse-form-grid pulse-form-grid-compact">
+          <div className="pluse-detail-grid pluse-settings-grid">
+            <div className="pluse-form-grid pluse-form-grid-compact">
               <label>
                 <span>项目名称</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
               </label>
-              <label className="pulse-form-span">
+              <label className="pluse-form-span">
                 <span>项目目标</span>
                 <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={2} />
               </label>
-              <label className="pulse-form-span">
+              <label className="pluse-form-span">
                 <span>系统 Prompt</span>
                 <textarea
                   value={systemPrompt}
@@ -340,22 +340,22 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                 />
               </label>
             </div>
-            <div className="pulse-settings-actions">
-              <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void toggleBrain()}>
+            <div className="pluse-settings-actions">
+              <button type="button" className="pluse-button pluse-button-ghost" onClick={() => void toggleBrain()}>
                 {overview.brainTask?.enabled ? '停用 AI 大脑' : '启用 AI 大脑'}
               </button>
-              <button type="button" className="pulse-button" onClick={() => void saveProject()} disabled={saving}>
+              <button type="button" className="pluse-button" onClick={() => void saveProject()} disabled={saving}>
                 {saving ? '保存中…' : '保存'}
               </button>
             </div>
-            <div className="pulse-settings-danger-zone">
+            <div className="pluse-settings-danger-zone">
               <h3>危险操作</h3>
               {!confirmDelete ? (
-                <button type="button" className="pulse-button pulse-button-danger" onClick={() => setConfirmDelete(true)}>
+                <button type="button" className="pluse-button pluse-button-danger" onClick={() => setConfirmDelete(true)}>
                   删除项目
                 </button>
               ) : (
-                <div className="pulse-delete-confirm">
+                <div className="pluse-delete-confirm">
                   <p>此操作将永久删除项目及其所有会话、任务和数据，不可恢复。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
                   <input
                     type="text"
@@ -364,16 +364,16 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                     placeholder={overview.project.name}
                     autoFocus
                   />
-                  <div className="pulse-delete-confirm-actions">
+                  <div className="pluse-delete-confirm-actions">
                     <button
                       type="button"
-                      className="pulse-button pulse-button-danger"
+                      className="pluse-button pluse-button-danger"
                       onClick={() => void handleDeleteProject()}
                       disabled={deleting || deleteConfirmName !== overview.project.name}
                     >
                       {deleting ? '删除中…' : '确认删除'}
                     </button>
-                    <button type="button" className="pulse-button pulse-button-ghost" onClick={() => { setConfirmDelete(false); setDeleteConfirmName('') }}>
+                    <button type="button" className="pluse-button pluse-button-ghost" onClick={() => { setConfirmDelete(false); setDeleteConfirmName('') }}>
                       取消
                     </button>
                   </div>
@@ -383,7 +383,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
           </div>
         )}
 
-        {error ? <p className="pulse-error pulse-detail-error">{error}</p> : null}
+        {error ? <p className="pluse-error pluse-detail-error">{error}</p> : null}
       </div>
     </div>
   )
@@ -418,49 +418,49 @@ function WorkspaceHeader(props: {
   onOpenProject: () => void
   onOpenWorkspace: () => void
 }) {
-  const title = props.activeSession?.name || props.activeProject?.name || 'Pulse'
+  const title = props.activeSession?.name || props.activeProject?.name || 'Pluse'
   const subtitle = props.activeSession?.activeRunId ? '运行中' : null
 
   return (
-    <header className="pulse-header">
-      <div className="pulse-header-primary">
-        <button type="button" className="pulse-icon-button pulse-mobile-only" onClick={props.onToggleSidebar} aria-label="打开侧栏">
-          <MenuIcon className="pulse-icon" />
+    <header className="pluse-header">
+      <div className="pluse-header-primary">
+        <button type="button" className="pluse-icon-button pluse-mobile-only" onClick={props.onToggleSidebar} aria-label="打开侧栏">
+          <MenuIcon className="pluse-icon" />
         </button>
-        <button type="button" className="pulse-wordmark" onClick={props.onOpenWorkspace}>
-          <span>Pulse</span>
+        <button type="button" className="pluse-wordmark" onClick={props.onOpenWorkspace}>
+          <span>Pluse</span>
         </button>
       </div>
 
-      <div className="pulse-header-center">
-        <div className="pulse-header-context">
+      <div className="pluse-header-center">
+        <div className="pluse-header-context">
           <strong>{title}</strong>
           {subtitle ? <span>{subtitle}</span> : null}
         </div>
       </div>
 
-      <div className="pulse-header-actions">
-        <span className="pulse-header-presence" aria-hidden="true" />
+      <div className="pluse-header-actions">
+        <span className="pluse-header-presence" aria-hidden="true" />
         {props.showSidebarToggle ? (
           <button
             type="button"
-            className={`pulse-icon-button pulse-header-action-icon${props.sidebarVisible ? ' is-active' : ''}`}
+            className={`pluse-icon-button pluse-header-action-icon${props.sidebarVisible ? ' is-active' : ''}`}
             onClick={props.onToggleSidebar}
             aria-label="切换侧栏"
             title="切换侧栏"
           >
-            <SidebarIcon className="pulse-icon" />
+            <SidebarIcon className="pluse-icon" />
           </button>
         ) : null}
         {props.showRailToggle ? (
           <button
             type="button"
-            className={`pulse-icon-button pulse-header-action-icon pulse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
+            className={`pluse-icon-button pluse-header-action-icon pluse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
             aria-label="切换任务栏"
             title="切换任务栏"
           >
-            <RailIcon className="pulse-icon" />
+            <RailIcon className="pluse-icon" />
           </button>
         ) : null}
       </div>
@@ -516,8 +516,8 @@ function Shell({ auth }: { auth: AuthMe }) {
 
   useEffect(() => {
     const hasOverlay = mobileSidebarOpen || mobileRailOpen
-    document.body.classList.toggle('pulse-overlay-open', hasOverlay)
-    return () => document.body.classList.remove('pulse-overlay-open')
+    document.body.classList.toggle('pluse-overlay-open', hasOverlay)
+    return () => document.body.classList.remove('pluse-overlay-open')
   }, [mobileSidebarOpen, mobileRailOpen])
 
   useEffect(() => {
@@ -542,16 +542,16 @@ function Shell({ auth }: { auth: AuthMe }) {
     return <Navigate to="/login" replace />
   }
 
-  if (loading) return <div className="pulse-loading">正在加载 Pulse…</div>
+  if (loading) return <div className="pluse-loading">正在加载 Pluse…</div>
   if (loadError) return (
-    <div className="pulse-loading">
+    <div className="pluse-loading">
       <p>加载失败：{loadError}</p>
-      <button type="button" className="pulse-button" onClick={() => { void loadProjects() }}>重试</button>
+      <button type="button" className="pluse-button" onClick={() => { void loadProjects() }}>重试</button>
     </div>
   )
 
   return (
-    <div className="pulse-app-shell">
+    <div className="pluse-app-shell">
       <WorkspaceHeader
         activeProject={activeProject}
         activeSession={activeSession}
@@ -577,7 +577,7 @@ function Shell({ auth }: { auth: AuthMe }) {
       />
 
       <div
-        className={`pulse-workspace${isProjectRoute ? ' is-project-route' : ''}${isSessionRoute ? ' is-session-route' : ''}`}
+        className={`pluse-workspace${isProjectRoute ? ' is-project-route' : ''}${isSessionRoute ? ' is-session-route' : ''}`}
         style={isDesktop
           ? {
               gridTemplateColumns: showRail
@@ -588,7 +588,7 @@ function Shell({ auth }: { auth: AuthMe }) {
       >
         <button
           type="button"
-          className={`pulse-backdrop${mobileSidebarOpen || mobileRailOpen ? ' is-visible' : ''}`}
+          className={`pluse-backdrop${mobileSidebarOpen || mobileRailOpen ? ' is-visible' : ''}`}
           onClick={() => {
             setMobileSidebarOpen(false)
             setMobileRailOpen(false)
@@ -596,7 +596,7 @@ function Shell({ auth }: { auth: AuthMe }) {
           aria-label="关闭面板"
         />
 
-        <div className={`pulse-sidebar-shell${sidebarVisible ? ' is-open' : ''}${isDesktop && !desktopSidebarVisible ? ' is-hidden' : ''}`}>
+        <div className={`pluse-sidebar-shell${sidebarVisible ? ' is-open' : ''}${isDesktop && !desktopSidebarVisible ? ' is-hidden' : ''}`}>
           <SessionList
             projects={projects}
             activeProjectId={activeProjectId}
@@ -607,8 +607,8 @@ function Shell({ auth }: { auth: AuthMe }) {
           />
         </div>
 
-        <main className="pulse-main-shell">
-          <div className="pulse-main">
+        <main className="pluse-main-shell">
+          <div className="pluse-main">
             <Routes>
               <Route path="/" element={<Navigate to={projects[0] ? `/projects/${projects[0].id}` : '/login'} replace />} />
               <Route
@@ -645,7 +645,7 @@ function Shell({ auth }: { auth: AuthMe }) {
         </main>
 
         {showRail ? (
-          <div className={`pulse-rail-shell${railVisible ? ' is-open' : ''}${isDesktop && !desktopRailVisible ? ' is-hidden' : ''}`}>
+          <div className={`pluse-rail-shell${railVisible ? ' is-open' : ''}${isDesktop && !desktopRailVisible ? ' is-hidden' : ''}`}>
             <TaskRail
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
@@ -676,7 +676,7 @@ export function MainPage() {
     })
   }, [])
 
-  if (!auth) return <div className="pulse-loading">正在加载 Pulse…</div>
+  if (!auth) return <div className="pluse-loading">正在加载 Pluse…</div>
 
   return (
     <Routes>

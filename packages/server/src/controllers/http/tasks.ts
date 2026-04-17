@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, CreateTaskInput, ListTasksFilter, Task, UpdateTaskInput } from '@melody-sync/types'
+import type { ApiResult, CreateTaskInput, ListTasksFilter, Task, UpdateTaskInput } from '@pluse/types'
 import { getTaskRuns } from '../../models/task-run'
 import { createTaskWithEffects, deleteTaskWithEffects, getTaskLogsView, getTaskOpsView, getTaskView, listTaskViews, markTaskDone, runTaskNow, updateTaskWithEffects, cancelTask } from '../../services/tasks'
 import { getTask, updateTask } from '../../models/task'

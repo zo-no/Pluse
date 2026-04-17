@@ -19,7 +19,7 @@
 2. session_events → runs → sessions
 3. projects
 
-CLI：`pulse project delete <id> [--confirm]`
+CLI：`pluse project delete <id> [--confirm]`
 
 ### 前端
 
@@ -30,4 +30,4 @@ CLI：`pulse project delete <id> [--confirm]`
 - [ ] `DELETE /api/projects/:id` 级联删除所有数据
 - [ ] 前端有删除入口和确认对话框
 - [ ] 删除后跳转首页
-- [ ] `pulse project delete <id>` CLI 命令可用
+- [ ] `pluse project delete <id>` CLI 命令可用

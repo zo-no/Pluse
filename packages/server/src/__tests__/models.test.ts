@@ -17,22 +17,22 @@ beforeAll(() => setupTestDb())
 beforeEach(() => resetTestDb())
 
 describe('project model', () => {
-  it('creates, lists, updates and deletes Pulse projects', () => {
-    const project = createProjectRecord({ name: 'Alpha', workDir: '/tmp/pulse-alpha' })
+  it('creates, lists, updates and deletes Pluse projects', () => {
+    const project = createProjectRecord({ name: 'Alpha', workDir: '/tmp/pluse-alpha' })
     expect(project.id).toMatch(/^proj_/)
-    expect(project.workDir).toBe('/tmp/pulse-alpha')
+    expect(project.workDir).toBe('/tmp/pluse-alpha')
     expect(project.visibility).toBe('user')
 
     expect(listProjects()).toHaveLength(1)
 
     const updated = updateProject(project.id, {
       name: 'Alpha Renamed',
-      goal: 'Ship Pulse',
+      goal: 'Ship Pluse',
       systemPrompt: 'Stay focused.',
       pinned: true,
     })
     expect(updated.name).toBe('Alpha Renamed')
-    expect(updated.goal).toBe('Ship Pulse')
+    expect(updated.goal).toBe('Ship Pluse')
     expect(updated.systemPrompt).toBe('Stay focused.')
     expect(updated.pinned).toBe(true)
 

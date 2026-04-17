@@ -1,5 +1,5 @@
 import { Cron } from 'croner'
-import type { RecurringConfig, Task } from '@melody-sync/types'
+import type { RecurringConfig, Task } from '@pluse/types'
 import { createTaskOp } from '../models/task-op'
 import { createTaskLog, updateTaskLogCompleted } from '../models/task-log'
 import { createTask, getBlockedByTask, getTask, listTasks, reconcileRunningTasks, updateTask } from '../models/task'

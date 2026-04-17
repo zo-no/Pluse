@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, CreateSessionInput, CreateTaskInput, PagedResult, SendMessageInput, Session, SessionEvent, Task, UpdateSessionInput } from '@melody-sync/types'
+import type { ApiResult, CreateSessionInput, CreateTaskInput, PagedResult, SendMessageInput, Session, SessionEvent, Task, UpdateSessionInput } from '@pluse/types'
 import { appendEvent, listEvents } from '../../models/history'
 import { getSession } from '../../models/session'
 import { createTask, getTask } from '../../models/task'

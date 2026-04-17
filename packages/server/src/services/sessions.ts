@@ -1,4 +1,4 @@
-import type { CreateSessionInput, Session, UpdateSessionInput } from '@melody-sync/types'
+import type { CreateSessionInput, Session, UpdateSessionInput } from '@pluse/types'
 import { createSession, deleteSession, getSession, listSessions, updateSession } from '../models/session'
 import { emit } from './events'
 

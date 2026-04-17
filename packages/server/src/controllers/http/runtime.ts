@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { ApiResult, RuntimeModelCatalog, RuntimeTool } from '@melody-sync/types'
+import type { ApiResult, RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 import { getRuntimeModelCatalog, listRuntimeTools } from '../../runtime/catalog'
 
 function ok<T>(data: T): ApiResult<T> {
