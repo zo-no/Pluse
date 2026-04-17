@@ -11,6 +11,13 @@ function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
 }
 
+function parseSafeLimit(raw: string | undefined, defaultVal = 20, max = 500): number {
+  if (!raw) return defaultVal
+  const n = parseInt(raw, 10)
+  if (isNaN(n) || n < 1) return defaultVal
+  return Math.min(n, max)
+}
+
 function errBody(error: string): ApiResult<never> {
   return { ok: false, error }
 }
@@ -179,16 +186,16 @@ tasksRouter.post('/tasks/:id/create-session', async (c) => {
 })
 
 tasksRouter.get('/tasks/:id/logs', (c) => {
-  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : 20
+  const limit = parseSafeLimit(c.req.query('limit'))
   return c.json(ok(getTaskLogsView(c.req.param('id'), limit)))
 })
 
 tasksRouter.get('/tasks/:id/ops', (c) => {
-  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : 20
+  const limit = parseSafeLimit(c.req.query('limit'))
   return c.json(ok(getTaskOpsView(c.req.param('id'), limit)))
 })
 
 tasksRouter.get('/tasks/:id/runs', (c) => {
-  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : 20
+  const limit = parseSafeLimit(c.req.query('limit'))
   return c.json(ok(getTaskRuns(c.req.param('id'), limit)))
 })

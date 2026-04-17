@@ -259,6 +259,18 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   }, [sessionId])
 
   useEffect(() => {
+    if (!error) return
+    const t = setTimeout(() => setError(null), 4000)
+    return () => clearTimeout(t)
+  }, [error])
+
+  useEffect(() => {
+    if (!uploadError) return
+    const t = setTimeout(() => setUploadError(null), 4000)
+    return () => clearTimeout(t)
+  }, [uploadError])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [events])
 

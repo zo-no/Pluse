@@ -121,8 +121,12 @@ sessionsRouter.delete('/sessions/:id', (c) => {
 
 sessionsRouter.get('/sessions/:id/events', (c) => {
   const id = c.req.param('id')
-  const limit = c.req.query('limit') ? parseInt(c.req.query('limit')!, 10) : undefined
-  const offset = c.req.query('offset') ? parseInt(c.req.query('offset')!, 10) : undefined
+  const limitRaw = c.req.query('limit')
+  const offsetRaw = c.req.query('offset')
+  const limitParsed = limitRaw ? parseInt(limitRaw, 10) : NaN
+  const offsetParsed = offsetRaw ? parseInt(offsetRaw, 10) : NaN
+  const limit = !isNaN(limitParsed) && limitParsed > 0 ? Math.min(limitParsed, 2000) : undefined
+  const offset = !isNaN(offsetParsed) && offsetParsed >= 0 ? offsetParsed : undefined
   const items = listEvents(id, { limit, offset })
   const payload: PagedResult<SessionEvent> = {
     items,

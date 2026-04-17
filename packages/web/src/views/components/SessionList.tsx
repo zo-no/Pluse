@@ -352,6 +352,8 @@ export function SessionList({
             {unpinnedSessions.length > 0 ? unpinnedSessions.map((s) => renderSession(s)) : null}
             {sessions.length === 0 ? (
               <div className="pulse-empty-state pulse-sidebar-empty">还没有会话</div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="pulse-empty-state pulse-sidebar-empty">无搜索结果</div>
             ) : null}
 
             {archivedSessions.length > 0 ? (

@@ -60,6 +60,12 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
   }, [toast])
 
   useEffect(() => {
+    if (!error) return
+    const t = setTimeout(() => setError(null), 4000)
+    return () => clearTimeout(t)
+  }, [error])
+
+  useEffect(() => {
     void api.getTaskOps(task.id).then((r) => { if (r.ok) setOps(r.data) })
     void api.getTaskLogs(task.id).then((r) => { if (r.ok) setLogs(r.data) })
     if (task.assignee === 'ai') {

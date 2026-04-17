@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { Hono } from 'hono'
 import type { ApiResult } from '@melody-sync/types'
@@ -74,6 +74,10 @@ assetsRouter.post('/assets/upload', async (c) => {
   const filename = `${timestamp}-${safeName}`
   const dir = getAssetsDir(sessionId)
   const savedPath = join(dir, filename)
+  // Guard against path traversal
+  if (!resolve(savedPath).startsWith(resolve(dir))) {
+    return c.json({ ok: false, error: 'Invalid filename' } as ApiResult<never>, 400)
+  }
 
   const buffer = await file.arrayBuffer()
   writeFileSync(savedPath, Buffer.from(buffer))
