@@ -81,7 +81,7 @@ POST /api/quests/:id/messages
 
 完成后回写：
   → quest.codexThreadId = run.codexThreadId（若有）
-  → quest.claude_session_id = run.claudeSessionId（若有）
+  → quest.claudeSessionId = run.claudeSessionId（若有）
   → quest.updatedAt = now
   → 若 quest.autoRenamePending && 这是 Quest 的第一个 Run：
       触发自动命名（见"自动命名"）
@@ -161,7 +161,7 @@ quest.updatedAt = now
 
 // reviewOnComplete（仅 automation/manual run，chat run 不触发）
 if quest.reviewOnComplete && run.state === 'completed':
-  if quest.deleted === false:   // Quest 已归档则跳过，不创建孤立 Todo
+  if quest.deleted !== true:   // Quest 未归档才创建 Todo，已归档则跳过
     create Todo {
       projectId: quest.projectId,
       originQuestId: quest.id,
@@ -280,11 +280,11 @@ Automation 的 `executorOptions.continueQuest` 控制每次执行是否复用 Qu
 ### 超时
 
 ```
-每个 Run 创建时设置超时（默认 300 秒，可通过 Automation.executorOptions.timeout 覆盖）：
+每个 Run 创建时设置超时（默认 300 秒，可通过 quest.executorOptions.timeout 覆盖，仅 task 态有效）：
   超时后：
     SIGTERM → 等 15 秒 grace period → SIGKILL
     Run state = 'failed', failureReason = 'timeout'
-    Automation.status = 'failed'（若有）
+    quest.status = 'failed'（仅 task 态）
 ```
 
 ### 取消
@@ -382,7 +382,7 @@ Run 完成后：
 1. 查询所有 state = 'accepted' 或 state = 'running' 的 Run：
    - 若 runnerProcessId 对应的进程已不存在：
        Run state = 'failed', failureReason = 'process_lost'
-       Automation.status = 'failed'（若有）
+       quest.status = 'failed'（仅 task 态）
        quest.activeRunId = null
 
 2. 查询所有 quest.followUpQueue 非空的 Quest：
@@ -402,7 +402,6 @@ Run 完成后：
 
 ### 触发来源
 - [ ] `runs.trigger` 正确区分 `chat` / `manual` / `automation`
-- [ ] `runs.automation_id` 在 automation/manual 触发时有值，chat 触发时为 null
 
 ### 并发
 - [ ] Quest 有活跃 Run 时，chat 消息入 followUpQueue 而非创建新 Run

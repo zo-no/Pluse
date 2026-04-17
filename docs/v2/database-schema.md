@@ -155,7 +155,7 @@ CREATE TABLE quest_ops (
   created_at  TEXT NOT NULL
 ) STRICT;
 
-CREATE INDEX idx_quest_ops ON quest_ops (quest_id, created_at DESC);
+CREATE INDEX idx_quest_ops_quest ON quest_ops (quest_id, created_at DESC);
 
 
 CREATE TABLE settings (
