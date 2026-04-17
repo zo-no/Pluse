@@ -222,6 +222,32 @@ export function createSessionFromTask(taskId: string, input?: { name?: string })
   return request<{ session: Session; task: Task }>('POST', `/tasks/${taskId}/create-session`, input)
 }
 
+export interface UploadedAsset {
+  id: string
+  sessionId: string
+  filename: string
+  savedPath: string
+  mimeType: string
+  sizeBytes: number
+  createdAt: string
+}
+
+export async function uploadAsset(sessionId: string, file: File): Promise<ApiResult<UploadedAsset>> {
+  const form = new FormData()
+  form.append('sessionId', sessionId)
+  form.append('file', file)
+  const csrfToken = getCookie('pulse_csrf')
+  const headers = new Headers()
+  if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
+  let res: Response
+  try {
+    res = await fetch(`${BASE}/assets/upload`, { method: 'POST', credentials: 'include', headers, body: form })
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+  return res.json() as Promise<ApiResult<UploadedAsset>>
+}
+
 export function getRuntimeTools(): Promise<ApiResult<RuntimeTool[]>> {
   return request<RuntimeTool[]>('GET', '/tools')
 }

@@ -59,9 +59,9 @@ export interface SendMessageInput {
 }
 
 export interface MessageAttachment {
-  type: 'file' | 'image'
-  assetId?: string
-  name: string
+  assetId: string
+  filename: string
+  savedPath: string
   mimeType: string
 }
 

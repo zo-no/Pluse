@@ -56,6 +56,10 @@ export function getProjectManifestPath(workDir: string): string {
   return join(getProjectManifestDir(workDir), 'project.json')
 }
 
+export function getAssetsDir(sessionId: string): string {
+  return ensureDir(join(getPulseRoot(), 'assets', sessionId))
+}
+
 export function getWebDistRoot(): string {
   const override = process.env['PULSE_WEB_DIST']?.trim()
   if (override) return resolveHomePath(override)

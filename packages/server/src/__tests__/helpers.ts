@@ -67,8 +67,13 @@ export async function apiReq<T = unknown>(
   const headers = new Headers(options.headers ?? {})
   const init: RequestInit = { method, headers }
   if (body !== undefined) {
-    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-    init.body = JSON.stringify(body)
+    if (body instanceof FormData) {
+      // let the runtime set Content-Type with boundary
+      init.body = body
+    } else {
+      if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+      init.body = JSON.stringify(body)
+    }
   }
   const res = await app.request(`http://localhost${path}`, init)
   const json = (await res.json()) as ApiResult<T>

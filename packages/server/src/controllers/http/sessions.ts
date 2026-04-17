@@ -54,9 +54,9 @@ const SendMessageSchema = z.object({
   attachments: z
     .array(
       z.object({
-        type: z.enum(['file', 'image']),
-        assetId: z.string().optional(),
-        name: z.string(),
+        assetId: z.string(),
+        filename: z.string(),
+        savedPath: z.string(),
         mimeType: z.string(),
       }),
     )

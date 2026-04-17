@@ -22,9 +22,9 @@
 
 | # | 功能 | Spec | 状态 |
 |---|------|------|------|
-| 7 | 文件附件上传 | 0007-file-attachments.md | 待讨论 |
-| 8 | Session Follow-up 队列消费 | 0008-followup-queue.md | 待讨论 |
-| 9 | 会话搜索 | 0009-session-search.md | 待讨论 |
+| 7 | 文件附件上传 | 0007-file-attachments.md | ✅ done |
+| 8 | Session Follow-up 队列消费 | — | ✅ done（含于 0002） |
+| 9 | 会话搜索 | 0009-session-search.md | ✅ done |
 
 ---
 

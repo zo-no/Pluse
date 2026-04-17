@@ -42,8 +42,9 @@ export interface SubmitSessionMessageInput {
   effort?: string | null
   thinking?: boolean
   attachments?: Array<{
-    type: 'file' | 'image'
-    name: string
+    assetId: string
+    filename: string
+    savedPath: string
     mimeType: string
   }>
 }
@@ -637,17 +638,26 @@ function buildPrompt(sessionId: string, recordedText: string, opts: { nativeResu
   ].join('\n\n')
 }
 
-function describeAttachmentLabel(attachment: { type: 'file' | 'image'; mimeType: string }): string {
-  if (attachment.type === 'image') return 'image'
-  if (attachment.mimeType.startsWith('video/')) return 'video'
+function labelForMime(mimeType: string): string {
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('video/')) return 'video'
   return 'file'
 }
 
+// Text recorded in session_events (shown to user — no local paths)
 function buildRecordedUserText(input: SubmitSessionMessageInput): string {
   const base = input.text.trim()
   const attachmentLines = (input.attachments ?? [])
-    .map((attachment) => `[User attached ${describeAttachmentLabel(attachment)}: ${attachment.name}]`)
+    .map((a) => `[User attached ${labelForMime(a.mimeType)}: ${a.filename}]`)
+  if (attachmentLines.length === 0) return base
+  return `${attachmentLines.join('\n')}\n\n${base}`.trim()
+}
 
+// Prompt sent to AI — includes local savedPath so AI can read the file
+function buildAiPromptText(input: SubmitSessionMessageInput): string {
+  const base = input.text.trim()
+  const attachmentLines = (input.attachments ?? [])
+    .map((a) => `[User attached ${labelForMime(a.mimeType)}: ${a.filename} -> ${a.savedPath}]`)
   if (attachmentLines.length === 0) return base
   return `${attachmentLines.join('\n')}\n\n${base}`.trim()
 }
@@ -1039,6 +1049,7 @@ export function submitSessionMessage(input: SubmitSessionMessageInput): SubmitSe
 
   const requestId = input.requestId?.trim() || genRequestId()
   const recordedText = buildRecordedUserText(input)
+  const aiPromptText = buildAiPromptText(input)
   const runtimePreferences = snapshotSessionPreferences(input.sessionId)
 
   appendEvent(input.sessionId, makeMessageEvent('user', recordedText))
@@ -1046,7 +1057,7 @@ export function submitSessionMessage(input: SubmitSessionMessageInput): SubmitSe
   if (session.activeRunId) {
     enqueueFollowUp(input.sessionId, {
       requestId,
-      text: recordedText,
+      text: aiPromptText,
       tool: runtimePreferences.tool,
       model: runtimePreferences.model,
       effort: runtimePreferences.effort,
@@ -1059,7 +1070,7 @@ export function submitSessionMessage(input: SubmitSessionMessageInput): SubmitSe
     }
   }
 
-  const run = startRunForSession(input.sessionId, requestId, recordedText, runtimePreferences)
+  const run = startRunForSession(input.sessionId, requestId, aiPromptText, runtimePreferences)
   return {
     queued: false,
     run,

@@ -149,8 +149,15 @@ export function SessionList({
     await loadSessions()
   }
 
-  const pinnedSessions = sessions.filter((s) => s.pinned)
-  const unpinnedSessions = sessions.filter((s) => !s.pinned)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredSessions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return q ? sessions.filter((s) => s.name.toLowerCase().includes(q)) : sessions
+  }, [sessions, searchQuery])
+
+  const pinnedSessions = filteredSessions.filter((s) => s.pinned)
+  const unpinnedSessions = filteredSessions.filter((s) => !s.pinned)
 
   function renderSession(session: Session, isArchived = false) {
     if (renamingId === session.id) {
@@ -324,6 +331,19 @@ export function SessionList({
             </div>
           ) : null}
         </div>
+
+        {/* Search */}
+        {sessions.length > 0 && (
+          <div className="pulse-sidebar-search">
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索会话…"
+              className="pulse-sidebar-search-input"
+            />
+          </div>
+        )}
 
         {/* Session list */}
         <section className="pulse-sidebar-section pulse-sidebar-section-list">

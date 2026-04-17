@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
+import type { MessageAttachment, RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
 import * as api from '@/api/client'
-import { SendIcon } from './icons'
+import type { UploadedAsset } from '@/api/client'
+import { AttachIcon, SendIcon } from './icons'
 
 interface ChatViewProps {
   sessionId: string
@@ -154,7 +155,57 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   const [runtimeTools, setRuntimeTools] = useState<RuntimeTool[]>([])
   const [catalog, setCatalog] = useState<RuntimeModelCatalog | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([])
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  const MAX_ATTACHMENTS = 4
+  const MAX_FILE_SIZE = 20 * 1024 * 1024
+
+  function addFiles(files: File[]) {
+    const oversized = files.find((f) => f.size > MAX_FILE_SIZE)
+    if (oversized) { setUploadError(`文件 ${oversized.name} 超过 20MB 限制`); return }
+    setPendingFiles((prev) => {
+      const merged = [...prev, ...files].slice(0, MAX_ATTACHMENTS)
+      if (prev.length + files.length > MAX_ATTACHMENTS) setUploadError(`最多附加 ${MAX_ATTACHMENTS} 个文件`)
+      // build preview URLs for new files
+      const newUrls = files.slice(0, MAX_ATTACHMENTS - prev.length).map((f) =>
+        f.type.startsWith('image/') ? URL.createObjectURL(f) : null
+      )
+      setPreviewUrls((prevUrls) => [...prevUrls, ...newUrls].slice(0, MAX_ATTACHMENTS))
+      return merged
+    })
+    setUploadError(null)
+  }
+
+  function removeFile(index: number) {
+    setPreviewUrls((prev) => {
+      const url = prev[index]
+      if (url) URL.revokeObjectURL(url)
+      return prev.filter((_, i) => i !== index)
+    })
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  // release all ObjectURLs when files are cleared after send
+  function clearPendingFiles() {
+    previewUrls.forEach((url) => { if (url) URL.revokeObjectURL(url) })
+    setPendingFiles([])
+    setPreviewUrls([])
+  }
+
+  function getFileTypeLabel(file: File): string {
+    const ext = file.name.lastIndexOf('.') >= 0
+      ? file.name.slice(file.name.lastIndexOf('.') + 1).toUpperCase().slice(0, 8)
+      : ''
+    if (ext) return ext
+    if (file.type.startsWith('image/')) return 'IMAGE'
+    if (file.type.startsWith('video/')) return 'VIDEO'
+    if (file.type.startsWith('audio/')) return 'AUDIO'
+    return 'FILE'
+  }
 
   async function refreshSession() {
     const result = await api.getSession(sessionId)
@@ -229,15 +280,36 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   }
 
   async function handleSend() {
-    if (!draft.trim() || sending || !session) return
+    if ((!draft.trim() && pendingFiles.length === 0) || sending || !session) return
     setSending(true)
     setError(null)
+    setUploadError(null)
+
+    // Upload pending files first
+    let attachments: MessageAttachment[] = []
+    if (pendingFiles.length > 0) {
+      const results = await Promise.all(pendingFiles.map((f) => api.uploadAsset(sessionId, f)))
+      const failed = results.find((r) => !r.ok)
+      if (failed && !failed.ok) {
+        setSending(false)
+        setUploadError(failed.error)
+        return
+      }
+      attachments = (results as Array<{ ok: true; data: UploadedAsset }>).map((r) => ({
+        assetId: r.data.id,
+        filename: r.data.filename,
+        savedPath: r.data.savedPath,
+        mimeType: r.data.mimeType,
+      }))
+    }
+
     const result = await api.sendMessage(sessionId, {
-      text: draft.trim(),
+      text: draft.trim() || '请查看附件',
       tool: session.tool,
       model: session.model ?? null,
       effort: session.effort ?? null,
       thinking: session.thinking,
+      attachments: attachments.length > 0 ? attachments : undefined,
     })
     setSending(false)
     if (!result.ok) {
@@ -245,6 +317,7 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
       return
     }
     setDraft('')
+    clearPendingFiles()
     setSession(result.data.session)
     onSessionLoaded?.(result.data.session)
     await refreshThread()
@@ -292,6 +365,32 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
               {latestRun ? <span>最近一次运行：{formatRunState(latestRun.state)}</span> : null}
             </div>
           </div>
+          {pendingFiles.length > 0 && (
+            <div className="pulse-attachment-strip">
+              {pendingFiles.map((file, i) => {
+                const url = previewUrls[i]
+                const isImage = file.type.startsWith('image/')
+                return (
+                  <div key={i} className="pulse-attachment-item">
+                    {isImage && url ? (
+                      <img src={url} alt={file.name} className="pulse-attachment-thumb" />
+                    ) : (
+                      <div className="pulse-attachment-file-chip">
+                        <span className="pulse-attachment-file-name">{file.name}</span>
+                        <span className="pulse-attachment-file-type">{getFileTypeLabel(file)}</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="pulse-attachment-remove-btn"
+                      onClick={() => removeFile(i)}
+                      aria-label="移除"
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -301,8 +400,29 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
                 void handleSend()
               }
             }}
+            onPaste={(event) => {
+              // Use items API for better compatibility (supports screenshots)
+              const items = event.clipboardData?.items
+              if (!items) return
+              const files: File[] = []
+              for (const item of Array.from(items)) {
+                const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null
+                if (file) files.push(file)
+              }
+              if (files.length > 0) {
+                event.preventDefault()
+                addFiles(files)
+              }
+            }}
             placeholder="给当前会话发送消息…"
             rows={4}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            onChange={(e) => { if (e.target.files) addFiles(Array.from(e.target.files)); e.target.value = '' }}
           />
           <div className="pulse-composer-actions">
             <div className="pulse-runtime-controls pulse-runtime-controls-inline">
@@ -327,6 +447,16 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
               )}
             </div>
             <div className="pulse-composer-send-group">
+              <button
+                type="button"
+                className="pulse-icon-button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || !!session.activeRunId || pendingFiles.length >= MAX_ATTACHMENTS}
+                aria-label="附加文件"
+                title="附加文件"
+              >
+                <AttachIcon className="pulse-icon" />
+              </button>
               {session.activeRunId ? (
                 <button
                   type="button"
@@ -351,6 +481,7 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
               </button>
             </div>
           </div>
+          {uploadError ? <p className="pulse-error">{uploadError}</p> : null}
           {error ? <p className="pulse-error">{error}</p> : null}
         </footer>
       </div>

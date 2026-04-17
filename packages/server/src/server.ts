@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ApiErr } from '@melody-sync/types'
 import { authRouter } from './controllers/http/auth'
+import { assetsRouter } from './controllers/http/assets'
 import { commandsRouter } from './controllers/http/commands'
 import { eventsRouter } from './controllers/http/events'
 import { projectsRouter } from './controllers/http/projects'
@@ -33,6 +34,7 @@ app.route('/api', tasksRouter)
 app.route('/api', runtimeRouter)
 app.route('/api', eventsRouter)
 app.route('/api', commandsRouter)
+app.route('/api', assetsRouter)
 
 app.onError((err, c) => {
   console.error('[pulse] unhandled error:', err)
