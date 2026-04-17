@@ -205,6 +205,10 @@ export function TaskDetail({ task, allTasks, onClose, onRefresh, onDeleted }: Ta
                 <pre className="pulse-detail-pre">{task.completionOutput}</pre>
               </div>
             )}
+            {!task.waitingInstructions && !task.description && !task.executor &&
+              !task.scheduleConfig && !task.completionOutput && !blockedByTask && (
+              <p className="pulse-detail-empty">暂无详细信息</p>
+            )}
           </div>
         )}
 

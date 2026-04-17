@@ -115,8 +115,13 @@ sessionsRouter.patch('/sessions/:id', async (c) => {
 })
 
 sessionsRouter.delete('/sessions/:id', (c) => {
-  deleteSessionWithEffects(c.req.param('id'))
-  return c.json(ok({ deleted: true }))
+  try {
+    deleteSessionWithEffects(c.req.param('id'))
+    return c.json(ok({ deleted: true }))
+  } catch (error) {
+    const message = String(error)
+    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(500))
+  }
 })
 
 sessionsRouter.get('/sessions/:id/events', (c) => {

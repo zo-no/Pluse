@@ -476,6 +476,7 @@ function Shell({ auth }: { auth: AuthMe }) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeSession, setActiveSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 861 : true)
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true)
   const [desktopRailVisible, setDesktopRailVisible] = useState(true)
@@ -495,7 +496,8 @@ function Shell({ auth }: { auth: AuthMe }) {
 
   async function loadProjects() {
     const result = await api.getProjects()
-    if (!result.ok) return
+    if (!result.ok) { setLoadError(result.error); return }
+    setLoadError(null)
     setProjects(result.data)
     if (!activeProjectId && result.data[0]) setActiveProjectId(result.data[0].id)
     if (location.pathname === '/' && result.data[0]) {
@@ -541,6 +543,12 @@ function Shell({ auth }: { auth: AuthMe }) {
   }
 
   if (loading) return <div className="pulse-loading">正在加载 Pulse…</div>
+  if (loadError) return (
+    <div className="pulse-loading">
+      <p>加载失败：{loadError}</p>
+      <button type="button" className="pulse-button" onClick={() => { void loadProjects() }}>重试</button>
+    </div>
+  )
 
   return (
     <div className="pulse-app-shell">
