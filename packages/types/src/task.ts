@@ -1,6 +1,5 @@
 export type TaskAssignee = 'ai' | 'human'
 export type TaskKind = 'once' | 'scheduled' | 'recurring'
-export type TaskOrigin = 'agent' | 'manual' | 'scheduler' | 'system'
 
 export type HumanTaskStatus = 'pending' | 'done' | 'cancelled'
 export type AiTaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled' | 'blocked'
@@ -94,16 +93,11 @@ export interface CreateTaskInput {
   description?: string
   assignee: TaskAssignee
   kind: TaskKind
-  surface?: string
-  visibleInChat?: boolean
-  origin?: TaskOrigin
-  originRunId?: string
   order?: number
   scheduleConfig?: ScheduleConfig
   executor?: TaskExecutor
   executorOptions?: ExecutorOptions
   waitingInstructions?: string
-  sourceTaskId?: string
   blockedByTaskId?: string
   enabled?: boolean
   createdBy?: 'human' | 'ai' | 'system'
@@ -114,9 +108,6 @@ export interface UpdateTaskInput {
   title?: string
   description?: string | null
   status?: TaskStatus
-  visibleInChat?: boolean
-  origin?: TaskOrigin
-  originRunId?: string | null
   sessionId?: string | null
   scheduleConfig?: ScheduleConfig | null
   executor?: TaskExecutor | null
@@ -134,7 +125,6 @@ export interface ListTasksFilter {
   kind?: TaskKind
   status?: TaskStatus
   assignee?: TaskAssignee
-  visibleInChat?: boolean
 }
 
 export interface TaskRun {

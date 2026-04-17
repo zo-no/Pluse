@@ -1103,9 +1103,10 @@ select:focus {
 
 .pulse-task-list {
   overflow: auto;
-  display: grid;
-  gap: 0;
-  padding-right: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
 }
 
 .pulse-task-card,
@@ -2091,7 +2092,19 @@ select:focus {
 /* ── Task rail compact ────────────────────────────────────────────────────── */
 
 .pulse-task-compact {
-  padding: 8px 0 !important;
+  padding: 10px 12px !important;
+  background: var(--bg);
+  border: 1px solid var(--border) !important;
+  border-bottom: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.pulse-task-compact:hover {
+  border-color: var(--border-strong) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .pulse-task-compact-row {
@@ -2107,7 +2120,8 @@ select:focus {
 
 .pulse-task-compact-main strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2117,14 +2131,26 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-top: 3px;
+  gap: 4px;
+  margin-top: 4px;
   font-size: 11px;
   color: var(--text-muted);
 }
 
 .pulse-task-compact-actions {
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.pulse-task-compact:hover .pulse-task-compact-actions {
+  opacity: 1;
+}
+
+.pulse-meta-dot {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
 }
 
 /* ── Rail head compact ────────────────────────────────────────────────────── */
@@ -2194,33 +2220,39 @@ select:focus {
   }
 }
 
-/* ─── TaskRail with detail pane ─────────────────────────────────────────── */
-
-.pulse-rail.has-detail {
-  display: flex;
-  flex-direction: row;
-  gap: 0;
-}
-
 .pulse-rail-list-pane {
   display: flex;
   flex-direction: column;
-  min-width: 220px;
-  width: 220px;
-  flex-shrink: 0;
+  width: 100%;
   overflow-y: auto;
-  border-right: 1px solid var(--border);
 }
 
-.pulse-rail-detail-pane {
-  flex: 1;
-  min-width: 0;
-  overflow-y: auto;
+.pulse-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.pulse-modal-panel {
+  width: min(560px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--bg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
 }
 
 .pulse-task-card.is-selected {
-  background: var(--surface-raised);
-  border-left: 2px solid var(--accent);
+  background: var(--bg);
+  border-color: #4f46e5 !important;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
 }
 
 .pulse-task-compact-hint {

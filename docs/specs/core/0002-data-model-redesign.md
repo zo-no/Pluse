@@ -1,6 +1,6 @@
 # 0002 — Session / Task 数据模型重新设计
 
-**状态**: approved  
+**状态**: done  
 **优先级**: high  
 **估算**: L
 
@@ -643,28 +643,28 @@ CREATE INDEX idx_tasks_assignee ON tasks(project_id, assignee, status);
 ## 验收标准
 
 **数据结构**
-- [ ] Task 无 `surface`、`visibleInChat`、`origin`、`originRunId` 字段
-- [ ] Session 有 `createdBy`、`sourceTaskId`、`followUpQueue`
-- [ ] Task 有 `originSessionId`、顶层 `reviewOnComplete`，`createdBy` 合并为三值
+- [x] Task 无 `surface`、`visibleInChat`、`origin`、`originRunId` 字段
+- [x] Session 有 `createdBy`、`sourceTaskId`、`followUpQueue`
+- [x] Task 有 `originSessionId`、顶层 `reviewOnComplete`，`createdBy` 合并为三值
 
 **执行流程**
-- [ ] AI Task 第一次 run 时自动创建 Session（懒加载），`continueSession=false` 时每次新建
-- [ ] `reviewOnComplete=true` 时 AI Task 完成后创建独立 Human Task，原 Task 直接变 done
-- [ ] `autoRenamePending` 首轮 Run 完成后触发 AI 命名，写回 session.name
-- [ ] server 重启后 followUpQueue 未消费的消息恢复执行
+- [x] AI Task 第一次 run 时自动创建 Session（懒加载），`continueSession=false` 时每次新建
+- [x] `reviewOnComplete=true` 时 AI Task 完成后创建独立 Human Task，原 Task 直接变 done
+- [x] `autoRenamePending` 首轮 Run 完成后触发 AI 命名，写回 session.name
+- [x] server 重启后 followUpQueue 未消费的消息恢复执行
 
 **接口**
-- [ ] `GET /api/commands` / `pulse commands` 返回按模块分组的命令列表
-- [ ] `POST /api/sessions/:id/create-task` 和 `POST /api/tasks/:id/create-session` 可用
-- [ ] `POST /api/tasks/:id/block` 和 `DELETE /api/tasks/:id/block` 可用
-- [ ] 互转时校验 projectId 一致性，不一致返回 400
+- [x] `GET /api/commands` / `pulse commands` 返回按模块分组的命令列表
+- [x] `POST /api/sessions/:id/create-task` 和 `POST /api/tasks/:id/create-session` 可用
+- [x] `POST /api/tasks/:id/block` 和 `DELETE /api/tasks/:id/block` 可用
+- [x] 互转时校验 projectId 一致性，不一致返回 400
 
 **系统提示**
-- [ ] 三层注入顺序正确（系统级 → 项目级 → 执行上下文）
-- [ ] Session 和 Task 的执行上下文提示有明确差异
-- [ ] 系统提示包含 Pulse 概念说明和 `pulse commands` 入口
+- [x] 三层注入顺序正确（系统级 → 项目级 → 执行上下文）
+- [x] Session 和 Task 的执行上下文提示有明确差异
+- [x] 系统提示包含 Pulse 概念说明和 `pulse commands` 入口
 
 **前端**
-- [ ] TaskRail 无 `surface`/`visibleInChat` 过滤逻辑
-- [ ] Human Task 在 TaskRail 显示 `waitingInstructions`
-- [ ] client.ts 新增互转、block/unblock、commands 方法
+- [x] TaskRail 无 `surface`/`visibleInChat` 过滤逻辑
+- [x] Human Task 在 TaskRail 显示 `waitingInstructions`
+- [x] client.ts 新增互转、block/unblock、commands 方法

@@ -100,9 +100,6 @@ describe('project updates and overview', () => {
       description: 'Periodic review for this project.',
       assignee: 'ai',
       kind: 'recurring',
-      surface: 'project',
-      visibleInChat: false,
-      origin: 'system',
       createdBy: 'system',
       enabled: true,
       scheduleConfig: {
@@ -123,9 +120,6 @@ describe('project updates and overview', () => {
       description: 'Waiting on the final product copy.',
       assignee: 'human',
       kind: 'once',
-      surface: 'project',
-      visibleInChat: false,
-      origin: 'manual',
       createdBy: 'human',
       waitingInstructions: 'Confirm the final product copy before shipping.',
     })
@@ -146,9 +140,6 @@ describe('project updates and overview', () => {
       description: 'Sweep stale task state and summarize changes.',
       assignee: 'ai',
       kind: 'scheduled',
-      surface: 'project',
-      visibleInChat: false,
-      origin: 'scheduler',
       createdBy: 'system',
       enabled: true,
       scheduleConfig: {

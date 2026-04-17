@@ -120,9 +120,6 @@ describe('task model', () => {
       title: 'Follow up with agent',
       assignee: 'ai',
       kind: 'once',
-      surface: 'chat_short',
-      visibleInChat: true,
-      origin: 'agent',
       createdBy: 'ai',
     })
     const projectTask = createTask({
@@ -130,9 +127,6 @@ describe('task model', () => {
       title: 'Nightly cleanup',
       assignee: 'human',
       kind: 'recurring',
-      surface: 'project',
-      visibleInChat: false,
-      origin: 'system',
       createdBy: 'system',
       scheduleConfig: {
         kind: 'recurring',

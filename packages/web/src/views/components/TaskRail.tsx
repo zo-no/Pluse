@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { Task } from '@melody-sync/types'
 import * as api from '@/api/client'
-import { CheckIcon, ClockIcon, CloseIcon, PlayIcon, RailIcon, SparkIcon } from './icons'
+import { CheckIcon, CloseIcon, PlayIcon, RailIcon } from './icons'
 import { TaskDetail } from './TaskDetail'
 
 type RailTab = 'Session' | 'Project' | 'All'
@@ -71,9 +72,8 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
       : `?projectId=${encodeURIComponent(projectId)}`
     const source = new EventSource(`/api/events${query}`, { withCredentials: true })
     source.onmessage = () => { void loadTasks() }
-    source.onerror = () => source.close()
     return () => source.close()
-  }, [projectId, sessionId, tab])
+  }, [projectId, sessionId])
 
   useEffect(() => {
     setSelectedTaskId(null)
@@ -118,7 +118,7 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
   const selectedTask = selectedTaskId ? tasks.find((t) => t.id === selectedTaskId) ?? null : null
 
   return (
-    <aside className={`pulse-rail${selectedTask ? ' has-detail' : ''}`}>
+    <aside className="pulse-rail">
       <div className="pulse-rail-list-pane">
         <div className="pulse-mobile-panel-header">
           <div>
@@ -168,14 +168,10 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
                   )}
                   <div className="pulse-task-compact-meta">
                     <span className={`pulse-task-status is-${task.status}`}>{formatTaskStatus(task.status)}</span>
-                    <span className="pulse-meta-inline">
-                      <SparkIcon className="pulse-icon pulse-inline-icon" />
-                      {task.assignee === 'ai' ? 'AI' : '人工'}
-                    </span>
-                    <span className="pulse-meta-inline">
-                      <ClockIcon className="pulse-icon pulse-inline-icon" />
-                      {formatTaskKind(task.kind)}
-                    </span>
+                    <span className="pulse-meta-dot">·</span>
+                    <span className="pulse-meta-inline">{task.assignee === 'ai' ? 'AI' : '人工'}</span>
+                    <span className="pulse-meta-dot">·</span>
+                    <span className="pulse-meta-inline">{formatTaskKind(task.kind)}</span>
                   </div>
                 </div>
                 <div className="pulse-task-compact-actions" onClick={(e) => e.stopPropagation()}>
@@ -200,16 +196,19 @@ export function TaskRail({ projectId, projectName, sessionId, defaultTab = 'Sess
         {error ? <p className="pulse-error">{error}</p> : null}
       </div>
 
-      {selectedTask && (
-        <div className="pulse-rail-detail-pane">
-          <TaskDetail
-            task={selectedTask}
-            allTasks={tasks}
-            onClose={() => setSelectedTaskId(null)}
-            onRefresh={() => void loadTasks()}
-            onDeleted={() => { setSelectedTaskId(null); void loadTasks() }}
-          />
-        </div>
+      {selectedTask && createPortal(
+        <div className="pulse-modal-backdrop" onClick={() => setSelectedTaskId(null)}>
+          <div className="pulse-modal-panel" onClick={(e) => e.stopPropagation()}>
+            <TaskDetail
+              task={selectedTask}
+              allTasks={tasks}
+              onClose={() => setSelectedTaskId(null)}
+              onRefresh={() => void loadTasks()}
+              onDeleted={() => { setSelectedTaskId(null); void loadTasks() }}
+            />
+          </div>
+        </div>,
+        document.body,
       )}
     </aside>
   )

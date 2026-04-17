@@ -53,8 +53,11 @@ export function SessionList({
   const [error, setError] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLElement>(null)
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) ?? null,
@@ -71,7 +74,7 @@ export function SessionList({
     if (archivedResult.ok) setArchivedSessions(archivedResult.data)
   }
 
-  useEffect(() => { void loadSessions() }, [activeProjectId])
+  useEffect(() => { void loadSessions(); setConfirmDeleteId(null) }, [activeProjectId])
 
   useEffect(() => {
     if (!projectPickerOpen) return
@@ -90,6 +93,18 @@ export function SessionList({
       renameInputRef.current.select()
     }
   }, [renamingId])
+
+  // Cancel delete confirm when clicking outside the sidebar
+  useEffect(() => {
+    if (!confirmDeleteId) return
+    function handleClick(event: MouseEvent) {
+      if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
+        setConfirmDeleteId(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [confirmDeleteId])
 
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
@@ -142,8 +157,10 @@ export function SessionList({
   }
 
   async function handleDelete(sessionId: string) {
-    if (!window.confirm('确定删除此会话？此操作不可撤销。')) return
+    setDeletingId(sessionId)
     const result = await api.deleteSession(sessionId)
+    setDeletingId(null)
+    setConfirmDeleteId(null)
     if (!result.ok) { setError(result.error); return }
     if (sessionId === activeSessionId) navigate(activeProjectId ? `/projects/${activeProjectId}` : '/')
     await loadSessions()
@@ -234,22 +251,46 @@ export function SessionList({
               <ArchiveIcon className="pulse-icon" />
             </button>
           )}
-          <button
-            type="button"
-            className="pulse-sidebar-action-btn is-danger"
-            onClick={(e) => { e.preventDefault(); void handleDelete(session.id) }}
-            aria-label="删除"
-            title="删除"
-          >
-            <TrashIcon className="pulse-icon" />
-          </button>
+          {confirmDeleteId === session.id ? (
+            <>
+              <button
+                type="button"
+                className="pulse-sidebar-action-btn is-danger"
+                onClick={(e) => { e.preventDefault(); void handleDelete(session.id) }}
+                disabled={deletingId === session.id}
+                aria-label="确认删除"
+                title="确认删除"
+              >
+                <TrashIcon className="pulse-icon" />
+              </button>
+              <button
+                type="button"
+                className="pulse-sidebar-action-btn"
+                onClick={(e) => { e.preventDefault(); setConfirmDeleteId(null) }}
+                aria-label="取消"
+                title="取消"
+              >
+                ×
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="pulse-sidebar-action-btn is-danger"
+              onClick={(e) => { e.preventDefault(); setConfirmDeleteId(session.id) }}
+              aria-label="删除"
+              title="删除"
+            >
+              <TrashIcon className="pulse-icon" />
+            </button>
+          )}
         </div>
       </div>
     )
   }
 
   return (
-    <aside className="pulse-sidebar">
+    <aside className="pulse-sidebar" ref={sidebarRef}>
       <div className="pulse-mobile-panel-header">
         <div>
           <span className="pulse-section-kicker">工作区</span>

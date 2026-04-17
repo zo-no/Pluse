@@ -23,19 +23,19 @@ MelodySync v2 是一个**远程 AI 会话工具**，核心职责：
 ### 第一步：读架构文档
 
 ```
-docs/README.md         ← 文档导航入口
-docs/architecture.md   ← 产品定位 + 系统边界（先读这个）
+docs/architecture/README.md         ← 文档导航入口
+docs/architecture/architecture.md   ← 产品定位 + 系统边界（先读这个）
 ```
 
 按需深入阅读：
-- [数据模型](docs/data-model.md) — Session / Run 数据结构
-- [执行模型](docs/execution-model.md) — Run 生命周期、会话内 conductor CLI、follow-up queue
-- [数据库 Schema](docs/database-schema.md) — SQLite 表定义
-- [架构实现](docs/implementation-guide.md) — 目录结构、迁移期兼容层、WebSocket
-- [CLI & HTTP API](docs/cli-api.md) — 所有接口定义
-- [Web UI 设计](docs/ui-design.md) — 布局、交互、组件
-- [已决策项](docs/decisions.md) — 所有设计决策汇总
-- [一期范围](docs/roadmap.md) — 当前开发目标
+- [数据模型](docs/architecture/data-model.md) — Session / Run 数据结构
+- [执行模型](docs/architecture/execution-model.md) — Run 生命周期、会话内 conductor CLI、follow-up queue
+- [数据库 Schema](docs/architecture/database-schema.md) — SQLite 表定义
+- [CLI & HTTP API](docs/architecture/api.md) — 所有接口定义
+- [Web UI 设计](docs/architecture/ui-design.md) — 布局、交互、组件
+- [Conductor 集成](docs/architecture/conductor-integration.md) — 会话内 CLI 调用边界
+- [UI 线框图](docs/architecture/wireframes.md) — 页面布局与结构草图
+- [当前 Roadmap](docs/specs/ROADMAP.md) — 当前功能进展与优先级
 
 ### 第二步：了解目录结构
 
@@ -89,15 +89,15 @@ View（packages/web/src/）
 
 | 要改什么 | 先看文档 | 再看代码 |
 |---|---|---|
-| 会话数据结构 | `docs/data-model.md` | `packages/server/src/models/session.ts` |
-| Run 执行流程 | `docs/execution-model.md` | `packages/server/src/models/run.ts` |
-| conductor 集成 | `docs/execution-model.md` | 无专门封装；按会话内 CLI 调用理解 |
-| 迁移期 project 兼容层 | `docs/implementation-guide.md` | `packages/server/src/models/project.ts` / `packages/server/src/controllers/http/projects.ts` |
-| WebSocket | `docs/implementation-guide.md` | 当前未落地，以 roadmap 为准 |
-| CLI 命令 | `docs/cli-api.md` | `packages/server/src/controllers/cli/` |
-| HTTP 路由 | `docs/cli-api.md` | `packages/server/src/controllers/http/` |
-| 前端布局 | `docs/ui-design.md` | `packages/web/src/views/` |
-| 已决策项 | `docs/decisions.md` | — |
+| 会话数据结构 | `docs/architecture/data-model.md` | `packages/server/src/models/session.ts` |
+| Run 执行流程 | `docs/architecture/execution-model.md` | `packages/server/src/models/run.ts` |
+| conductor 集成 | `docs/architecture/conductor-integration.md` | 无专门封装；按会话内 CLI 调用理解 |
+| 迁移期 project 兼容层 | `docs/architecture/architecture.md` | `packages/server/src/models/project.ts` / `packages/server/src/controllers/http/projects.ts` |
+| WebSocket / SSE | `docs/specs/infra/0001-sse-realtime.md` | 以当前实现与 spec 为准 |
+| CLI 命令 | `docs/architecture/api.md` | `packages/server/src/controllers/cli/` |
+| HTTP 路由 | `docs/architecture/api.md` | `packages/server/src/controllers/http/` |
+| 前端布局 | `docs/architecture/ui-design.md` | `packages/web/src/views/` |
+| 当前功能范围 | `docs/specs/ROADMAP.md` | `docs/specs/core/` / `docs/specs/features/` / `docs/specs/infra/` |
 
 ---
 
