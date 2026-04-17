@@ -15,6 +15,9 @@ import type {
   Session,
   SessionEvent,
   Task,
+  TaskLog,
+  TaskOp,
+  TaskRun,
   UpdateProjectInput,
   UpdateSessionInput,
   UpdateTaskInput,
@@ -110,6 +113,10 @@ export function archiveProject(id: string): Promise<ApiResult<Project>> {
   return request<Project>('POST', `/projects/${id}/archive`)
 }
 
+export function deleteProject(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/projects/${id}`)
+}
+
 export function getSessions(opts?: { projectId?: string; archived?: boolean }): Promise<ApiResult<Session[]>> {
   const params = new URLSearchParams()
   if (opts?.projectId) params.set('projectId', opts.projectId)
@@ -152,8 +159,7 @@ export function cancelRun(id: string): Promise<ApiResult<Run>> {
 export function getTasks(params: {
   projectId?: string
   sessionId?: string
-  surface?: string
-  visibleInChat?: boolean
+  assignee?: string
   kind?: string
   status?: string
 } = {}): Promise<ApiResult<Task[]>> {
@@ -186,6 +192,34 @@ export function cancelTask(id: string): Promise<ApiResult<Task>> {
 
 export function deleteTask(id: string): Promise<ApiResult<{ deleted: boolean }>> {
   return request<{ deleted: boolean }>('DELETE', `/tasks/${id}`)
+}
+
+export function getTaskRuns(id: string): Promise<ApiResult<TaskRun[]>> {
+  return request<TaskRun[]>('GET', `/tasks/${id}/runs`)
+}
+
+export function getTaskLogs(id: string): Promise<ApiResult<TaskLog[]>> {
+  return request<TaskLog[]>('GET', `/tasks/${id}/logs`)
+}
+
+export function getTaskOps(id: string): Promise<ApiResult<TaskOp[]>> {
+  return request<TaskOp[]>('GET', `/tasks/${id}/ops`)
+}
+
+export function blockTask(id: string, blockerId: string): Promise<ApiResult<Task>> {
+  return request<Task>('POST', `/tasks/${id}/block`, { blockerId })
+}
+
+export function unblockTask(id: string): Promise<ApiResult<Task>> {
+  return request<Task>('DELETE', `/tasks/${id}/block`)
+}
+
+export function createTaskFromSession(sessionId: string, input: { title: string; assignee: 'ai' | 'human'; description?: string; waitingInstructions?: string }): Promise<ApiResult<Task>> {
+  return request<Task>('POST', `/sessions/${sessionId}/create-task`, input)
+}
+
+export function createSessionFromTask(taskId: string, input?: { name?: string }): Promise<ApiResult<{ session: Session; task: Task }>> {
+  return request<{ session: Session; task: Task }>('POST', `/tasks/${taskId}/create-session`, input)
 }
 
 export function getRuntimeTools(): Promise<ApiResult<RuntimeTool[]>> {

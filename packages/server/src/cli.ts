@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
 import { authCommand } from './controllers/cli/auth'
+import { commandsCommand } from './controllers/cli/commands'
 import { projectCommand } from './controllers/cli/project'
 import { sessionCommand } from './controllers/cli/session'
 import { taskCommand } from './controllers/cli/task'
@@ -13,6 +14,7 @@ program
   .version('0.1.0')
 
 program.addCommand(authCommand)
+program.addCommand(commandsCommand)
 program.addCommand(projectCommand)
 program.addCommand(sessionCommand)
 program.addCommand(taskCommand)

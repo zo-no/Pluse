@@ -1,6 +1,5 @@
 export type TaskAssignee = 'ai' | 'human'
 export type TaskKind = 'once' | 'scheduled' | 'recurring'
-export type TaskSurface = 'chat_short' | 'project'
 export type TaskOrigin = 'agent' | 'manual' | 'scheduler' | 'system'
 
 export type HumanTaskStatus = 'pending' | 'done' | 'cancelled'
@@ -39,53 +38,50 @@ export interface AiPromptExecutor {
   model?: string
 }
 
-export interface HttpExecutor {
-  kind: 'http'
-  url: string
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
-  headers?: Record<string, string>
-  body?: string
-  timeout?: number
-}
-
-export type TaskExecutor = ScriptExecutor | AiPromptExecutor | HttpExecutor
-
-export interface VoiceNoticeOptions {
-  enabled: boolean
-  speechText?: string
-}
+export type TaskExecutor = ScriptExecutor | AiPromptExecutor
 
 export interface ExecutorOptions {
   continueSession?: boolean
   customVars?: Record<string, string>
-  reviewOnComplete?: boolean
-  voiceNotice?: VoiceNoticeOptions
 }
 
 export interface Task {
   id: string
   projectId: string
-  sessionId?: string
+
+  // source
+  createdBy: 'human' | 'ai' | 'system'
+  originSessionId?: string
+
+  // content
   title: string
   description?: string
+  waitingInstructions?: string
+
+  // assignee
   assignee: TaskAssignee
+
+  // scheduling
   kind: TaskKind
   status: TaskStatus
-  surface: TaskSurface
-  visibleInChat: boolean
-  origin: TaskOrigin
-  originRunId?: string
-  order?: number
+  enabled: boolean
   scheduleConfig?: ScheduleConfig
+  blockedByTaskId?: string
+
+  // ai task execution config
   executor?: TaskExecutor
   executorOptions?: ExecutorOptions
-  waitingInstructions?: string
-  sourceTaskId?: string
-  blockedByTaskId?: string
-  completionOutput?: string
-  enabled: boolean
-  createdBy: 'human' | 'ai' | 'system'
+
+  // ai task execution state
+  sessionId?: string
   lastSessionId?: string
+  completionOutput?: string
+
+  // post-completion action
+  reviewOnComplete?: boolean
+
+  order?: number
+
   createdAt: string
   updatedAt: string
 }
@@ -93,13 +89,14 @@ export interface Task {
 export interface CreateTaskInput {
   projectId: string
   sessionId?: string
+  originSessionId?: string
   title: string
   description?: string
   assignee: TaskAssignee
   kind: TaskKind
-  surface: TaskSurface
-  visibleInChat: boolean
-  origin: TaskOrigin
+  surface?: string
+  visibleInChat?: boolean
+  origin?: TaskOrigin
   originRunId?: string
   order?: number
   scheduleConfig?: ScheduleConfig
@@ -110,13 +107,13 @@ export interface CreateTaskInput {
   blockedByTaskId?: string
   enabled?: boolean
   createdBy?: 'human' | 'ai' | 'system'
+  reviewOnComplete?: boolean
 }
 
 export interface UpdateTaskInput {
   title?: string
   description?: string | null
   status?: TaskStatus
-  surface?: TaskSurface
   visibleInChat?: boolean
   origin?: TaskOrigin
   originRunId?: string | null
@@ -128,6 +125,7 @@ export interface UpdateTaskInput {
   completionOutput?: string | null
   blockedByTaskId?: string | null
   lastSessionId?: string | null
+  reviewOnComplete?: boolean
 }
 
 export interface ListTasksFilter {
@@ -136,7 +134,6 @@ export interface ListTasksFilter {
   kind?: TaskKind
   status?: TaskStatus
   assignee?: TaskAssignee
-  surface?: TaskSurface
   visibleInChat?: boolean
 }
 

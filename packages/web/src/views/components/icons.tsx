@@ -114,3 +114,33 @@ export function SendIcon(props: IconProps) {
     </BaseIcon>
   )
 }
+
+export function PinIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 2l2 6h5l-4 3 1.5 6L12 14l-4.5 3L9 11 5 8h5z" />
+    </BaseIcon>
+  )
+}
+
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <path d="M5 8v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" />
+      <path d="M10 13h4" />
+    </BaseIcon>
+  )
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 7h16" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M5 7l1 12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-12" />
+      <path d="M9 7V4h6v3" />
+    </BaseIcon>
+  )
+}

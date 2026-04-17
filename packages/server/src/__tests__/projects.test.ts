@@ -191,8 +191,10 @@ describe('project updates and overview', () => {
     )
     expect(overview.json.data.schedule?.lastRunAt).toBe('2026-04-17T00:00:00.000Z')
     expect(typeof overview.json.data.schedule?.nextRunAt).toBe('string')
-    expect(overview.json.data.recentOutputs.some((item) => item.kind === 'session_run' && item.sessionId === session.json.data.id)).toBe(true)
-    expect(overview.json.data.recentOutputs.some((item) => item.kind === 'task_run' && item.taskId === projectTask.json.data.id)).toBe(true)
+    const sessionId = session.json.ok ? session.json.data.id : ''
+    const projectTaskId = projectTask.json.ok ? projectTask.json.data.id : ''
+    expect(overview.json.data.recentOutputs.some((item) => item.kind === 'session_run' && item.sessionId === sessionId)).toBe(true)
+    expect(overview.json.data.recentOutputs.some((item) => item.kind === 'task_run' && item.taskId === projectTaskId)).toBe(true)
 
     const archived = await POST<Project>(`/api/projects/${project.id}/archive`)
     expect(archived.status).toBe(200)

@@ -1,17 +1,16 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
-import { resolve } from 'node:path'
-import type { Run, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
+import type { Run, SessionEvent, UpdateSessionInput, QueuedMessage } from '@melody-sync/types'
 import { appendEvent, listEvents } from '../models/history'
-import { getSetting } from '../models/settings'
 import { getProject } from '../models/project'
-import { createRun, getRun, updateRun } from '../models/run'
+import { buildSessionSystemPrompt } from '../services/system-prompt'
+import { createRun, getRun, getRunsBySession, updateRun } from '../models/run'
 import {
-  type QueuedMessage,
   dequeueFollowUp,
   enqueueFollowUp,
   getSession,
+  listSessionsWithPendingQueue,
   updateSession,
 } from '../models/session'
 
@@ -540,28 +539,10 @@ function validateProjectWorkingDirectory(projectPath: string): string | null {
   }
 }
 
-function buildPulseTaskInstructions(projectId: string, workDir: string): string {
-  const cliInvocation = process.env['PULSE_CLI_COMMAND']?.trim()
-    || `bun ${resolve(import.meta.dir, '../cli.ts')}`
-
-  return [
-    'You are operating inside Pulse.',
-    `Current project id: ${projectId}`,
-    `Current work directory: ${workDir}`,
-    'This project has a built-in task scheduler and project-scoped tasks.',
-    `Use "${cliInvocation}" to inspect or create tasks when there is a concrete next step.`,
-    `Examples: ${cliInvocation} task list --project-id ${projectId} --json`,
-    `Examples: ${cliInvocation} task create --project-id ${projectId} --title "Follow up" --assignee human --surface chat_short --json`,
-    'Use chat_short tasks for immediate follow-up items and project tasks for recurring or scheduled work.',
-  ].join('\n')
-}
-
-function buildSessionSystemPrompt(projectId: string, projectSystemPrompt?: string, workDir?: string): string | undefined {
-  const globalPrompt = getSetting('global_system_prompt')?.trim()
-  const projectPrompt = projectSystemPrompt?.trim()
-  const pulseTaskPrompt = buildPulseTaskInstructions(projectId, workDir ?? '')
-  const parts = [globalPrompt, projectPrompt, pulseTaskPrompt].filter(Boolean)
-  return parts.length ? parts.join('\n\n') : undefined
+function getSessionSystemPrompt(projectId: string, sessionId: string): string | undefined {
+  const project = getProject(projectId)
+  if (!project) return undefined
+  return buildSessionSystemPrompt(project, sessionId)
 }
 
 function resolveSpawnFailureMessage(
@@ -780,6 +761,14 @@ function finalizeRun(runId: string, patch: Partial<Run>, sessionId: string): voi
     updateSession(sessionId, { activeRunId: null })
   }
 
+  // autoRenamePending: 首轮 Run 完成后触发 AI 命名
+  if (patch.state === 'completed' && session?.autoRenamePending) {
+    const runCount = getRunsBySession(sessionId).length
+    if (runCount === 1) {
+      queueMicrotask(() => void autoRenameSession(sessionId))
+    }
+  }
+
   const next = dequeueFollowUp(sessionId)
   if (next) {
     startRunForSession(sessionId, next.requestId, next.text, {
@@ -788,6 +777,50 @@ function finalizeRun(runId: string, patch: Partial<Run>, sessionId: string): voi
       effort: next.effort,
       thinking: next.thinking,
     })
+  }
+}
+
+async function autoRenameSession(sessionId: string): Promise<void> {
+  const session = getSession(sessionId)
+  if (!session?.autoRenamePending) return
+
+  const events = listEvents(sessionId)
+  const messages = events
+    .filter((e) => e.type === 'message')
+    .slice(0, 6)
+    .map((e) => `${e.role === 'user' ? 'User' : 'Assistant'}: ${(e.content ?? e.bodyPreview ?? '').slice(0, 300)}`)
+    .join('\n')
+
+  if (!messages) return
+
+  const tool = (session.tool ?? DEFAULT_TOOL) as ToolName
+  const command = resolveToolCommand(tool)
+  const prompt = `Based on this conversation, generate a concise title (5-10 words, in the same language as the conversation). Reply with ONLY the title, no quotes or punctuation:\n\n${messages}`
+
+  try {
+    const args = tool === 'claude'
+      ? ['-p', prompt, '--output-format', 'text']
+      : ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', prompt]
+
+    const result = await new Promise<string>((resolve, reject) => {
+      const proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const chunks: Buffer[] = []
+      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
+      proc.on('close', (code) => {
+        if (code === 0) resolve(Buffer.concat(chunks).toString().trim())
+        else reject(new Error(`exit ${code}`))
+      })
+      proc.on('error', reject)
+      setTimeout(() => { proc.kill(); reject(new Error('timeout')) }, 30_000)
+    })
+
+    const name = result.split('\n')[0]?.trim().slice(0, 100)
+    if (name) {
+      updateSession(sessionId, { name, autoRenamePending: false })
+    }
+  } catch {
+    // 命名失败不重试，保留默认名称
+    updateSession(sessionId, { autoRenamePending: false })
   }
 }
 
@@ -867,13 +900,13 @@ async function executeRun(runId: string, sessionId: string, recordedText: string
     ? buildClaudeArgs(prompt, {
       model: run.model || undefined,
       thinking: run.thinking,
-      systemPrompt: buildSessionSystemPrompt(project.id, project.systemPrompt, project.workDir),
+      systemPrompt: getSessionSystemPrompt(project.id, sessionId),
       resumeSessionId: run.claudeSessionId,
     })
     : buildCodexArgs(prompt, {
       model: run.model || undefined,
       effort: run.effort,
-      systemPrompt: buildSessionSystemPrompt(project.id, project.systemPrompt, project.workDir),
+      systemPrompt: getSessionSystemPrompt(project.id, sessionId),
       threadId: run.codexThreadId,
     })
 
@@ -1038,4 +1071,24 @@ export function cancelActiveRun(runId: string): Run {
   const run = updateRun(runId, { cancelRequested: true })
   requestTermination(runId, 'cancelled')
   return run
+}
+
+// server 启动时恢复未消费的 followUpQueue
+export function recoverFollowUpQueues(): void {
+  const sessions = listSessionsWithPendingQueue()
+  for (const session of sessions) {
+    if (session.activeRunId) continue  // 已有运行中的 run，跳过
+    const next = dequeueFollowUp(session.id)
+    if (!next) continue
+    try {
+      startRunForSession(session.id, next.requestId, next.text, {
+        tool: next.tool,
+        model: next.model,
+        effort: next.effort,
+        thinking: next.thinking,
+      })
+    } catch {
+      // 单个 session 恢复失败不影响其他 session
+    }
+  }
 }

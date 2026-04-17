@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import type { OpenProjectInput, Project, UpdateProjectInput } from '@melody-sync/types'
 import { getProject } from '../../models/project'
-import { archiveProject, listVisibleProjects, openProject, updateProject } from '../../services/projects'
+import { archiveProject, deleteProjectWithCascade, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
 
 function printJson(value: unknown): void {
@@ -102,4 +102,23 @@ projectCommand
       ? await daemonRequest<Project>(baseUrl, `/api/projects/${id}/archive`, { method: 'POST' })
       : archiveProject(id)
     opts.json ? printJson(project) : printProject(project)
+  })
+
+projectCommand
+  .command('delete <id>')
+  .option('--confirm', 'Skip confirmation prompt', false)
+  .option('--json', 'Output as JSON', false)
+  .action(async (id: string, opts: { confirm: boolean; json: boolean }) => {
+    if (!opts.confirm) {
+      console.error('Add --confirm to permanently delete this project and all its data.')
+      process.exit(1)
+    }
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
+    if (baseUrl) {
+      await daemonRequest(baseUrl, `/api/projects/${id}`, { method: 'DELETE' })
+    } else {
+      deleteProjectWithCascade(id)
+    }
+    opts.json ? console.log(JSON.stringify({ deleted: true })) : console.log(`Project ${id} deleted.`)
   })

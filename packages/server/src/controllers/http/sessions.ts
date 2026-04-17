@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, CreateSessionInput, PagedResult, SendMessageInput, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
+import type { ApiResult, CreateSessionInput, CreateTaskInput, PagedResult, SendMessageInput, Session, SessionEvent, Task, UpdateSessionInput } from '@melody-sync/types'
 import { appendEvent, listEvents } from '../../models/history'
 import { getSession } from '../../models/session'
+import { createTask, getTask } from '../../models/task'
 import { submitSessionMessage } from '../../runtime/session-runner'
 import { createSessionWithEffects, deleteSessionWithEffects, listSessionViews, updateSessionWithEffects } from '../../services/sessions'
 
@@ -159,4 +160,41 @@ sessionsRouter.post('/sessions/:id/messages', async (c) => {
     })
     return c.json(errBody(message), sc(500))
   }
+})
+
+const CreateTaskFromSessionSchema = z.object({
+  title: z.string().min(1),
+  assignee: z.enum(['ai', 'human']),
+  description: z.string().optional(),
+  kind: z.enum(['once', 'scheduled', 'recurring']).optional(),
+  waitingInstructions: z.string().optional(),
+  reviewOnComplete: z.boolean().optional(),
+})
+
+sessionsRouter.post('/sessions/:id/create-task', async (c) => {
+  const session = getSession(c.req.param('id'))
+  if (!session) return c.json(errBody('Session not found'), sc(404))
+
+  let body: unknown
+  try { body = await c.req.json() } catch {
+    return c.json(errBody('Invalid JSON body'), sc(400))
+  }
+  const parsed = CreateTaskFromSessionSchema.safeParse(body)
+  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
+
+  const task = createTask({
+    projectId: session.projectId,
+    originSessionId: session.id,
+    sessionId: session.id,
+    title: parsed.data.title,
+    description: parsed.data.description,
+    assignee: parsed.data.assignee,
+    kind: parsed.data.kind ?? 'once',
+    createdBy: 'human',
+    waitingInstructions: parsed.data.waitingInstructions,
+    reviewOnComplete: parsed.data.reviewOnComplete,
+    executorOptions: parsed.data.assignee === 'ai' ? { continueSession: true } : undefined,
+  } as CreateTaskInput)
+
+  return c.json(ok<Task>(task), sc(201))
 })

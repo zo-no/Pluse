@@ -42,6 +42,8 @@ function initSchema(db: Database): void {
     id                  TEXT PRIMARY KEY NOT NULL,
     project_id          TEXT NOT NULL REFERENCES projects(id),
     name                TEXT NOT NULL,
+    created_by          TEXT NOT NULL DEFAULT 'human',
+    source_task_id      TEXT REFERENCES tasks(id),
     auto_rename_pending INTEGER DEFAULT 0,
     tool                TEXT,
     model               TEXT,
@@ -93,40 +95,35 @@ function initSchema(db: Database): void {
   db.run(`CREATE TABLE IF NOT EXISTS tasks (
     id                   TEXT PRIMARY KEY NOT NULL,
     project_id           TEXT NOT NULL REFERENCES projects(id),
+    created_by           TEXT NOT NULL DEFAULT 'human',
+    origin_session_id    TEXT REFERENCES sessions(id),
     session_id           TEXT REFERENCES sessions(id),
     title                TEXT NOT NULL,
     description          TEXT,
     assignee             TEXT NOT NULL DEFAULT 'human',
     kind                 TEXT NOT NULL DEFAULT 'once',
     status               TEXT NOT NULL DEFAULT 'pending',
-    surface              TEXT NOT NULL DEFAULT 'project',
-    visible_in_chat      INTEGER NOT NULL DEFAULT 0,
-    origin               TEXT NOT NULL DEFAULT 'manual',
-    origin_run_id        TEXT,
     order_index          INTEGER,
     schedule_config      TEXT,
     executor_kind        TEXT,
     executor_config      TEXT,
     executor_options     TEXT,
     waiting_instructions TEXT,
-    source_task_id       TEXT REFERENCES tasks(id),
     blocked_by_task_id   TEXT REFERENCES tasks(id),
     completion_output    TEXT,
+    review_on_complete   INTEGER NOT NULL DEFAULT 0,
     enabled              INTEGER NOT NULL DEFAULT 1,
-    created_by           TEXT NOT NULL DEFAULT 'human',
     last_session_id      TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
   ) STRICT`)
 
-  db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_project
-    ON tasks (project_id, surface, visible_in_chat, status, updated_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_project_status
+    ON tasks (project_id, status, updated_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_session
-    ON tasks (session_id, surface, updated_at DESC)`)
+    ON tasks (session_id, updated_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_assignee
-    ON tasks (assignee, kind, status)`)
-  db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_source
-    ON tasks (source_task_id)`)
+    ON tasks (project_id, assignee, status)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_tasks_blocked
     ON tasks (blocked_by_task_id)`)
 
@@ -213,11 +210,14 @@ function initSchema(db: Database): void {
   ensureColumn(db, 'projects', 'created_by', "TEXT NOT NULL DEFAULT 'human'")
   ensureColumn(db, 'projects', 'order_index', 'INTEGER NOT NULL DEFAULT 0')
 
+  // sessions: new fields
+  ensureColumn(db, 'sessions', 'created_by', "TEXT NOT NULL DEFAULT 'human'")
+  ensureColumn(db, 'sessions', 'source_task_id', 'TEXT')
+
+  // tasks: new fields
   ensureColumn(db, 'tasks', 'session_id', 'TEXT')
-  ensureColumn(db, 'tasks', 'surface', "TEXT NOT NULL DEFAULT 'project'")
-  ensureColumn(db, 'tasks', 'visible_in_chat', 'INTEGER NOT NULL DEFAULT 0')
-  ensureColumn(db, 'tasks', 'origin', "TEXT NOT NULL DEFAULT 'manual'")
-  ensureColumn(db, 'tasks', 'origin_run_id', 'TEXT')
+  ensureColumn(db, 'tasks', 'origin_session_id', 'TEXT')
+  ensureColumn(db, 'tasks', 'review_on_complete', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'tasks', 'last_session_id', 'TEXT')
 
   ensureColumn(db, 'auth_sessions', 'csrf_token', "TEXT NOT NULL DEFAULT ''")

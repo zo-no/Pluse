@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import type { ApiErr } from '@melody-sync/types'
 import { authRouter } from './controllers/http/auth'
+import { commandsRouter } from './controllers/http/commands'
 import { eventsRouter } from './controllers/http/events'
 import { projectsRouter } from './controllers/http/projects'
 import { runsRouter } from './controllers/http/runs'
@@ -13,6 +14,7 @@ import { getDb } from './db'
 import { requireAuth } from './middleware/auth'
 import { ensureBuiltinProjects } from './services/projects'
 import { reconcile, startScheduler, stopScheduler } from './services/scheduler'
+import { recoverFollowUpQueues } from './runtime/session-runner'
 import { getServerMetadataPath, getWebDistRoot } from './support/paths'
 
 const DEFAULT_PORT = 7760
@@ -30,6 +32,7 @@ app.route('/api', runsRouter)
 app.route('/api', tasksRouter)
 app.route('/api', runtimeRouter)
 app.route('/api', eventsRouter)
+app.route('/api', commandsRouter)
 
 app.onError((err, c) => {
   console.error('[pulse] unhandled error:', err)
@@ -79,6 +82,7 @@ function bootstrap(): void {
   ensureBuiltinProjects()
   reconcile()
   startScheduler()
+  recoverFollowUpQueues()
 }
 
 export function startServer(port: number = DEFAULT_PORT): void {

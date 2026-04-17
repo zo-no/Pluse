@@ -3,7 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type { ApiResult, OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@melody-sync/types'
 import { getProject } from '../../models/project'
-import { archiveProject, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
+import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -102,5 +102,17 @@ projectsRouter.post('/projects/:id/archive', (c) => {
   } catch (error) {
     const message = String(error)
     return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+  }
+})
+
+projectsRouter.delete('/projects/:id', (c) => {
+  const id = c.req.param('id')
+  const project = getProject(id)
+  if (!project) return c.json(errBody('Project not found'), sc(404))
+  try {
+    deleteProjectWithCascade(id)
+    return c.json(ok({ deleted: true }))
+  } catch (error) {
+    return c.json(errBody(String(error)), sc(500))
   }
 })

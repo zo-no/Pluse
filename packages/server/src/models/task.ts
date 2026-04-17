@@ -27,16 +27,14 @@ function rowToTask(row: Record<string, unknown>): Task {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
+    createdBy: ((row.created_by as string) ?? 'human') as Task['createdBy'],
+    originSessionId: (row.origin_session_id as string) ?? undefined,
     sessionId: (row.session_id as string) ?? undefined,
     title: row.title as string,
     description: (row.description as string) ?? undefined,
     assignee: row.assignee as TaskAssignee,
     kind: row.kind as TaskKind,
     status: row.status as TaskStatus,
-    surface: row.surface as Task['surface'],
-    visibleInChat: row.visible_in_chat === 1,
-    origin: row.origin as Task['origin'],
-    originRunId: (row.origin_run_id as string) ?? undefined,
     order: (row.order_index as number) ?? undefined,
     scheduleConfig: row.schedule_config
       ? JSON.parse(row.schedule_config as string) as ScheduleConfig
@@ -48,11 +46,10 @@ function rowToTask(row: Record<string, unknown>): Task {
       ? JSON.parse(row.executor_options as string) as ExecutorOptions
       : undefined,
     waitingInstructions: (row.waiting_instructions as string) ?? undefined,
-    sourceTaskId: (row.source_task_id as string) ?? undefined,
     blockedByTaskId: (row.blocked_by_task_id as string) ?? undefined,
     completionOutput: (row.completion_output as string) ?? undefined,
+    reviewOnComplete: row.review_on_complete === 1 ? true : undefined,
     enabled: row.enabled === 1,
-    createdBy: row.created_by as Task['createdBy'],
     lastSessionId: (row.last_session_id as string) ?? undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -84,14 +81,6 @@ export function listTasks(filter: ListTasksFilter = {}): Task[] {
     conditions.push('assignee = ?')
     params.push(filter.assignee)
   }
-  if (filter.surface) {
-    conditions.push('surface = ?')
-    params.push(filter.surface)
-  }
-  if (filter.visibleInChat !== undefined) {
-    conditions.push('visible_in_chat = ?')
-    params.push(filter.visibleInChat ? 1 : 0)
-  }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const rows = db.query(`SELECT * FROM tasks ${where} ORDER BY order_index ASC, created_at DESC`).all(...params) as Record<string, unknown>[]
@@ -119,34 +108,32 @@ export function createTask(input: CreateTaskInput): Task {
 
   db.run(
     `INSERT INTO tasks (
-      id, project_id, session_id, title, description, assignee, kind, status,
-      surface, visible_in_chat, origin, origin_run_id, order_index, schedule_config,
+      id, project_id, created_by, origin_session_id, session_id,
+      title, description, assignee, kind, status,
+      order_index, schedule_config,
       executor_kind, executor_config, executor_options,
-      waiting_instructions, source_task_id, blocked_by_task_id,
-      enabled, created_by, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      waiting_instructions, blocked_by_task_id,
+      review_on_complete, enabled, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.projectId,
+      input.createdBy ?? 'human',
+      input.originSessionId ?? null,
       input.sessionId ?? null,
       input.title,
       input.description ?? null,
       input.assignee,
       input.kind,
-      input.surface,
-      input.visibleInChat ? 1 : 0,
-      input.origin,
-      input.originRunId ?? null,
       input.order ?? null,
       input.scheduleConfig ? JSON.stringify(input.scheduleConfig) : null,
       executorKind,
       executorConfig,
       input.executorOptions ? JSON.stringify(input.executorOptions) : null,
       input.waitingInstructions ?? null,
-      input.sourceTaskId ?? null,
       input.blockedByTaskId ?? null,
+      input.reviewOnComplete ? 1 : 0,
       input.enabled !== false ? 1 : 0,
-      input.createdBy ?? 'human',
       ts,
       ts,
     ],
@@ -166,15 +153,12 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
   if (input.title !== undefined) { fields.push('title = ?'); params.push(input.title) }
   if ('description' in input) { fields.push('description = ?'); params.push(input.description ?? null) }
   if (input.status !== undefined) { fields.push('status = ?'); params.push(input.status) }
-  if (input.surface !== undefined) { fields.push('surface = ?'); params.push(input.surface) }
-  if (input.visibleInChat !== undefined) { fields.push('visible_in_chat = ?'); params.push(input.visibleInChat ? 1 : 0) }
-  if (input.origin !== undefined) { fields.push('origin = ?'); params.push(input.origin) }
-  if ('originRunId' in input) { fields.push('origin_run_id = ?'); params.push(input.originRunId ?? null) }
-  if ('sessionId' in input) { fields.push('session_id = ?'); params.push(input.sessionId ?? null) }
   if (input.enabled !== undefined) { fields.push('enabled = ?'); params.push(input.enabled ? 1 : 0) }
   if ('completionOutput' in input) { fields.push('completion_output = ?'); params.push(input.completionOutput ?? null) }
   if ('blockedByTaskId' in input) { fields.push('blocked_by_task_id = ?'); params.push(input.blockedByTaskId ?? null) }
   if ('lastSessionId' in input) { fields.push('last_session_id = ?'); params.push(input.lastSessionId ?? null) }
+  if ('sessionId' in input) { fields.push('session_id = ?'); params.push(input.sessionId ?? null) }
+  if (input.reviewOnComplete !== undefined) { fields.push('review_on_complete = ?'); params.push(input.reviewOnComplete ? 1 : 0) }
 
   if ('scheduleConfig' in input) {
     fields.push('schedule_config = ?')
@@ -203,7 +187,6 @@ export function updateTask(id: string, input: UpdateTaskInput): Task | null {
 export function deleteTask(id: string): boolean {
   const db = getDb()
   const tx = db.transaction(() => {
-    db.run(`UPDATE tasks SET source_task_id = NULL WHERE source_task_id = ?`, [id])
     db.run(`UPDATE tasks SET blocked_by_task_id = NULL WHERE blocked_by_task_id = ?`, [id])
     return db.run('DELETE FROM tasks WHERE id = ?', [id])
   })

@@ -63,7 +63,7 @@ function defaultProjectName(workDir: string): string {
 }
 
 function isBrainTask(task: Task): boolean {
-  return task.origin === 'system' && task.kind === 'recurring' && task.title === 'Project Brain'
+  return task.createdBy === 'system' && task.kind === 'recurring' && task.title === 'Project Brain'
 }
 
 function getMostRelevantScheduleTask(projectTasks: Task[]): Task | null {
@@ -342,26 +342,41 @@ export function getProjectOverview(id: string): ProjectOverview | null {
   if (!project) return null
   const sessions = listSessions({ projectId: id, archived: false })
   const tasks = listTasks({ projectId: id })
-  const projectTasks = tasks.filter((task) => task.surface === 'project')
   const taskRuns = getTaskRunsByProject(id, 24)
-  const brainTask = projectTasks.find(isBrainTask) ?? null
-  const waitingTasks = projectTasks.filter((task) => task.status === 'blocked' || Boolean(task.waitingInstructions))
-  const schedule = deriveSchedule(getMostRelevantScheduleTask(projectTasks), taskRuns)
+  const brainTask = tasks.find(isBrainTask) ?? null
+  const waitingTasks = tasks.filter((task) => task.status === 'blocked' || Boolean(task.waitingInstructions))
+  const schedule = deriveSchedule(getMostRelevantScheduleTask(tasks), taskRuns)
   return {
     project,
     sessions,
     tasks,
     brainTask,
     waitingTasks,
-    projectTasks,
+    projectTasks: tasks,
     recentOutputs: getRecentOutputs(id, sessions, tasks),
     schedule,
     counts: {
       sessions: sessions.length,
-      chatShortTasks: tasks.filter((task) => task.surface === 'chat_short').length,
-      projectTasks: projectTasks.length,
+      chatShortTasks: 0,
+      projectTasks: tasks.length,
     },
   }
+}
+
+export function deleteProjectWithCascade(id: string): void {
+  const db = getDb()
+  // 级联删除顺序（遵循外键约束）
+  // task 相关（有 project_id 外键）
+  db.run(`DELETE FROM task_run_spool WHERE run_id IN (SELECT id FROM task_runs WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM task_runs WHERE project_id = ?`, [id])
+  db.run(`DELETE FROM task_logs WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM task_ops WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM tasks WHERE project_id = ?`, [id])
+  // session 相关（session events 存文件系统，runs 有 session_id 外键）
+  db.run(`DELETE FROM runs WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM sessions WHERE project_id = ?`, [id])
+  deleteProjectRecord(id)
+  emit({ type: 'project_updated', data: { projectId: id } })
 }
 
 export function removeProjectRecord(id: string): void {

@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } fr
 import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Session, Task } from '@melody-sync/types'
 import * as api from '@/api/client'
 import { ChatView } from '@/views/components/ChatView'
-import { ClockIcon, FolderIcon, MenuIcon, RailIcon, SidebarIcon, SparkIcon } from '@/views/components/icons'
+import { ClockIcon, MenuIcon, RailIcon, SidebarIcon, SparkIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TaskRail } from '@/views/components/TaskRail'
 import { LoginPage } from './LoginPage'
@@ -128,8 +128,13 @@ function ProjectTaskRow({ task }: { task: Task }) {
 }
 
 function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProjectLoaded: (overview: ProjectOverview) => void }) {
+  const navigate = useNavigate()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
+  const [tab, setTab] = useState<'overview' | 'settings'>('overview')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [goal, setGoal] = useState('')
@@ -155,11 +160,7 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
 
   async function saveProject() {
     setSaving(true)
-    const result = await api.updateProject(projectId, {
-      name,
-      goal,
-      systemPrompt,
-    })
+    const result = await api.updateProject(projectId, { name, goal, systemPrompt })
     setSaving(false)
     if (!result.ok) {
       setError(result.error)
@@ -177,32 +178,29 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
         description: 'Periodically review the project and propose the next useful work items.',
         assignee: 'ai',
         kind: 'recurring',
-        surface: 'project',
-        visibleInChat: false,
-        origin: 'system',
         createdBy: 'system',
-        scheduleConfig: {
-          kind: 'recurring',
-          cron: '*/30 * * * *',
-        },
+        scheduleConfig: { kind: 'recurring', cron: '*/30 * * * *' },
         executor: {
           kind: 'ai_prompt',
           agent: 'codex',
           prompt: 'Review the current project state at {workDir}. Summarize the next valuable actions and create any needed Pulse tasks for concrete follow-up work.',
         },
       })
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
+      if (!result.ok) { setError(result.error); return }
     } else {
       const result = await api.updateTask(overview.brainTask.id, { enabled: !overview.brainTask.enabled })
-      if (!result.ok) {
-        setError(result.error)
-        return
-      }
+      if (!result.ok) { setError(result.error); return }
     }
     await loadOverview()
+  }
+
+  async function handleDeleteProject() {
+    if (!overview || deleteConfirmName !== overview.project.name) return
+    setDeleting(true)
+    const result = await api.deleteProject(projectId)
+    setDeleting(false)
+    if (!result.ok) { setError(result.error); return }
+    navigate('/')
   }
 
   if (!overview) {
@@ -212,148 +210,180 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
   return (
     <div className="pulse-page pulse-project-page">
       <div className="pulse-detail-shell">
-        <header className="pulse-detail-hero pulse-detail-hero-flat">
-          <div className="pulse-detail-hero-main">
-            <p className="pulse-detail-summary">
-              {overview.project.goal || '尚未设置项目目标。'}
-            </p>
-            <div className="pulse-detail-title-row">
-              {overview.project.pinned ? <span className="pulse-inline-pill">固定</span> : null}
-              <span className="pulse-inline-pill">{overview.brainTask?.enabled ? 'AI 大脑' : '未启用'}</span>
-            </div>
-          </div>
-          <div className="pulse-detail-actions">
-            <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void toggleBrain()}>
-              {overview.brainTask?.enabled ? '停用 AI 大脑' : '启用 AI 大脑'}
+        <div className="pulse-project-tabs-bar">
+          <div className="pulse-project-tab-group">
+            <button
+              type="button"
+              className={`pulse-project-tab${tab === 'overview' ? ' is-active' : ''}`}
+              onClick={() => setTab('overview')}
+            >
+              概览
             </button>
-            <button type="button" className="pulse-button" onClick={() => void saveProject()} disabled={saving}>
-              {saving ? '保存中…' : '保存'}
+            <button
+              type="button"
+              className={`pulse-project-tab${tab === 'settings' ? ' is-active' : ''}`}
+              onClick={() => setTab('settings')}
+            >
+              设置
             </button>
           </div>
-        </header>
+          <div className="pulse-project-tab-meta">
+            <span className="pulse-info-path-sm">{shortPath(overview.project.workDir)}</span>
+            {overview.project.pinned ? <span className="pulse-inline-pill">固定</span> : null}
+          </div>
+        </div>
 
-        <div className="pulse-detail-grid">
-          <WorkspaceSection title="工作目录">
-            <div className="pulse-info-block">
-              <div className="pulse-info-path">{shortPath(overview.project.workDir)}</div>
-              <div className="pulse-info-copy">{overview.project.workDir}</div>
+        {tab === 'overview' ? (
+          <div className="pulse-detail-grid">
+            <div className="pulse-overview-row">
+              <div className="pulse-overview-stat">
+                <span>会话</span>
+                <strong>{overview.counts.sessions}</strong>
+              </div>
+              <div className="pulse-overview-stat">
+                <span>短期任务</span>
+                <strong>{overview.counts.chatShortTasks}</strong>
+              </div>
+              <div className="pulse-overview-stat">
+                <span>项目任务</span>
+                <strong>{overview.counts.projectTasks}</strong>
+              </div>
+              <div className="pulse-overview-stat">
+                <span>AI 大脑</span>
+                <strong>{overview.brainTask?.enabled ? '运行中' : '未启用'}</strong>
+              </div>
+              <div className="pulse-overview-stat">
+                <span>调度</span>
+                <strong className="pulse-overview-stat-sm">{scheduleSummary(overview.schedule)}</strong>
+              </div>
             </div>
-            <div className="pulse-form-grid">
+
+            {overview.waitingTasks.length > 0 ? (
+              <WorkspaceSection title="等待">
+                <div className="pulse-note-list">
+                  {overview.waitingTasks.map((task) => (
+                    <div key={task.id} className="pulse-note-item">
+                      <div>
+                        <strong>{task.title}</strong>
+                        <p>{task.waitingInstructions || task.description || '等待新的输入后再继续。'}</p>
+                      </div>
+                      <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
+                    </div>
+                  ))}
+                </div>
+              </WorkspaceSection>
+            ) : null}
+
+            <div className="pulse-overview-two-col">
+              <WorkspaceSection title="会话">
+                {overview.sessions.length > 0 ? (
+                  <div className="pulse-session-grid pulse-overview-scroll-list">
+                    {overview.sessions.map((session) => (
+                      <Link key={session.id} className="pulse-session-row" to={`/sessions/${session.id}`}>
+                        <div>
+                          <strong>{session.name}</strong>
+                          {session.activeRunId ? <p>运行中</p> : null}
+                        </div>
+                        <span className="pulse-meta-inline">
+                          <ClockIcon className="pulse-icon pulse-inline-icon" />
+                          {formatDateTime(session.updatedAt)}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="pulse-empty-inline">暂无会话</p>
+                )}
+              </WorkspaceSection>
+
+              <WorkspaceSection title="项目任务">
+                {overview.projectTasks.length > 0 ? (
+                  <div className="pulse-task-list pulse-overview-scroll-list">
+                    {overview.projectTasks.map((task) => (
+                      <ProjectTaskRow key={task.id} task={task} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="pulse-empty-inline">暂无项目任务</p>
+                )}
+              </WorkspaceSection>
+            </div>
+
+            {overview.recentOutputs.length > 0 ? (
+              <WorkspaceSection title="最近输出">
+                <div className="pulse-output-list pulse-output-list-scroll">
+                  {overview.recentOutputs.map((output) => (
+                    <OutputRow key={`${output.kind}:${output.id}`} output={output} />
+                  ))}
+                </div>
+              </WorkspaceSection>
+            ) : null}
+          </div>
+        ) : (
+          <div className="pulse-detail-grid pulse-settings-grid">
+            <div className="pulse-form-grid pulse-form-grid-compact">
               <label>
                 <span>项目名称</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
               </label>
               <label className="pulse-form-span">
                 <span>项目目标</span>
-                <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={4} />
+                <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={2} />
               </label>
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="概览">
-            <div className="pulse-metric-grid">
-              <article className="pulse-metric-item">
-                <span>会话</span>
-                <strong>{overview.counts.sessions}</strong>
-              </article>
-              <article className="pulse-metric-item">
-                <span>短期任务</span>
-                <strong>{overview.counts.chatShortTasks}</strong>
-              </article>
-              <article className="pulse-metric-item">
-                <span>项目任务</span>
-                <strong>{overview.counts.projectTasks}</strong>
-              </article>
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="调度">
-            <div className="pulse-trigger-row">
-              <div className="pulse-trigger-item">
-                <span>触发器</span>
-                <strong>{overview.brainTask?.enabled ? 'Project Brain' : overview.schedule ? '项目调度任务' : '未配置'}</strong>
-              </div>
-              <div className="pulse-trigger-item">
-                <span>状态</span>
-                <strong>{scheduleSummary(overview.schedule)}</strong>
-              </div>
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="等待">
-            <div className="pulse-note-list">
-              {overview.waitingTasks.length > 0 ? overview.waitingTasks.map((task) => (
-                <div key={task.id} className="pulse-note-item">
-                  <div>
-                    <strong>{task.title}</strong>
-                    <p>{task.waitingInstructions || task.description || '等待新的输入后再继续。'}</p>
-                  </div>
-                  <span className={`pulse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
-                </div>
-              )) : (
-                <div className="pulse-empty-state">暂无等待事项</div>
-              )}
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="项目任务">
-            <div className="pulse-task-list">
-              {overview.projectTasks.length > 0 ? overview.projectTasks.map((task) => (
-                <ProjectTaskRow key={task.id} task={task} />
-              )) : (
-                <div className="pulse-empty-state">暂无项目任务</div>
-              )}
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="最近输出">
-            <div className="pulse-output-list">
-              {overview.recentOutputs.length > 0 ? overview.recentOutputs.map((output) => (
-                <OutputRow key={`${output.kind}:${output.id}`} output={output} />
-              )) : (
-                <div className="pulse-empty-state">暂无输出</div>
-              )}
-            </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection
-            title="AI 大脑 / Prompt"
-            action={overview.brainTask ? <span className="pulse-inline-pill">{overview.brainTask.enabled ? '运行中' : '已暂停'}</span> : null}
-          >
-            <div className="pulse-form-grid">
               <label className="pulse-form-span">
                 <span>系统 Prompt</span>
                 <textarea
                   value={systemPrompt}
                   onChange={(event) => setSystemPrompt(event.target.value)}
-                  rows={10}
+                  rows={5}
                   placeholder="输入项目级 Prompt，留空则不设置。"
                 />
               </label>
             </div>
-          </WorkspaceSection>
-
-          <WorkspaceSection title="会话">
-            <div className="pulse-session-grid">
-              {overview.sessions.length > 0 ? overview.sessions.map((session) => (
-                <Link key={session.id} className="pulse-session-row" to={`/sessions/${session.id}`}>
-                  <div>
-                    <strong>{session.name}</strong>
-                    {session.activeRunId ? <p>运行中</p> : null}
+            <div className="pulse-settings-actions">
+              <button type="button" className="pulse-button pulse-button-ghost" onClick={() => void toggleBrain()}>
+                {overview.brainTask?.enabled ? '停用 AI 大脑' : '启用 AI 大脑'}
+              </button>
+              <button type="button" className="pulse-button" onClick={() => void saveProject()} disabled={saving}>
+                {saving ? '保存中…' : '保存'}
+              </button>
+            </div>
+            <div className="pulse-settings-danger-zone">
+              <h3>危险操作</h3>
+              {!confirmDelete ? (
+                <button type="button" className="pulse-button pulse-button-danger" onClick={() => setConfirmDelete(true)}>
+                  删除项目
+                </button>
+              ) : (
+                <div className="pulse-delete-confirm">
+                  <p>此操作将永久删除项目及其所有会话、任务和数据，不可恢复。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
+                  <input
+                    type="text"
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    placeholder={overview.project.name}
+                    autoFocus
+                  />
+                  <div className="pulse-delete-confirm-actions">
+                    <button
+                      type="button"
+                      className="pulse-button pulse-button-danger"
+                      onClick={() => void handleDeleteProject()}
+                      disabled={deleting || deleteConfirmName !== overview.project.name}
+                    >
+                      {deleting ? '删除中…' : '确认删除'}
+                    </button>
+                    <button type="button" className="pulse-button pulse-button-ghost" onClick={() => { setConfirmDelete(false); setDeleteConfirmName('') }}>
+                      取消
+                    </button>
                   </div>
-                  <span className="pulse-meta-inline">
-                    <ClockIcon className="pulse-icon pulse-inline-icon" />
-                    {formatDateTime(session.updatedAt)}
-                  </span>
-                </Link>
-              )) : (
-                <div className="pulse-empty-state">还没有会话</div>
+                </div>
               )}
             </div>
-          </WorkspaceSection>
-        </div>
+          </div>
+        )}
 
-        {error ? <p className="pulse-error">{error}</p> : null}
+        {error ? <p className="pulse-error pulse-detail-error">{error}</p> : null}
       </div>
     </div>
   )
@@ -389,11 +419,7 @@ function WorkspaceHeader(props: {
   onOpenWorkspace: () => void
 }) {
   const title = props.activeSession?.name || props.activeProject?.name || 'Pulse'
-  const subtitle = props.activeSession
-      ? `${props.activeProject?.name ?? props.activeSession.projectId}${props.activeSession.activeRunId ? ' · 运行中' : ''}`
-    : props.activeProject
-      ? ''
-      : '本地工作台'
+  const subtitle = props.activeSession?.activeRunId ? '运行中' : null
 
   return (
     <header className="pulse-header">
@@ -414,6 +440,7 @@ function WorkspaceHeader(props: {
       </div>
 
       <div className="pulse-header-actions">
+        <span className="pulse-header-presence" aria-hidden="true" />
         {props.showSidebarToggle ? (
           <button
             type="button"
@@ -423,12 +450,6 @@ function WorkspaceHeader(props: {
             title="切换侧栏"
           >
             <SidebarIcon className="pulse-icon" />
-          </button>
-        ) : null}
-        <span className="pulse-header-presence" aria-hidden="true" />
-        {props.activeProject && props.activeSession ? (
-          <button type="button" className="pulse-icon-button pulse-header-action-icon" onClick={props.onOpenProject} aria-label="打开项目" title="打开项目">
-            <FolderIcon className="pulse-icon" />
           </button>
         ) : null}
         {props.showRailToggle ? (
@@ -468,8 +489,9 @@ function Shell({ auth }: { auth: AuthMe }) {
 
   const isSessionRoute = location.pathname.startsWith('/sessions/')
   const isProjectRoute = location.pathname.startsWith('/projects/')
+  const showRail = isSessionRoute || isProjectRoute
   const sidebarVisible = isDesktop ? desktopSidebarVisible : mobileSidebarOpen
-  const railVisible = isSessionRoute && (isDesktop ? desktopRailVisible : mobileRailOpen)
+  const railVisible = showRail && (isDesktop ? desktopRailVisible : mobileRailOpen)
 
   async function loadProjects() {
     const result = await api.getProjects()
@@ -528,7 +550,7 @@ function Shell({ auth }: { auth: AuthMe }) {
         sidebarVisible={sidebarVisible}
         railVisible={railVisible}
         showSidebarToggle={isDesktop}
-        showRailToggle={isSessionRoute}
+        showRailToggle={showRail}
         onToggleSidebar={() => {
           if (isDesktop) setDesktopSidebarVisible((value) => !value)
           else setMobileSidebarOpen((value) => !value)
@@ -547,10 +569,10 @@ function Shell({ auth }: { auth: AuthMe }) {
       />
 
       <div
-        className={`pulse-workspace${isProjectRoute ? ' is-project-route' : ''}`}
+        className={`pulse-workspace${isProjectRoute ? ' is-project-route' : ''}${isSessionRoute ? ' is-session-route' : ''}`}
         style={isDesktop
           ? {
-              gridTemplateColumns: isSessionRoute
+              gridTemplateColumns: showRail
                 ? `${desktopSidebarVisible ? 'var(--sidebar-width)' : '0px'} minmax(0, 1fr) ${desktopRailVisible ? 'var(--rail-width)' : '0px'}`
                 : `${desktopSidebarVisible ? 'var(--sidebar-width)' : '0px'} minmax(0, 1fr)`,
             }
@@ -614,12 +636,13 @@ function Shell({ auth }: { auth: AuthMe }) {
           </div>
         </main>
 
-        {isSessionRoute ? (
+        {showRail ? (
           <div className={`pulse-rail-shell${railVisible ? ' is-open' : ''}${isDesktop && !desktopRailVisible ? ' is-hidden' : ''}`}>
             <TaskRail
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
-              sessionId={activeSessionId}
+              sessionId={isSessionRoute ? activeSessionId : null}
+              defaultTab={isProjectRoute ? 'Project' : 'Session'}
               onRequestClose={() => setMobileRailOpen(false)}
             />
           </div>

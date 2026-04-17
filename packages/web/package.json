@@ -13,17 +13,19 @@
     "@melody-sync/types": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7.0.0",
-    "zustand": "^5.0.0",
-    "zod": "^3.23.8"
+    "remark-gfm": "^4.0.1",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
-    "tailwindcss": "^3.4.0",
     "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",
     "vite": "^6.0.0"
   }

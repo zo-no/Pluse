@@ -1,6 +1,7 @@
 import { Command } from 'commander'
-import type { CreateSessionInput, Session, UpdateSessionInput } from '@melody-sync/types'
+import type { CreateSessionInput, CreateTaskInput, Session, Task, UpdateSessionInput } from '@melody-sync/types'
 import { getSession } from '../../models/session'
+import { createTask } from '../../models/task'
 import { INBOX_PROJECT_ID } from '../../services/projects'
 import { createSessionWithEffects, listSessionViews, updateSessionWithEffects } from '../../services/sessions'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
@@ -89,4 +90,43 @@ sessionCommand
       ? await daemonRequest<Session>(baseUrl, `/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
       : updateSessionWithEffects(id, patch)
     opts.json ? printJson(session) : console.log(`${session.id}  ${session.name}`)
+  })
+
+sessionCommand
+  .command('create-task <sessionId>')
+  .requiredOption('--title <title>', 'Task title')
+  .requiredOption('--assignee <assignee>', 'ai or human')
+  .option('--description <description>', 'Task description')
+  .option('--waiting-instructions <text>', 'Human task guidance')
+  .option('--review-on-complete', 'Create a human review task on completion')
+  .option('--json', 'Output as JSON', false)
+  .action(async (sessionId: string, opts: any) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
+    const body = {
+      title: opts.title,
+      assignee: opts.assignee,
+      description: opts.description,
+      waitingInstructions: opts.waitingInstructions,
+      reviewOnComplete: opts.reviewOnComplete,
+    }
+    const task: Task = baseUrl
+      ? await daemonRequest<Task>(baseUrl, `/api/sessions/${sessionId}/create-task`, { method: 'POST', body: JSON.stringify(body) })
+      : (() => {
+          const session = getSession(sessionId)
+          if (!session) throw new Error(`Session not found: ${sessionId}`)
+          return createTask({
+            projectId: session.projectId,
+            originSessionId: session.id,
+            sessionId: session.id,
+            title: opts.title,
+            assignee: opts.assignee,
+            kind: 'once',
+            createdBy: 'human',
+            description: opts.description,
+            waitingInstructions: opts.waitingInstructions,
+            reviewOnComplete: opts.reviewOnComplete,
+          } as CreateTaskInput)
+        })()
+    opts.json ? printJson(task) : console.log(`${task.id}  ${task.title}`)
   })

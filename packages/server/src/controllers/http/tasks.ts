@@ -4,6 +4,8 @@ import { z } from 'zod'
 import type { ApiResult, CreateTaskInput, ListTasksFilter, Task, UpdateTaskInput } from '@melody-sync/types'
 import { getTaskRuns } from '../../models/task-run'
 import { createTaskWithEffects, deleteTaskWithEffects, getTaskLogsView, getTaskOpsView, getTaskView, listTaskViews, markTaskDone, runTaskNow, updateTaskWithEffects, cancelTask } from '../../services/tasks'
+import { getTask, updateTask } from '../../models/task'
+import { createSession } from '../../models/session'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -20,33 +22,26 @@ function sc(n: number): ContentfulStatusCode {
 const TaskSchema = z.object({
   projectId: z.string().min(1),
   sessionId: z.string().optional(),
+  originSessionId: z.string().optional(),
   title: z.string().min(1),
   description: z.string().optional(),
   assignee: z.enum(['ai', 'human']),
   kind: z.enum(['once', 'scheduled', 'recurring']),
-  surface: z.enum(['chat_short', 'project']),
-  visibleInChat: z.boolean(),
-  origin: z.enum(['agent', 'manual', 'scheduler', 'system']),
-  originRunId: z.string().optional(),
   order: z.number().optional(),
   scheduleConfig: z.any().optional(),
   executor: z.any().optional(),
   executorOptions: z.any().optional(),
   waitingInstructions: z.string().optional(),
-  sourceTaskId: z.string().optional(),
   blockedByTaskId: z.string().optional(),
   enabled: z.boolean().optional(),
   createdBy: z.enum(['human', 'ai', 'system']).optional(),
+  reviewOnComplete: z.boolean().optional(),
 })
 
 const TaskPatchSchema = z.object({
   title: z.string().optional(),
   description: z.string().nullable().optional(),
   status: z.string().optional(),
-  surface: z.enum(['chat_short', 'project']).optional(),
-  visibleInChat: z.boolean().optional(),
-  origin: z.enum(['agent', 'manual', 'scheduler', 'system']).optional(),
-  originRunId: z.string().nullable().optional(),
   sessionId: z.string().nullable().optional(),
   scheduleConfig: z.any().nullable().optional(),
   executor: z.any().nullable().optional(),
@@ -55,6 +50,7 @@ const TaskPatchSchema = z.object({
   completionOutput: z.string().nullable().optional(),
   blockedByTaskId: z.string().nullable().optional(),
   lastSessionId: z.string().nullable().optional(),
+  reviewOnComplete: z.boolean().optional(),
 })
 
 export const tasksRouter = new Hono()
@@ -66,10 +62,6 @@ tasksRouter.get('/tasks', (c) => {
     kind: c.req.query('kind') as ListTasksFilter['kind'],
     status: c.req.query('status') as ListTasksFilter['status'],
     assignee: c.req.query('assignee') as ListTasksFilter['assignee'],
-    surface: c.req.query('surface') as ListTasksFilter['surface'],
-    visibleInChat: c.req.query('visibleInChat') === undefined
-      ? undefined
-      : c.req.query('visibleInChat') === 'true',
   }
   return c.json(ok<Task[]>(listTaskViews(filter)))
 })
@@ -150,6 +142,40 @@ tasksRouter.post('/tasks/:id/cancel', (c) => {
     const message = String(error)
     return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
   }
+})
+
+tasksRouter.post('/tasks/:id/block', async (c) => {
+  const body = await c.req.json().catch(() => ({}))
+  const blockerId = (body as { blockerId?: string }).blockerId
+  if (!blockerId) return c.json(errBody('blockerId is required'), sc(400))
+  const task = getTask(c.req.param('id'))
+  if (!task) return c.json(errBody('Task not found'), sc(404))
+  const blocker = getTask(blockerId)
+  if (!blocker) return c.json(errBody('Blocker task not found'), sc(404))
+  if (blocker.projectId !== task.projectId) return c.json(errBody('Tasks must belong to the same project'), sc(400))
+  const updated = updateTask(task.id, { blockedByTaskId: blockerId, status: 'blocked' })
+  return c.json(ok(updated))
+})
+
+tasksRouter.delete('/tasks/:id/block', (c) => {
+  const task = getTask(c.req.param('id'))
+  if (!task) return c.json(errBody('Task not found'), sc(404))
+  const updated = updateTask(task.id, { blockedByTaskId: null, status: 'pending' })
+  return c.json(ok(updated))
+})
+
+tasksRouter.post('/tasks/:id/create-session', async (c) => {
+  const task = getTask(c.req.param('id'))
+  if (!task) return c.json(errBody('Task not found'), sc(404))
+  const body = await c.req.json().catch(() => ({}))
+  const session = createSession({
+    projectId: task.projectId,
+    name: (body as { name?: string }).name ?? task.title,
+    createdBy: 'system',
+    sourceTaskId: task.id,
+  })
+  updateTask(task.id, { sessionId: session.id })
+  return c.json(ok({ session, task: getTask(task.id) }), sc(201))
 })
 
 tasksRouter.get('/tasks/:id/logs', (c) => {

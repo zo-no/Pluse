@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { Session, CreateSessionInput, UpdateSessionInput } from '@melody-sync/types'
+import type { Session, CreateSessionInput, UpdateSessionInput, QueuedMessage } from '@melody-sync/types'
 import { getDb } from '../db'
 
 function genId(): string {
@@ -14,6 +14,8 @@ type SessionRow = {
   id: string
   project_id: string
   name: string
+  created_by: string
+  source_task_id: string | null
   auto_rename_pending: number
   tool: string | null
   model: string | null
@@ -31,9 +33,16 @@ type SessionRow = {
 }
 
 function rowToSession(row: SessionRow): Session {
+  let followUpQueue: QueuedMessage[] = []
+  try {
+    followUpQueue = JSON.parse(row.follow_up_queue) as QueuedMessage[]
+  } catch {}
+
   return {
     id: row.id,
     projectId: row.project_id,
+    createdBy: (row.created_by ?? 'human') as Session['createdBy'],
+    sourceTaskId: row.source_task_id ?? undefined,
     name: row.name,
     autoRenamePending: row.auto_rename_pending === 1 ? true : undefined,
     tool: row.tool ?? undefined,
@@ -43,6 +52,7 @@ function rowToSession(row: SessionRow): Session {
     claudeSessionId: row.claude_session_id ?? undefined,
     codexThreadId: row.codex_thread_id ?? undefined,
     activeRunId: row.active_run_id ?? undefined,
+    followUpQueue,
     pinned: row.pinned === 1 ? true : undefined,
     archived: row.archived === 1 ? true : undefined,
     archivedAt: row.archived_at ?? undefined,
@@ -90,15 +100,17 @@ export function createSession(input: CreateSessionInput): Session {
 
   db.run(
     `INSERT INTO sessions (
-      id, project_id, name, auto_rename_pending,
+      id, project_id, name, created_by, source_task_id, auto_rename_pending,
       tool, model, effort, thinking, claude_session_id, codex_thread_id,
       pinned, archived, created_at, updated_at
     )
-     VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
     [
       id,
       input.projectId,
       input.name ?? 'New Session',
+      input.createdBy ?? 'human',
+      input.sourceTaskId ?? null,
       input.tool ?? 'codex',
       input.model ?? null,
       input.effort ?? null,
@@ -132,6 +144,7 @@ export function updateSession(id: string, input: UpdateSessionInput): Session {
     ['pinned', 'pinned'],
     ['archived', 'archived'],
     ['activeRunId', 'active_run_id'],
+    ['sourceTaskId', 'source_task_id'],
   ]
 
   for (const [key, col] of fieldMap) {
@@ -163,15 +176,6 @@ export function deleteSession(id: string): void {
 
 // ─── follow-up queue ──────────────────────────────────────────────────────────
 
-export interface QueuedMessage {
-  requestId: string
-  text: string
-  tool: string
-  model: string | null
-  effort: string | null
-  thinking: boolean
-}
-
 export function getFollowUpQueue(id: string): QueuedMessage[] {
   const db = getDb()
   const row = db.query<{ follow_up_queue: string }, [string]>(
@@ -188,7 +192,7 @@ export function getFollowUpQueue(id: string): QueuedMessage[] {
 export function enqueueFollowUp(id: string, msg: QueuedMessage): void {
   const db = getDb()
   const queue = getFollowUpQueue(id)
-  if (queue.some((m) => m.requestId === msg.requestId)) return // dedup
+  if (queue.some((m) => m.requestId === msg.requestId)) return
   queue.push(msg)
   db.run(
     `UPDATE sessions SET follow_up_queue = ?, updated_at = ? WHERE id = ?`,
@@ -206,4 +210,12 @@ export function dequeueFollowUp(id: string): QueuedMessage | null {
     [JSON.stringify(rest), now(), id]
   )
   return next!
+}
+
+export function listSessionsWithPendingQueue(): Session[] {
+  const db = getDb()
+  const rows = db.query<SessionRow, []>(
+    `SELECT * FROM sessions WHERE follow_up_queue != '[]' AND active_run_id IS NULL`
+  ).all()
+  return rows.map(rowToSession)
 }

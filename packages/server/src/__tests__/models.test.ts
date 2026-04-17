@@ -142,8 +142,8 @@ describe('task model', () => {
     })
 
     expect(listTasks({ projectId: project.id })).toHaveLength(2)
-    expect(listTasks({ sessionId: session.id, visibleInChat: true })).toHaveLength(1)
-    expect(listTasks({ projectId: project.id, surface: 'project' })).toHaveLength(1)
+    expect(listTasks({ sessionId: session.id })).toHaveLength(1)
+    expect(listTasks({ projectId: project.id })).toHaveLength(2)
 
     const updated = updateTask(chatTask.id, { status: 'done', completionOutput: 'handled' })
     expect(updated?.status).toBe('done')

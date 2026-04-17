@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { RuntimeModelCatalog, RuntimeTool, Run, Session, SessionEvent, UpdateSessionInput } from '@melody-sync/types'
 import * as api from '@/api/client'
-import { ClockIcon, SendIcon, SparkIcon } from './icons'
+import { SendIcon } from './icons'
 
 interface ChatViewProps {
   sessionId: string
@@ -22,6 +24,80 @@ function formatRunState(value: string): string {
   return value
 }
 
+function ToolUseCard({ event }: { event: SessionEvent }) {
+  const raw = event.content ?? event.toolInput ?? ''
+  let toolName = '工具调用'
+  let inputPreview = raw
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed.name && typeof parsed.name === 'string') toolName = parsed.name
+    if (parsed.input) inputPreview = JSON.stringify(parsed.input, null, 2)
+  } catch {
+    // raw content, use as-is
+  }
+
+  return (
+    <details className="pulse-event-card pulse-tool-card">
+      <summary>
+        <span className="pulse-tool-label">
+          <span className="pulse-tool-icon">⚙</span>
+          {toolName}
+        </span>
+        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+      </summary>
+      <pre>{inputPreview}</pre>
+    </details>
+  )
+}
+
+function ToolResultCard({ event }: { event: SessionEvent }) {
+  const raw = event.content ?? event.output ?? event.bodyPreview ?? ''
+  let isError = false
+  let content = raw
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed.type === 'tool_result') {
+      isError = parsed.is_error === true
+      if (Array.isArray(parsed.content)) {
+        content = (parsed.content as Array<{ text?: string }>).map((c) => c.text ?? '').join('\n')
+      }
+    }
+  } catch {
+    // raw content
+  }
+
+  return (
+    <details className={`pulse-event-card pulse-tool-result-card${isError ? ' is-error' : ''}`}>
+      <summary>
+        <span className="pulse-tool-label">
+          <span className="pulse-tool-icon">{isError ? '✗' : '✓'}</span>
+          工具结果
+        </span>
+        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+      </summary>
+      <pre>{content}</pre>
+    </details>
+  )
+}
+
+function ReasoningCard({ event }: { event: SessionEvent }) {
+  const raw = event.content ?? event.bodyPreview ?? ''
+  return (
+    <details className="pulse-event-card pulse-reasoning-card">
+      <summary>
+        <span className="pulse-tool-label">
+          <span className="pulse-tool-icon">💭</span>
+          思考过程
+        </span>
+        <span className="pulse-event-time">{formatTime(event.timestamp)}</span>
+      </summary>
+      <pre>{raw}</pre>
+    </details>
+  )
+}
+
 function EventCard({ event }: { event: SessionEvent }) {
   if (event.type === 'message') {
     if (event.role === 'user') {
@@ -37,21 +113,25 @@ function EventCard({ event }: { event: SessionEvent }) {
 
     return (
       <div className="pulse-message-row is-assistant">
-        <div className="pulse-assistant-copy">{event.content}</div>
+        <div className="pulse-assistant-copy pulse-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
+        </div>
         <span className="pulse-message-time">{formatTime(event.timestamp)}</span>
       </div>
     )
   }
 
-  const label = event.type === 'tool_use'
-    ? '工具调用'
-    : event.type === 'tool_result'
-      ? '工具结果'
-      : event.type === 'reasoning'
-        ? '推理'
-        : event.type === 'status'
-          ? '状态'
-          : '事件'
+  if (event.type === 'tool_use') return <ToolUseCard event={event} />
+  if (event.type === 'tool_result') return <ToolResultCard event={event} />
+  if (event.type === 'reasoning') return <ReasoningCard event={event} />
+
+  const label = event.type === 'status'
+    ? '状态'
+    : event.type === 'file_change'
+      ? '文件变更'
+      : event.type === 'usage'
+        ? '用量'
+        : '事件'
 
   return (
     <details className="pulse-event-card">
@@ -70,6 +150,7 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   const [runs, setRuns] = useState<Run[]>([])
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [runtimeTools, setRuntimeTools] = useState<RuntimeTool[]>([])
   const [catalog, setCatalog] = useState<RuntimeModelCatalog | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -113,13 +194,18 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   }, [session?.tool])
 
   useEffect(() => {
-    if (!session?.activeRunId) return
-    const timer = window.setInterval(() => {
-      void refreshSession()
-      void refreshThread()
-    }, 900)
-    return () => window.clearInterval(timer)
-  }, [session?.activeRunId, sessionId])
+    const es = new EventSource(`/api/events?sessionId=${sessionId}`)
+    es.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data as string) as { type: string }
+        if (event.type === 'session_updated') {
+          void refreshSession()
+          void refreshThread()
+        }
+      } catch {}
+    }
+    return () => es.close()
+  }, [sessionId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -164,6 +250,20 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
     await refreshThread()
   }
 
+  async function handleCancel() {
+    if (!session?.activeRunId || cancelling) return
+    setCancelling(true)
+    setError(null)
+    const result = await api.cancelRun(session.activeRunId)
+    setCancelling(false)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await refreshSession()
+    await refreshThread()
+  }
+
   if (!session) {
     return <div className="pulse-page pulse-page-loading">正在加载会话…</div>
   }
@@ -171,23 +271,6 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
   return (
     <div className="pulse-page pulse-session-page">
       <div className="pulse-chat-shell">
-        <div className="pulse-chat-head pulse-chat-head-compact">
-          <div className="pulse-chat-meta">
-            <span className="pulse-inline-pill">
-              <SparkIcon className="pulse-icon pulse-inline-icon" />
-              {session.tool ?? 'codex'}
-            </span>
-            {session.model ? <span className="pulse-inline-pill">{session.model}</span> : null}
-            {session.effort ? <span className="pulse-inline-pill">{session.effort}</span> : null}
-            {latestRun ? (
-              <span className={`pulse-inline-pill${latestRun.state === 'running' ? ' is-running' : ''}`}>
-                <ClockIcon className="pulse-icon pulse-inline-icon" />
-                {formatRunState(latestRun.state)}
-              </span>
-            ) : null}
-          </div>
-          <span className="pulse-chat-head-note">{session.activeRunId ? '自动刷新中' : '可继续输入'}</span>
-        </div>
 
         <div className="pulse-thread">
           <div className="pulse-thread-inner">
@@ -243,10 +326,30 @@ export function ChatView({ sessionId, onSessionLoaded }: ChatViewProps) {
                 </select>
               )}
             </div>
-            <button type="button" className="pulse-button" onClick={() => void handleSend()} disabled={sending}>
-              <SendIcon className="pulse-icon" />
-              {sending ? '发送中…' : '发送'}
-            </button>
+            <div className="pulse-composer-send-group">
+              {session.activeRunId ? (
+                <button
+                  type="button"
+                  className="pulse-button pulse-button-danger"
+                  onClick={() => void handleCancel()}
+                  disabled={cancelling}
+                  aria-label={cancelling ? '取消中' : '停止'}
+                  title={cancelling ? '取消中' : '停止'}
+                >
+                  {cancelling ? '…' : '■'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="pulse-icon-button pulse-send-btn"
+                onClick={() => void handleSend()}
+                disabled={sending || !!session.activeRunId}
+                aria-label={sending ? '发送中' : '发送'}
+                title="发送 (Cmd+Enter)"
+              >
+                <SendIcon className="pulse-icon" />
+              </button>
+            </div>
           </div>
           {error ? <p className="pulse-error">{error}</p> : null}
         </footer>

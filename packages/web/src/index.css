@@ -509,8 +509,10 @@ select:focus {
 .pulse-sidebar-body {
   height: 100%;
   overflow: auto;
-  padding: 0 6px 12px;
+  padding: 0 6px 0;
   scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .pulse-sidebar-body::-webkit-scrollbar,
@@ -603,6 +605,9 @@ select:focus {
   padding-top: 8px;
   padding-left: 0;
   padding-right: 0;
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
 }
 
 .pulse-sidebar-form {
@@ -621,6 +626,30 @@ select:focus {
 .pulse-output-list {
   display: grid;
   gap: 0;
+  align-content: start;
+}
+
+.pulse-output-list-scroll {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.pulse-overview-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 16px;
+  align-items: start;
+}
+
+.pulse-overview-scroll-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.pulse-empty-inline {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .pulse-sidebar-list-dense {
@@ -664,9 +693,51 @@ select:focus {
 }
 
 .pulse-sidebar-row {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse-sidebar-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.pulse-sidebar-item:hover .pulse-sidebar-item-actions,
+.pulse-sidebar-item.is-active .pulse-sidebar-item-actions {
+  opacity: 1;
+}
+
+.pulse-sidebar-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s, color 0.1s;
+}
+
+.pulse-sidebar-action-btn:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.pulse-sidebar-action-btn.is-active {
+  color: var(--text);
+}
+
+.pulse-sidebar-action-btn.is-danger:hover {
+  background: color-mix(in srgb, var(--red, #e53e3e) 12%, transparent);
+  color: var(--red, #e53e3e);
 }
 
 .pulse-sidebar-dot {
@@ -764,8 +835,7 @@ select:focus {
 
 .pulse-chat-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: calc(100vh - var(--header-height) - 20px);
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -989,7 +1059,7 @@ select:focus {
 }
 
 .pulse-rail-head {
-  padding: 2px 0 8px;
+  padding: 6px 0 8px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1074,9 +1144,11 @@ select:focus {
 }
 
 .pulse-detail-shell {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0;
-  padding: 10px 0 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 .pulse-detail-hero {
@@ -1114,7 +1186,10 @@ select:focus {
 .pulse-detail-grid {
   display: grid;
   gap: 0;
-  padding: 0 12px 12px;
+  padding: 0 16px 16px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .pulse-detail-section {
@@ -1292,8 +1367,9 @@ select:focus {
     -webkit-backdrop-filter: none;
   }
 
-  .pulse-detail-shell {
-    overflow: auto;
+  .pulse-chat-shell {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 
   .pulse-runtime-controls-inline {
@@ -1344,21 +1420,13 @@ select:focus {
     border-radius: 22px;
   }
 
-  .pulse-chat-shell {
-    min-height: calc(100vh - var(--header-height) - 18px - var(--safe-top));
-  }
-
-  .pulse-composer {
-    padding-bottom: max(16px, var(--safe-bottom));
-  }
-
-  .pulse-runtime-controls-inline {
-    grid-template-columns: 1fr;
-    width: 100%;
-  }
 }
 
 @media (max-width: 680px) {
+  .pulse-overview-two-col {
+    grid-template-columns: 1fr;
+  }
+
   .pulse-header {
     gap: 8px;
   }
@@ -1380,11 +1448,6 @@ select:focus {
     padding: 12px 14px max(14px, var(--safe-bottom));
   }
 
-  .pulse-composer-actions {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .pulse-sidebar-item,
   .pulse-session-row,
   .pulse-output-row {
@@ -1403,4 +1466,1211 @@ select:focus {
   .pulse-trigger-item {
     padding: 2px 8px;
   }
+}
+
+/* ── Tool / Reasoning event cards ─────────────────────────────────────────── */
+
+.pulse-tool-card summary,
+.pulse-tool-result-card summary,
+.pulse-reasoning-card summary {
+  list-style: none;
+}
+
+.pulse-tool-card summary::-webkit-details-marker,
+.pulse-tool-result-card summary::-webkit-details-marker,
+.pulse-reasoning-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.pulse-tool-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse-tool-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pulse-tool-card {
+  border-color: color-mix(in srgb, #6366f1 30%, transparent);
+  background: color-mix(in srgb, #6366f1 4%, var(--bg));
+}
+
+.pulse-tool-result-card {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: color-mix(in srgb, var(--success) 4%, var(--bg));
+}
+
+.pulse-tool-result-card.is-error {
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 4%, var(--bg));
+}
+
+.pulse-reasoning-card {
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: color-mix(in srgb, var(--warning) 4%, var(--bg));
+}
+
+/* ── Markdown rendering ────────────────────────────────────────────────────── */
+
+.pulse-markdown {
+  line-height: 1.65;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.pulse-markdown p {
+  margin: 0 0 0.75em;
+}
+
+.pulse-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.pulse-markdown h1,
+.pulse-markdown h2,
+.pulse-markdown h3,
+.pulse-markdown h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.pulse-markdown h1 { font-size: 1.25em; }
+.pulse-markdown h2 { font-size: 1.1em; }
+.pulse-markdown h3 { font-size: 1em; }
+
+.pulse-markdown code {
+  font-family: "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.pulse-markdown pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+
+.pulse-markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+}
+
+.pulse-markdown ul,
+.pulse-markdown ol {
+  margin: 0 0 0.75em;
+  padding-left: 1.5em;
+}
+
+.pulse-markdown li {
+  margin-bottom: 0.25em;
+}
+
+.pulse-markdown blockquote {
+  margin: 0.75em 0;
+  padding: 0.5em 1em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.pulse-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+  font-size: 0.9em;
+}
+
+.pulse-markdown th,
+.pulse-markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.pulse-markdown th {
+  background: var(--bg-secondary);
+  font-weight: 600;
+}
+
+.pulse-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pulse-markdown hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
+
+/* ── Cancel / send button group ───────────────────────────────────────────── */
+
+.pulse-composer-send-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-button-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+.pulse-button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+}
+
+/* ── Session context menu ─────────────────────────────────────────────────── */
+
+.pulse-context-menu {
+  z-index: 9999;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+}
+
+.pulse-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pulse-context-menu button:hover {
+  background: var(--surface-hover);
+}
+
+.pulse-context-menu button.is-danger {
+  color: var(--danger);
+}
+
+.pulse-context-menu button.is-danger:hover {
+  background: var(--danger-soft);
+}
+
+.pulse-context-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ── Sidebar more button ──────────────────────────────────────────────────── */
+
+.pulse-sidebar-more-btn {
+  opacity: 0;
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+
+.pulse-sidebar-item:hover .pulse-sidebar-more-btn,
+.pulse-sidebar-row:hover .pulse-sidebar-more-btn {
+  opacity: 1;
+}
+
+.pulse-sidebar-more-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+/* ── Sidebar rename input ─────────────────────────────────────────────────── */
+
+.pulse-sidebar-rename-row {
+  padding: 6px 10px;
+}
+
+.pulse-sidebar-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+/* ── Archived sessions ────────────────────────────────────────────────────── */
+
+.pulse-sidebar-archive-group {
+  margin-top: 8px;
+}
+
+.pulse-sidebar-archive-toggle {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pulse-sidebar-archive-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.pulse-sidebar-archive-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pulse-sidebar-archived-item {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.pulse-sidebar-archived-item:hover {
+  opacity: 0.85;
+  background: var(--surface-hover);
+}
+
+/* ── Pinned dot indicator ─────────────────────────────────────────────────── */
+
+.pulse-sidebar-dot.is-pinned {
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+/* ── New session button at sidebar bottom ─────────────────────────────────── */
+
+.pulse-sidebar-section-new-session {
+  display: flex;
+  justify-content: center;
+  padding: 8px 6px 10px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.pulse-sidebar-new-session-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.pulse-sidebar-new-session-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-secondary);
+  color: var(--text);
+}
+
+.pulse-sidebar-new-session-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ── Project switcher ─────────────────────────────────────────────────────── */
+
+.pulse-project-switcher {
+  position: relative;
+  padding: 6px 6px 0;
+}
+
+.pulse-project-switcher-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.pulse-project-switcher-btn:hover,
+.pulse-project-switcher-btn.is-open {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+
+.pulse-project-switcher-label {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pulse-project-switcher-label strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-project-switcher-label span {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-project-switcher-chevron {
+  font-size: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.pulse-project-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 6px;
+  right: 6px;
+  z-index: 200;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.pulse-project-picker-list {
+  max-height: 220px;
+  overflow: auto;
+  padding: 4px;
+}
+
+.pulse-project-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  transition: background-color 0.12s ease;
+}
+
+.pulse-project-picker-item:hover {
+  background: var(--surface-hover);
+}
+
+.pulse-project-picker-item.is-active {
+  background: var(--bg-secondary);
+}
+
+.pulse-project-picker-item.is-active .pulse-sidebar-dot {
+  border-color: var(--text);
+  background: var(--text);
+}
+
+.pulse-project-picker-item-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.pulse-project-picker-item-text strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-project-picker-item-text span {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-project-picker-footer {
+  padding: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.pulse-project-picker-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.12s ease;
+}
+
+.pulse-project-picker-add:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* ── Project page tab bar ─────────────────────────────────────────────────── */
+
+.pulse-project-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pulse-project-tab-group {
+  display: flex;
+}
+
+.pulse-project-tab {
+  min-height: 42px;
+  padding: 0 4px;
+  margin-right: 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.pulse-project-tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--text);
+}
+
+.pulse-project-tab:hover:not(.is-active) {
+  color: var(--text-secondary);
+}
+
+.pulse-project-tab-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-settings-grid {
+  padding-top: 16px;
+  gap: 16px;
+}
+
+.pulse-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.pulse-detail-error {
+  padding: 0 16px 12px;
+}
+
+/* ── Project page compact styles ──────────────────────────────────────────── */
+
+.pulse-info-path-sm {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+}
+
+.pulse-form-grid-compact {
+  gap: 8px;
+}
+
+.pulse-overview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-top: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.pulse-overview-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 14px;
+  border-right: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pulse-overview-stat:last-child {
+  border-right: 0;
+}
+
+.pulse-overview-stat span {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pulse-overview-stat strong {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-overview-stat-sm {
+  font-size: 12px !important;
+}
+
+/* ── Send button ──────────────────────────────────────────────────────────── */
+
+.pulse-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.pulse-send-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 88%, transparent);
+}
+
+.pulse-send-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+
+/* ── Task rail compact ────────────────────────────────────────────────────── */
+
+.pulse-task-compact {
+  padding: 8px 0 !important;
+}
+
+.pulse-task-compact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-task-compact-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pulse-task-compact-main strong {
+  display: block;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-task-compact-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.pulse-task-compact-actions {
+  flex-shrink: 0;
+}
+
+/* ── Rail head compact ────────────────────────────────────────────────────── */
+
+.pulse-rail-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pulse-rail-head-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pulse-rail-head-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Mobile: full-bleed chat, no card nesting ─────────────────────────────── */
+
+@media (max-width: 860px) {
+  /* Remove workspace padding on session route so chat fills edge-to-edge */
+  .pulse-workspace.is-session-route {
+    padding: 0;
+  }
+
+  .pulse-chat-shell {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--header-height) - var(--safe-top));
+    border: none;
+    border-radius: 0;
+    background: var(--bg);
+    box-shadow: none;
+    overflow: hidden;
+  }
+
+  .pulse-thread {
+    flex: 1;
+    overflow: auto;
+    min-height: 0;
+  }
+
+  .pulse-composer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    z-index: 10;
+    padding-bottom: max(16px, var(--safe-bottom));
+  }
+
+  .pulse-runtime-controls-inline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+}
+
+/* ─── TaskRail with detail pane ─────────────────────────────────────────── */
+
+.pulse-rail.has-detail {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+}
+
+.pulse-rail-list-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.pulse-rail-detail-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.pulse-task-card.is-selected {
+  background: var(--surface-raised);
+  border-left: 2px solid var(--accent);
+}
+
+.pulse-task-compact-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: 2px 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+/* ─── TaskDetail ──────────────────────────────────────────────────────────── */
+
+.pulse-task-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-size: 0.8rem;
+}
+
+.pulse-task-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+
+.pulse-task-detail-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.pulse-task-detail-title h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+  line-height: 1.3;
+}
+
+.pulse-task-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pulse-assignee-tag {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.pulse-assignee-tag[data-assignee="ai"] {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.pulse-assignee-tag[data-assignee="human"] {
+  background: color-mix(in srgb, #f97316 15%, transparent);
+  color: #ea580c;
+}
+
+.pulse-kind-tag {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.pulse-task-detail-toast {
+  margin: 8px 14px 0;
+  padding: 6px 10px;
+  background: color-mix(in srgb, #22c55e 12%, transparent);
+  border: 1px solid color-mix(in srgb, #22c55e 30%, transparent);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: #16a34a;
+}
+
+.pulse-task-detail-tabs {
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pulse-task-detail-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.pulse-task-detail-info {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pulse-detail-field label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.pulse-detail-field p {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.pulse-detail-field-sub {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.pulse-detail-field-highlight {
+  background: color-mix(in srgb, #f97316 8%, transparent);
+  border: 1px solid color-mix(in srgb, #f97316 20%, transparent);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.pulse-detail-field-blocked {
+  color: #ea580c;
+}
+
+.pulse-detail-pre {
+  font-size: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  background: var(--surface-raised);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--text);
+}
+
+.pulse-detail-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 16px 14px;
+}
+
+/* History tab */
+.pulse-task-detail-history {
+  padding: 4px 0;
+}
+
+.pulse-run-entry {
+  border-bottom: 1px solid var(--border);
+}
+
+.pulse-run-entry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
+}
+
+.pulse-run-entry-row:hover {
+  background: var(--surface-raised);
+}
+
+.pulse-run-entry-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse-run-entry-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pulse-run-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pulse-run-dot.is-running {
+  background: #3b82f6;
+  animation: pulse-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes pulse-ping {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.pulse-run-status {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pulse-run-status.is-done { color: #16a34a; }
+.pulse-run-status.is-failed { color: #dc2626; }
+.pulse-run-status.is-running { color: #2563eb; }
+.pulse-run-status.is-cancelled { color: var(--text-muted); }
+
+.pulse-run-trigger {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.pulse-run-time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.pulse-run-duration {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.pulse-run-error {
+  font-size: 0.75rem;
+  color: #dc2626;
+  padding: 0 14px 6px;
+  margin: 0;
+}
+
+.pulse-run-output {
+  font-size: 0.72rem;
+  font-family: var(--font-mono, monospace);
+  background: var(--surface-raised);
+  margin: 0 14px 8px;
+  padding: 8px;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 180px;
+  overflow-y: auto;
+  color: var(--text);
+}
+
+/* Ops tab */
+.pulse-task-detail-ops {
+  padding: 4px 0;
+}
+
+.pulse-op-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pulse-op-time {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.pulse-op-actor {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.pulse-op-label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.pulse-op-transition {
+  color: var(--text-muted);
+}
+
+.pulse-op-note {
+  color: var(--text-muted);
+}
+
+/* Actions bar */
+.pulse-task-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  gap: 8px;
+}
+
+.pulse-task-detail-actions-left,
+.pulse-task-detail-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-toggle {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.pulse-toggle.is-on {
+  background: var(--accent);
+}
+
+.pulse-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.pulse-toggle.is-on::after {
+  transform: translateX(14px);
+}
+
+.pulse-delete-btn {
+  font-size: 1rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.pulse-delete-btn:hover {
+  color: #dc2626;
+}
+
+.pulse-confirm-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.pulse-done-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pulse-done-input {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  width: 140px;
+}
+
+.pulse-running-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #2563eb;
+}
+
+.pulse-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: pulse-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.pulse-button-xs {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+}
+
+.pulse-button-success {
+  background: #22c55e;
+  color: white;
+}
+
+.pulse-button-success:hover {
+  background: #16a34a;
+}
+
+/* ─── Project delete danger zone ─────────────────────────────────────────── */
+
+.pulse-settings-danger-zone {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, #dc2626 30%, transparent);
+}
+
+.pulse-settings-danger-zone h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #dc2626;
+  margin: 0 0 10px;
+}
+
+.pulse-delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pulse-delete-confirm p {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.pulse-delete-confirm input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.pulse-delete-confirm-actions {
+  display: flex;
+  gap: 8px;
 }

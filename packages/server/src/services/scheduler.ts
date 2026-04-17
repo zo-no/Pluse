@@ -113,17 +113,13 @@ export async function runTask(
       })
     }
 
-    if (result.success && fresh.executorOptions?.reviewOnComplete) {
+    if (result.success && fresh.reviewOnComplete) {
       createTask({
         projectId: fresh.projectId,
-        sessionId: fresh.sessionId,
+        originSessionId: fresh.sessionId,
         title: `Review: ${fresh.title}`,
         assignee: 'human',
         kind: 'once',
-        surface: 'chat_short',
-        visibleInChat: true,
-        origin: 'scheduler',
-        sourceTaskId: fresh.id,
         createdBy: 'system',
         waitingInstructions: `Task "${fresh.title}" completed. Please review the output and mark done.`,
       })

@@ -2,10 +2,12 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { resolve } from 'node:path'
-import type { AiPromptExecutor, HttpExecutor, ScriptExecutor, Task } from '@melody-sync/types'
+import type { AiPromptExecutor, ScriptExecutor, Task } from '@melody-sync/types'
 import { getProject } from '../models/project'
-import { getSetting } from '../models/settings'
+import { createSession } from '../models/session'
+import { updateTask } from '../models/task'
 import { appendSpoolLine, completeTaskRun, createTaskRun } from '../models/task-run'
+import { buildTaskSystemPrompt } from './system-prompt'
 import { emit } from './events'
 
 const runningProcs = new Map<string, ChildProcess>()
@@ -31,35 +33,26 @@ function buildVars(task: Task): Record<string, string> {
   }
 }
 
-function getPulseCliCommand(): string {
-  return process.env['PULSE_CLI_COMMAND']?.trim()
-    || `bun ${resolve(import.meta.dir, '../cli.ts')}`
+function ensureTaskSession(task: Task): string {
+  // 懒加载：Task 第一次执行时按需创建 Session
+  if (task.sessionId) return task.sessionId
+  const project = getProject(task.projectId)
+  const session = createSession({
+    projectId: task.projectId,
+    name: task.title,
+    createdBy: 'system',
+    sourceTaskId: task.id,
+    tool: (task.executor as AiPromptExecutor)?.agent ?? 'codex',
+  })
+  updateTask(task.id, { sessionId: session.id })
+  return session.id
 }
 
 function buildSystemPrompt(task: Task): string | null {
   const project = getProject(task.projectId)
-  const globalPrompt = getSetting('global_system_prompt')
-  const shortTasks = task.projectId
-    ? []
-    : []
-
-  const parts = [
-    globalPrompt?.trim() || '',
-    project?.systemPrompt?.trim() || '',
-    [
-      'You are operating inside Pulse.',
-      `Current project id: ${task.projectId}`,
-      `Current project name: ${project?.name ?? ''}`,
-      `Current work directory: ${project?.workDir ?? ''}`,
-      `Project goal: ${project?.goal ?? ''}`,
-      'This project has a built-in task scheduler.',
-      `Use the Pulse CLI command "${getPulseCliCommand()}" to inspect or create project tasks when there is a meaningful next step.`,
-      'Create chat_short tasks for immediate follow-up work and project tasks for recurring or scheduled work.',
-      shortTasks.length ? `Current short tasks:\n${shortTasks.join('\n')}` : '',
-    ].filter(Boolean).join('\n'),
-  ].filter(Boolean)
-
-  return parts.length > 0 ? parts.join('\n\n') : null
+  if (!project) return null
+  const sessionId = task.sessionId ?? `(pending for task ${task.id})`
+  return buildTaskSystemPrompt(project, task.id, task.title, sessionId)
 }
 
 function resolveCwd(task: Task, override?: string): string {
@@ -176,6 +169,14 @@ function extractCodexSessionId(line: string): string | undefined {
 async function executeAiPrompt(task: Task, triggeredBy: 'manual' | 'scheduler' | 'api' | 'cli'): Promise<ExecutionResult> {
   const executor = task.executor as AiPromptExecutor
   const agent = executor.agent ?? 'codex'
+
+  // 懒加载 Session：continueSession=false 时每次新建，否则复用或首次创建
+  if (!task.executorOptions?.continueSession) {
+    task = { ...task, sessionId: undefined }
+  }
+  const sessionId = ensureTaskSession(task)
+  task = { ...task, sessionId }
+
   const cwd = resolveCwd(task)
   const userPrompt = interpolate(executor.prompt, buildVars(task))
   const systemAppend = buildSystemPrompt(task)
@@ -256,26 +257,6 @@ async function executeAiPrompt(task: Task, triggeredBy: 'manual' | 'scheduler' |
   })
 }
 
-async function executeHttp(task: Task): Promise<ExecutionResult> {
-  const executor = task.executor as HttpExecutor
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), executor.timeout ?? 30_000)
-  try {
-    const res = await fetch(executor.url, {
-      method: executor.method,
-      headers: executor.headers,
-      body: executor.body,
-      signal: controller.signal,
-    })
-    const output = await res.text()
-    return { success: res.ok, output, error: res.ok ? undefined : `HTTP ${res.status}` }
-  } catch (error) {
-    return { success: false, output: '', error: error instanceof Error ? error.message : String(error) }
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
 export async function executeTask(task: Task, triggeredBy: 'manual' | 'scheduler' | 'api' | 'cli'): Promise<ExecutionResult> {
   if (!task.executor) {
     return { success: false, output: '', error: 'task executor is missing' }
@@ -283,9 +264,6 @@ export async function executeTask(task: Task, triggeredBy: 'manual' | 'scheduler
 
   if (task.executor.kind === 'script') {
     return executeScript(task)
-  }
-  if (task.executor.kind === 'http') {
-    return executeHttp(task)
   }
   return executeAiPrompt(task, triggeredBy)
 }
