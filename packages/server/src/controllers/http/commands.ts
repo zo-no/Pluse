@@ -23,7 +23,7 @@ export function getCommandCatalog(): CommandCatalog {
     modules: [
       {
         name: 'quest',
-        description: 'Quest / 会话 / 任务管理',
+        description: 'Quest / Todo / Project 管理',
         commands: [
           {
             name: 'quest list',
@@ -41,19 +41,19 @@ export function getCommandCatalog(): CommandCatalog {
             name: 'quest create',
             cli: 'pluse quest create --project-id <id> --kind session|task [--json]',
             api: 'POST /api/quests',
-            description: '创建新的会话态或任务态 Quest',
+            description: '创建新的 Quest',
           },
           {
             name: 'quest message',
             cli: 'pluse quest message <id> --text <text> [--json]',
             api: 'POST /api/quests/:id/messages',
-            description: '向 session 态 Quest 发送消息',
+            description: '向会话 Quest 发送消息',
           },
           {
             name: 'quest run',
             cli: 'pluse quest run <id> [--json]',
             api: 'POST /api/quests/:id/run',
-            description: '手动触发 task 态 Quest',
+            description: '手动触发任务 Quest',
           },
         ],
       },

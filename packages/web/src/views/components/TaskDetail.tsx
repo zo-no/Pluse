@@ -3,6 +3,7 @@ import { useLocation, useNavigate, type Location as RouterLocation } from 'react
 import type { Quest, QuestOp, Run, RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 import * as api from '@/api/client'
 import { displaySessionName, displayTaskName } from '@/views/utils/display'
+import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
 import { CloseIcon, ConvertIcon, PlayIcon, PlusIcon, TrashIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -64,6 +65,10 @@ function envToText(value: Record<string, string> | undefined): string {
     .join('\n')
 }
 
+function defaultTaskTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+}
+
 function parseEnvText(value: string): Record<string, string> | undefined {
   const entries = value
     .split('\n')
@@ -110,7 +115,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     model: '',
     effort: '',
     thinking: false,
-    enabled: true,
     reviewOnComplete: false,
     executorKind: 'ai_prompt' as 'ai_prompt' | 'script',
     prompt: '',
@@ -122,7 +126,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     scheduleKind: 'once' as 'once' | 'scheduled' | 'recurring',
     runAt: '',
     cron: '',
-    timezone: '',
   })
   const reloadTimer = useRef<number | null>(null)
 
@@ -153,10 +156,9 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       title: displayTaskName(nextQuest.title ?? nextQuest.name),
       description: nextQuest.description ?? '',
       tool: nextQuest.tool ?? 'codex',
-      model: nextQuest.tool === 'codex' ? (nextQuest.model ?? '5.3-codex-spark') : nextQuest.tool === 'claude' ? (nextQuest.model ?? 'sonnet') : (nextQuest.model ?? ''),
-      effort: nextQuest.tool === 'codex' ? (nextQuest.effort ?? 'low') : (nextQuest.effort ?? ''),
+      model: resolveRuntimeModelSelection(nextQuest.tool, nextQuest.model),
+      effort: resolveRuntimeEffortSelection(nextQuest.tool, nextQuest.effort),
       thinking: nextQuest.thinking ?? false,
-      enabled: nextQuest.enabled !== false,
       reviewOnComplete: nextQuest.reviewOnComplete === true,
       executorKind: nextQuest.executorKind === 'script' ? 'script' : 'ai_prompt',
       prompt: nextQuest.executorKind === 'ai_prompt' && executorConfig && 'prompt' in executorConfig ? executorConfig.prompt : '',
@@ -168,7 +170,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       scheduleKind: nextQuest.scheduleKind ?? 'once',
       runAt: nextQuest.scheduleConfig?.runAt ?? '',
       cron: nextQuest.scheduleConfig?.cron ?? '',
-      timezone: nextQuest.scheduleConfig?.timezone ?? '',
     })
     setError(null)
   }
@@ -179,8 +180,8 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
 
   useEffect(() => {
     void api.getRuntimeModelCatalog(form.tool).then((result) => {
-      if (result.ok) setCatalog(result.data)
-      else setCatalog(null)
+      if (result.ok && result.data.models.length > 0) setCatalog(result.data)
+      else setCatalog(buildFallbackRuntimeModelCatalog(form.tool))
     })
   }, [form.tool])
 
@@ -204,7 +205,11 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     () => tools.find((tool) => tool.id === form.tool)?.name ?? form.tool,
     [form.tool, tools],
   )
-  const selectedModelLabel = useMemo(() => catalog?.models.find((model) => model.id === form.model)?.label ?? form.model, [catalog, form.model])
+  const resolvedModelId = useMemo(() => resolveRuntimeModelSelection(form.tool, form.model, catalog), [catalog, form.model, form.tool])
+  const selectedModelLabel = useMemo(
+    () => catalog?.models.find((model) => model.id === resolvedModelId)?.label ?? resolvedModelId,
+    [catalog, resolvedModelId],
+  )
   const closeTarget = resolveCloseTarget(location, quest ? `/projects/${quest.projectId}` : '/')
 
   function closeModal() {
@@ -224,7 +229,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
   async function save(event: FormEvent) {
     event.preventDefault()
     if (!quest) return
-    if (quest.activeRunId && form.enabled === false) {
+    if (quest.activeRunId && quest.enabled === false) {
       const confirmed = window.confirm('当前任务正在运行，停用前会先取消当前执行。继续吗？')
       if (!confirmed) return
       const cancelled = await api.cancelRun(quest.activeRunId)
@@ -247,7 +252,8 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       }
     }
     setSaving(true)
-    const timeoutValue = form.timeout.trim() ? Number(form.timeout) : undefined
+    const parsedTimeout = Number(form.timeout)
+    const timeoutValue = form.timeout.trim() && Number.isFinite(parsedTimeout) ? parsedTimeout : undefined
     const env = parseEnvText(form.envText)
 
     const result = await api.updateQuest(quest.id, {
@@ -258,7 +264,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       model: form.model || null,
       effort: form.effort || null,
       thinking: form.thinking,
-      enabled: form.enabled,
+      enabled: quest.enabled !== false,
       reviewOnComplete: form.reviewOnComplete,
       executorKind: form.executorKind,
       executorConfig: form.executorKind === 'script'
@@ -279,9 +285,9 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       },
       scheduleKind: form.scheduleKind,
       scheduleConfig: form.scheduleKind === 'scheduled'
-        ? { runAt: form.runAt, timezone: form.timezone.trim() || undefined }
+        ? { runAt: form.runAt, timezone: quest.scheduleConfig?.timezone ?? defaultTaskTimezone() }
         : form.scheduleKind === 'recurring'
-          ? { cron: form.cron, timezone: form.timezone.trim() || undefined }
+          ? { cron: form.cron, timezone: quest.scheduleConfig?.timezone ?? defaultTaskTimezone() }
           : null,
       status: quest.status === 'idle' ? 'pending' : quest.status,
     })
@@ -379,14 +385,13 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                 {quest ? <span className={`pluse-task-status is-${quest.status ?? 'idle'}`}>{formatStatus(quest.status)}</span> : null}
                 {quest?.activeRunId ? <span className="pluse-inline-pill is-running">运行中</span> : null}
               </div>
-              {quest && form.description ? <p className="pluse-task-detail-summary">{form.description}</p> : null}
               {quest ? (
                 <div className="pluse-task-detail-meta">
                   <span>{toolLabel}</span>
                   <span>{selectedModelLabel}</span>
                   <span>{formatScheduleKind(form.scheduleKind)}</span>
                   <span>{form.continueQuest ? '继续上下文' : '独立运行'}</span>
-                  {!form.enabled ? <span>已暂停</span> : null}
+                  {quest.enabled === false ? <span>已暂停</span> : null}
                 </div>
               ) : null}
             </div>
@@ -434,15 +439,15 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   </button>
                   <button
                     type="button"
-                    className="pluse-button pluse-button-ghost"
+                    className="pluse-icon-button"
+                    title="人类任务"
+                    aria-label="新建人类任务"
                     onClick={() => setCreateTaskModalOpen(true)}
                   >
                     <PlusIcon className="pluse-icon" />
-                    人类任务
                   </button>
-                  <button type="button" className="pluse-button pluse-button-ghost" onClick={() => void handleDeleteTask()}>
+                  <button type="button" className="pluse-icon-button" title="删除" aria-label="删除" onClick={() => void handleDeleteTask()}>
                     <TrashIcon className="pluse-icon" />
-                    删除
                   </button>
                 </div>
               </div>
@@ -452,7 +457,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>基础</h3>
-                      <p>标题、运行时配置和任务状态。</p>
                     </div>
                   </header>
                   <div className="pluse-form-grid">
@@ -462,7 +466,19 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                     </label>
                     <label>
                       <span>工具</span>
-                      <select value={form.tool} onChange={(event) => setForm((current) => ({ ...current, tool: event.target.value }))}>
+                      <select
+                        value={form.tool}
+                        onChange={(event) => {
+                          const tool = event.target.value
+                          setCatalog(buildFallbackRuntimeModelCatalog(tool))
+                          setForm((current) => ({
+                            ...current,
+                            tool,
+                            model: defaultRuntimeModelId(tool),
+                            effort: defaultRuntimeEffortId(tool),
+                          }))
+                        }}
+                      >
                         {tools.map((tool) => (
                           <option key={tool.id} value={tool.id}>{tool.name}</option>
                         ))}
@@ -476,9 +492,9 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                         onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
                       />
                     </label>
-                      <label>
+                    <label>
                       <span>模型</span>
-                      <select value={form.model} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}>
+                      <select value={resolvedModelId} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}>
                         {catalog?.models.map((model) => (
                           <option key={model.id} value={model.id}>{model.label}</option>
                         ))}
@@ -486,17 +502,10 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                     </label>
                     <label>
                       <span>推理强度</span>
-                      <select value={form.effort} onChange={(event) => setForm((current) => ({ ...current, effort: event.target.value }))}>
+                      <select value={resolveRuntimeEffortSelection(form.tool, form.effort, catalog)} onChange={(event) => setForm((current) => ({ ...current, effort: event.target.value }))}>
                         {effortOptions.map((effort) => (
                           <option key={effort} value={effort}>{effort}</option>
                         ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>状态</span>
-                      <select value={form.enabled ? 'true' : 'false'} onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.value === 'true' }))}>
-                        <option value="true">启用</option>
-                        <option value="false">暂停</option>
                       </select>
                     </label>
                     <label>
@@ -527,7 +536,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>执行</h3>
-                      <p>定义 AI 提示词或脚本命令。</p>
                     </div>
                   </header>
                   <div className="pluse-form-grid">
@@ -593,7 +601,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>调度</h3>
-                      <p>控制手动、定时或周期执行。</p>
                     </div>
                   </header>
                   <div className="pluse-form-grid">
@@ -604,14 +611,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                         <option value="scheduled">定时</option>
                         <option value="recurring">周期</option>
                       </select>
-                    </label>
-                    <label>
-                      <span>时区</span>
-                      <input
-                        value={form.timezone}
-                        onChange={(event) => setForm((current) => ({ ...current, timezone: event.target.value }))}
-                        placeholder="Asia/Shanghai"
-                      />
                     </label>
                     {form.scheduleKind === 'scheduled' ? (
                       <label className="pluse-form-span">
@@ -650,7 +649,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>运行记录</h3>
-                      <p>查看最近执行结果和失败原因。</p>
                     </div>
                   </header>
                   <div className="pluse-output-list">
@@ -672,7 +670,6 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>活动</h3>
-                      <p>记录任务状态与配置变化。</p>
                     </div>
                   </header>
                   <div className="pluse-output-list">

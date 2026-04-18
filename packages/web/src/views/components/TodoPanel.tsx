@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, type Location as RouterLocation } from 
 import type { Quest, Todo } from '@pluse/types'
 import * as api from '@/api/client'
 import { displayTaskName } from '@/views/utils/display'
-import { ArchiveIcon, CheckIcon, CloseIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
+import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
 import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
 
 interface TodoPanelProps {
@@ -16,20 +16,7 @@ interface TodoPanelProps {
 
 type TaskTab = 'all' | 'human' | 'ai'
 
-function taskOverlayState(location: RouterLocation, fallbackPath?: string | null): { backgroundLocation: RouterLocation } {
-  const state = location.state as { backgroundLocation?: RouterLocation } | null
-  if (state?.backgroundLocation) return { backgroundLocation: state.backgroundLocation }
-  if (fallbackPath && location.pathname.startsWith('/quests/')) {
-    return {
-      backgroundLocation: {
-        ...location,
-        pathname: fallbackPath,
-        search: '',
-        hash: '',
-        state: null,
-      },
-    }
-  }
+function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
   return { backgroundLocation: location }
 }
 
@@ -43,16 +30,23 @@ function formatDateTime(value?: string): string {
   }).format(new Date(value))
 }
 
+function formatSidebarTime(value?: string): string {
+  if (!value) return ''
+  const timestamp = new Date(value).getTime()
+  const delta = Math.max(0, Date.now() - timestamp)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  if (delta < minute) return '刚刚'
+  if (delta < hour) return `${Math.max(1, Math.floor(delta / minute))} 分钟`
+  if (delta < day) return `${Math.max(1, Math.floor(delta / hour))} 小时`
+  if (delta < week) return `${Math.max(1, Math.floor(delta / day))} 天`
+  return `${Math.max(1, Math.floor(delta / week))} 周`
+}
+
 function taskLabel(quest: Quest): string {
   return displayTaskName(quest.title || quest.name)
-}
-
-function taskSummary(quest: Quest): string {
-  return quest.description || ''
-}
-
-function todoSummary(todo: Todo): string {
-  return todo.waitingInstructions || todo.description || ''
 }
 
 function taskStatusLabel(status?: Quest['status']): string {
@@ -160,6 +154,16 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
   async function handleDeleteTodo(todo: Todo) {
     if (!window.confirm(`删除任务“${todo.title}”？`)) return
     const result = await api.deleteTodo(todo.id)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await loadData()
+    await onDataChanged?.()
+  }
+
+  async function handleTriggerQuest(quest: Quest) {
+    const result = await api.startQuestRun(quest.id, { trigger: 'manual', triggeredBy: 'human' })
     if (!result.ok) {
       setError(result.error)
       return
@@ -280,7 +284,7 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
     [tasks.length, todos.length, openHumanTodos.length, openAiTasks.length, historyHumanTodos.length, historyAiTasks.length],
   )
 
-  const questLinkState = taskOverlayState(location, projectId ? `/projects/${projectId}` : null)
+  const questLinkState = taskOverlayState(location)
 
   function openCreateModal(kind: TaskComposerKind) {
     setCreateModalKind(kind)
@@ -289,49 +293,76 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
 
   function renderQuestItem(quest: Quest, archived = false) {
     const isActive = activeQuestId === quest.id
+    const canTrigger = !archived && !quest.activeRunId && quest.enabled !== false
     return (
       <article
         key={quest.id}
-        className={`pluse-note-item pluse-task-line pluse-task-compact${isActive ? ' is-active' : ''}`}
+        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}`}
       >
         <Link
-          className="pluse-task-line-main"
+          className="pluse-sidebar-item-main pluse-task-list-main"
           to={`/quests/${quest.id}`}
           state={questLinkState}
           onClick={() => onRequestClose?.()}
         >
-          <strong>{taskLabel(quest)}</strong>
-          {taskSummary(quest) ? <span>{taskSummary(quest)}</span> : null}
-        </Link>
-        <div className="pluse-task-line-meta">
-          <span className="pluse-sidebar-badge" aria-label="AI 任务" title="AI 任务">
-            <SparkIcon className="pluse-icon" />
-          </span>
-          <span className={`pluse-task-status is-${quest.status ?? 'pending'}`}>{taskStatusLabel(quest.status)}</span>
-          <span className="pluse-output-row-meta">
-            {quest.activeRunId ? <span className="pluse-sidebar-badge is-running">运行中</span> : null}
-            <span>{formatDateTime(quest.updatedAt)}</span>
-          </span>
-          <div className="pluse-task-line-actions">
-            <button
-              type="button"
-              className="pluse-row-action"
-              onClick={() => void handleArchiveQuest(quest.id, !archived)}
-              aria-label={archived ? '恢复任务' : '归档任务'}
-              title={archived ? '恢复任务' : '归档任务'}
-            >
-              <ArchiveIcon className="pluse-icon" />
-            </button>
-            <button
-              type="button"
-              className="pluse-row-action"
-              onClick={() => void handleDeleteQuest(quest.id)}
-              aria-label="删除任务"
-              title="删除任务"
-            >
-              <TrashIcon className="pluse-icon" />
-            </button>
+          <div className="pluse-task-list-copy">
+            <div className="pluse-sidebar-item-title">
+              <span className="pluse-task-kind-badge" aria-label="AI 任务" title="AI 任务">
+                <SparkIcon className="pluse-icon" />
+              </span>
+              <strong>{taskLabel(quest)}</strong>
+            </div>
+            <div className="pluse-task-list-meta" title={formatDateTime(quest.updatedAt)}>
+              <span className={`pluse-task-list-state is-${quest.activeRunId ? 'running' : quest.status ?? 'pending'}`}>
+                {quest.activeRunId ? '运行中' : taskStatusLabel(quest.status)}
+              </span>
+              <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+              <span className="pluse-meta-inline">
+                <ClockIcon className="pluse-icon pluse-inline-icon" />
+                {formatSidebarTime(quest.updatedAt)}
+              </span>
+            </div>
           </div>
+        </Link>
+        <div className="pluse-sidebar-item-actions">
+          {canTrigger ? (
+            <button
+              type="button"
+              className="pluse-sidebar-action-btn"
+              onClick={(event) => {
+                event.preventDefault()
+                void handleTriggerQuest(quest)
+              }}
+              aria-label="立即触发"
+              title="立即触发"
+            >
+              <PlayIcon className="pluse-icon" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={(event) => {
+              event.preventDefault()
+              void handleArchiveQuest(quest.id, !archived)
+            }}
+            aria-label={archived ? '恢复任务' : '归档任务'}
+            title={archived ? '恢复任务' : '归档任务'}
+          >
+            <ArchiveIcon className="pluse-icon" />
+          </button>
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn is-danger"
+            onClick={(event) => {
+              event.preventDefault()
+              void handleDeleteQuest(quest.id)
+            }}
+            aria-label="删除任务"
+            title="删除任务"
+          >
+            <TrashIcon className="pluse-icon" />
+          </button>
         </div>
       </article>
     )
@@ -343,61 +374,66 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
     return (
       <article
         key={todo.id}
-        className={`pluse-note-item pluse-task-line pluse-task-compact${isActive ? ' is-active' : ''}`}
+        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}`}
       >
-        <div className="pluse-task-line-main">
-          <strong>{todo.title}</strong>
-          {todoSummary(todo) ? <span>{todoSummary(todo)}</span> : null}
+        <div className="pluse-sidebar-item-main pluse-task-list-main">
+          <div className="pluse-task-list-copy">
+            <div className="pluse-sidebar-item-title">
+              <span className="pluse-task-kind-badge" aria-label="人类任务" title="人类任务">
+                <UserIcon className="pluse-icon" />
+              </span>
+              <strong>{todo.title}</strong>
+            </div>
+            <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt)}>
+              <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status)}</span>
+              <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+              <span className="pluse-meta-inline">
+                <ClockIcon className="pluse-icon pluse-inline-icon" />
+                {formatSidebarTime(todo.updatedAt)}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="pluse-task-line-meta">
-          <span className="pluse-sidebar-badge" aria-label="人类任务" title="人类任务">
-            <UserIcon className="pluse-icon" />
-          </span>
-          <span className={`pluse-task-status is-${todo.status}`}>{todoStatusLabel(todo.status)}</span>
-          <span className="pluse-output-row-meta">
-            <span>{formatDateTime(todo.updatedAt)}</span>
-            {todo.originQuestId ? (
-              <Link
-                className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-                to={`/quests/${todo.originQuestId}`}
-                onClick={() => onRequestClose?.()}
-              >
-                来源
-              </Link>
-            ) : null}
-          </span>
-          <div className="pluse-task-line-actions">
-            {todo.status === 'pending' ? (
-              <button
-                type="button"
-                className="pluse-row-action"
-                onClick={() => void handleUpdateTodo(todo, { status: 'done' })}
-                aria-label="完成任务"
-                title="完成任务"
-              >
-                <CheckIcon className="pluse-icon" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="pluse-row-action"
-                onClick={() => void handleUpdateTodo(todo, { status: 'pending' })}
-                aria-label="恢复任务"
-                title="恢复任务"
-              >
-                <PlusIcon className="pluse-icon" />
-              </button>
-            )}
+        <div className="pluse-sidebar-item-actions">
+          {todo.originQuestId ? (
+            <Link
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              to={`/quests/${todo.originQuestId}`}
+              onClick={() => onRequestClose?.()}
+            >
+              来源
+            </Link>
+          ) : null}
+          {todo.status === 'pending' ? (
             <button
               type="button"
-              className="pluse-row-action"
-              onClick={() => void handleDeleteTodo(todo)}
-              aria-label="删除任务"
-              title="删除任务"
+              className="pluse-sidebar-action-btn"
+              onClick={() => void handleUpdateTodo(todo, { status: 'done' })}
+              aria-label="完成任务"
+              title="完成任务"
             >
-              <TrashIcon className="pluse-icon" />
+              <CheckIcon className="pluse-icon" />
             </button>
-          </div>
+          ) : (
+            <button
+              type="button"
+              className="pluse-sidebar-action-btn"
+              onClick={() => void handleUpdateTodo(todo, { status: 'pending' })}
+              aria-label="恢复任务"
+              title="恢复任务"
+            >
+              <PlusIcon className="pluse-icon" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn is-danger"
+            onClick={() => void handleDeleteTodo(todo)}
+            aria-label="删除任务"
+            title="删除任务"
+          >
+            <TrashIcon className="pluse-icon" />
+          </button>
         </div>
       </article>
     )
@@ -419,20 +455,6 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
               <span className="pluse-rail-head-label">{projectName || '当前项目'}</span>
               <span className="pluse-rail-head-count">{counts[tab]}</span>
             </div>
-            <button
-              type="button"
-              className="pluse-icon-button pluse-rail-create-btn"
-              onClick={() => openCreateModal(tab === 'ai' ? 'ai' : 'human')}
-              aria-label="创建任务"
-              title="创建任务"
-              disabled={!projectId}
-            >
-              <PlusIcon className="pluse-icon" />
-            </button>
-          </div>
-          <div className="pluse-rail-summary">
-            <span>进行中 {counts.pending}</span>
-            <span>已完成 {counts.done}</span>
           </div>
           <div className="pluse-rail-tabs">
             <button type="button" className={`pluse-tab${tab === 'all' ? ' is-active' : ''}`} onClick={() => setTab('all')}>
@@ -457,17 +479,8 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
             </div>
           ) : (
             <div className="pluse-rail-empty pluse-task-empty-state">
-              <strong>还没有任务</strong>
-              <p>{tab === 'ai' ? '从这里新建一个 AI 任务。' : tab === 'human' ? '记录一条人类任务。' : 'AI 任务和人类任务会统一出现在这里。'}</p>
-              <button
-                type="button"
-                className="pluse-button pluse-task-empty-action"
-                onClick={() => openCreateModal(tab === 'ai' ? 'ai' : 'human')}
-                disabled={!projectId}
-              >
-                <PlusIcon className="pluse-icon" />
-                新建任务
-              </button>
+              <strong>暂无任务</strong>
+              <p>{tab === 'ai' ? '新建 AI。' : tab === 'human' ? '记录待办。' : '统一展示。'}</p>
             </div>
           )}
 
@@ -488,6 +501,19 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
             </section>
           ) : null}
         </div>
+
+        <section className="pluse-rail-section-new-task">
+          <button
+            type="button"
+            className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
+            onClick={() => openCreateModal(tab === 'ai' ? 'ai' : 'human')}
+            aria-label="新建任务"
+            disabled={!projectId}
+          >
+            <PlusIcon className="pluse-icon" />
+            <span>新建任务</span>
+          </button>
+        </section>
 
         {error ? <p className="pluse-error" style={{ padding: '0 14px 14px' }}>{error}</p> : null}
       </aside>

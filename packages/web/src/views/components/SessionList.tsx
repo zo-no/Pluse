@@ -3,12 +3,13 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { displayQuestName } from '@/views/utils/display'
-import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, TrashIcon } from './icons'
+import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SettingsIcon, SlidersIcon, TrashIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
   activeProjectId: string | null
   activeQuestId: string | null
+  onSelectProject: (projectId: string) => void
   onProjectsChanged: () => Promise<void>
   onOverviewChanged?: (projectId?: string) => Promise<void>
   onNavigate?: () => void
@@ -26,11 +27,36 @@ function shortPath(value?: string | null): string {
 
 function formatSidebarTime(value?: string): string {
   if (!value) return ''
+  const timestamp = new Date(value).getTime()
+  const delta = Math.max(0, Date.now() - timestamp)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  if (delta < minute) return '刚刚'
+  if (delta < hour) return `${Math.max(1, Math.floor(delta / minute))} 分钟`
+  if (delta < day) return `${Math.max(1, Math.floor(delta / hour))} 小时`
+  if (delta < week) return `${Math.max(1, Math.floor(delta / day))} 天`
+  return `${Math.max(1, Math.floor(delta / week))} 周`
+}
+
+function formatSidebarAbsoluteTime(value?: string): string {
+  if (!value) return ''
   return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatArchiveDateLabel(value?: string): string {
+  if (!value) return '未记录日期'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
   }).format(new Date(value))
 }
 
@@ -48,6 +74,7 @@ export function SessionList({
   projects,
   activeProjectId,
   activeQuestId,
+  onSelectProject,
   onProjectsChanged,
   onOverviewChanged,
   onNavigate,
@@ -168,6 +195,13 @@ export function SessionList({
     await onProjectsChanged()
     onNavigate?.()
     navigate(`/projects/${result.data.id}`)
+  }
+
+  function handleSelectProject(projectId: string) {
+    onSelectProject(projectId)
+    setProjectPickerOpen(false)
+    setNewProjectOpen(false)
+    onNavigate?.()
   }
 
   async function handleCreateQuest(kind: Quest['kind']) {
@@ -299,6 +333,16 @@ export function SessionList({
 
   const pinnedSessions = filteredSessions.filter((quest) => quest.pinned)
   const unpinnedSessions = filteredSessions.filter((quest) => !quest.pinned)
+  const archivedSessionsByDate = useMemo(() => {
+    const groups = new Map<string, Quest[]>()
+    for (const quest of archivedSessions) {
+      const key = quest.deletedAt?.slice(0, 10) ?? 'unknown'
+      const current = groups.get(key)
+      if (current) current.push(quest)
+      else groups.set(key, [quest])
+    }
+    return Array.from(groups.entries()).map(([date, quests]) => ({ date, quests }))
+  }, [archivedSessions])
 
   function renderQuest(quest: Quest, archived = false) {
     const presenceState = getSessionPresenceState(quest, activeQuestId)
@@ -327,7 +371,6 @@ export function SessionList({
       >
         <Link
           className="pluse-sidebar-item-main"
-          style={{ display: 'grid', gap: 4, minWidth: 0 }}
           to={`/quests/${quest.id}`}
           onClick={onNavigate}
           onDoubleClick={(event) => {
@@ -345,7 +388,7 @@ export function SessionList({
             ) : null}
             <strong>{questLabel(quest)}</strong>
           </div>
-          <div className="pluse-sidebar-item-meta">
+          <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt)}>
             <span className="pluse-meta-inline">
               <ClockIcon className="pluse-icon pluse-inline-icon" />
               {formatSidebarTime(quest.updatedAt)}
@@ -437,86 +480,98 @@ export function SessionList({
       <div className="pluse-sidebar-body">
         <section className="pluse-sidebar-section pluse-sidebar-section-context">
           <div className="pluse-sidebar-context-label">项目</div>
-          <div className="pluse-project-switcher" ref={pickerRef}>
+          <div className="pluse-project-context-row">
+            <div className="pluse-project-switcher" ref={pickerRef}>
+              <button
+                type="button"
+                className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+                onClick={() => {
+                  setProjectPickerOpen((value) => !value)
+                  setNewProjectOpen(false)
+                }}
+              >
+                <div className="pluse-project-switcher-label">
+                  <strong>{activeProject?.name ?? '选择项目'}</strong>
+                  <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
+                </div>
+                <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
+              </button>
+
+              {projectPickerOpen ? (
+                <div className="pluse-project-picker">
+                  <div className="pluse-project-picker-list">
+                    {projects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                        onClick={() => handleSelectProject(project.id)}
+                      >
+                        <span className="pluse-sidebar-dot" aria-hidden="true" />
+                        <div className="pluse-project-picker-item-text">
+                          <strong>{project.name}</strong>
+                          <span>{shortPath(project.workDir)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="pluse-project-picker-footer">
+                    {newProjectOpen ? (
+                      <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
+                        <input
+                          value={projectName}
+                          onChange={(event) => setProjectName(event.target.value)}
+                          placeholder="项目名称（可选）"
+                        />
+                        <input
+                          value={projectDir}
+                          onChange={(event) => setProjectDir(event.target.value)}
+                          placeholder="工作目录，如 ~/projects/xxx"
+                          required
+                        />
+                        <textarea
+                          value={projectGoal}
+                          onChange={(event) => setProjectGoal(event.target.value)}
+                          placeholder="项目目标（可选）"
+                          rows={2}
+                        />
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>
+                            取消
+                          </button>
+                          <button type="submit" className="pluse-button" style={{ flex: 1 }}>
+                            打开
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button type="button" className="pluse-project-picker-add" onClick={() => setNewProjectOpen(true)}>
+                        <PlusIcon className="pluse-icon" />
+                        添加项目
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <button
               type="button"
-              className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+              className="pluse-icon-button pluse-project-settings-btn"
               onClick={() => {
-                setProjectPickerOpen((value) => !value)
+                if (!activeProjectId) return
+                setProjectPickerOpen(false)
                 setNewProjectOpen(false)
+                onNavigate?.()
+                navigate(`/projects/${activeProjectId}`)
               }}
+              aria-label="打开项目面板"
+              title="项目面板"
+              disabled={!activeProjectId}
             >
-              <div className="pluse-project-switcher-label">
-                <strong>{activeProject?.name ?? '选择项目'}</strong>
-                <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
-              </div>
-              <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
+              <SlidersIcon className="pluse-icon" />
             </button>
-
-            {projectPickerOpen ? (
-              <div className="pluse-project-picker">
-                <div className="pluse-project-picker-list">
-                  {projects.map((project) => (
-                    <Link
-                      key={project.id}
-                      className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
-                      to={`/projects/${project.id}`}
-                      onClick={() => {
-                        setProjectPickerOpen(false)
-                        onNavigate?.()
-                      }}
-                    >
-                      <span className="pluse-sidebar-dot" aria-hidden="true" />
-                      <div className="pluse-project-picker-item-text">
-                        <strong>{project.name}</strong>
-                        <span>{shortPath(project.workDir)}</span>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-                <div className="pluse-project-picker-footer">
-                  {newProjectOpen ? (
-                    <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
-                      <input
-                        value={projectName}
-                        onChange={(event) => setProjectName(event.target.value)}
-                        placeholder="项目名称（可选）"
-                      />
-                      <input
-                        value={projectDir}
-                        onChange={(event) => setProjectDir(event.target.value)}
-                        placeholder="工作目录，如 ~/projects/xxx"
-                        required
-                      />
-                      <textarea
-                        value={projectGoal}
-                        onChange={(event) => setProjectGoal(event.target.value)}
-                        placeholder="项目目标（可选）"
-                        rows={2}
-                      />
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>
-                          取消
-                        </button>
-                        <button type="submit" className="pluse-button" style={{ flex: 1 }}>
-                          打开
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <button type="button" className="pluse-project-picker-add" onClick={() => setNewProjectOpen(true)}>
-                      <PlusIcon className="pluse-icon" />
-                      添加项目
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : null}
           </div>
-        </section>
-
-        <section className="pluse-sidebar-section pluse-sidebar-section-context">
-          <div className="pluse-sidebar-context-label">会话</div>
         </section>
 
         {sessions.length > 0 ? (
@@ -525,7 +580,7 @@ export function SessionList({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="搜索会话…"
+              placeholder="搜索"
               className="pluse-sidebar-search-input"
             />
           </div>
@@ -537,7 +592,7 @@ export function SessionList({
               {pinnedSessions.map((quest) => renderQuest(quest))}
               {unpinnedSessions.map((quest) => renderQuest(quest))}
               {sessions.length === 0 ? (
-                <div className="pluse-empty-state pluse-sidebar-empty">还没有会话</div>
+                <div className="pluse-empty-state pluse-sidebar-empty">还没有内容</div>
               ) : filteredSessions.length === 0 ? (
                 <div className="pluse-empty-state pluse-sidebar-empty">无搜索结果</div>
               ) : null}
@@ -548,11 +603,16 @@ export function SessionList({
                     className="pluse-sidebar-archive-toggle"
                     onClick={() => setArchivedSessionsExpanded((value) => !value)}
                   >
-                    <span>{archivedSessionsExpanded ? '▾' : '▸'} 归档会话 ({archivedSessions.length})</span>
+                    <span>{archivedSessionsExpanded ? '▾' : '▸'} 归档 ({archivedSessions.length})</span>
                   </button>
                   {archivedSessionsExpanded ? (
                     <div className="pluse-sidebar-archive-list">
-                      {archivedSessions.map((quest) => renderQuest(quest, true))}
+                      {archivedSessionsByDate.map(({ date, quests }) => (
+                        <div key={date} className="pluse-sidebar-archive-date-group">
+                          <div className="pluse-sidebar-archive-date-label">{formatArchiveDateLabel(date === 'unknown' ? undefined : date)}</div>
+                          {quests.map((quest) => renderQuest(quest, true))}
+                        </div>
+                      ))}
                     </div>
                   ) : null}
                 </div>
@@ -562,18 +622,16 @@ export function SessionList({
         </div>
 
         <section className="pluse-sidebar-section-new-session">
-          <div style={{ width: '100%' }}>
-            <button
-              type="button"
-              className="pluse-sidebar-chip-link"
-              aria-label="新建会话"
-              onClick={() => void handleCreateQuest('session')}
-              disabled={!activeProjectId}
-            >
-              <PlusIcon className="pluse-icon" />
-              新建会话
-            </button>
-          </div>
+          <button
+            type="button"
+            className="pluse-sidebar-chip-link pluse-sidebar-new-session-card"
+            aria-label="新建会话"
+            onClick={() => void handleCreateQuest('session')}
+            disabled={!activeProjectId}
+          >
+            <PlusIcon className="pluse-icon" />
+            <span>新建会话</span>
+          </button>
         </section>
 
         {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}

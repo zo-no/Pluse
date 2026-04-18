@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
@@ -20,6 +20,7 @@ import {
   getAssetsDir,
   getHistoryRoot,
   getInboxDir,
+  getPluseRoot,
   getProjectManifestDir,
   getProjectManifestPath,
   getSystemRuntimeDir,
@@ -31,6 +32,26 @@ export const SYSTEM_PROJECT_ID = 'proj_system'
 
 function now(): string {
   return new Date().toISOString()
+}
+
+function getSessionArchiveRoot(archivedAt: string): string {
+  const date = archivedAt.slice(0, 10)
+  return join(getPluseRoot(), 'archive', 'sessions', date)
+}
+
+function archiveSessionStorage(questId: string, archivedAt: string): void {
+  const sourceHistory = join(getHistoryRoot(), questId)
+  const sourceAssets = getAssetsDir(questId)
+  if (!existsSync(sourceHistory) && !existsSync(sourceAssets)) return
+
+  const destinationRoot = join(getSessionArchiveRoot(archivedAt), questId)
+  mkdirSync(destinationRoot, { recursive: true })
+  if (existsSync(sourceHistory)) {
+    cpSync(sourceHistory, join(destinationRoot, 'history'), { recursive: true })
+  }
+  if (existsSync(sourceAssets)) {
+    cpSync(sourceAssets, join(destinationRoot, 'assets'), { recursive: true })
+  }
 }
 
 function readManifest(workDir: string): ProjectManifest | null {
@@ -347,6 +368,7 @@ export function getProjectOverview(id: string): ProjectOverview | null {
 export function deleteProjectWithCascade(id: string): void {
   const db = getDb()
   const quests = listQuests({ projectId: id })
+  const archivedAt = now()
   for (const todo of listTodos({ projectId: id })) {
     if (todo.originQuestId) {
       updateTodo(todo.id, { originQuestId: null })
@@ -360,6 +382,9 @@ export function deleteProjectWithCascade(id: string): void {
   db.run(`DELETE FROM quests WHERE project_id = ?`, [id])
   deleteProjectRecord(id)
   for (const quest of quests) {
+    if (quest.kind === 'session') {
+      archiveSessionStorage(quest.id, archivedAt)
+    }
     rmSync(join(getHistoryRoot(), quest.id), { recursive: true, force: true })
     rmSync(getAssetsDir(quest.id), { recursive: true, force: true })
   }

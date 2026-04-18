@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { MessageAttachment, Quest, QuestEvent, Run, RuntimeModelCatalog, RuntimeTool, UpdateQuestInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { displaySessionName } from '@/views/utils/display'
+import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
+import { TaskComposerModal } from './TaskComposerModal'
 
 const DRAWING_MODEL_KEYWORDS = ['image', 'dalle', 'flux', 'imagen', 'midjourney', 'stable', 'draw', 'painting']
 
@@ -22,6 +24,20 @@ function formatTime(value: number): string {
   return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
+function formatRelativeTime(value: number): string {
+  const target = value < 1_000_000_000_000 ? value * 1000 : value
+  const now = Date.now()
+  const delta = Math.max(0, now - target)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (delta < minute) return '刚刚'
+  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`
+  if (delta < day) return `${Math.floor(delta / hour)} 小时前`
+  return `${Math.floor(delta / day)} 天前`
+}
+
 function formatRunState(value: string): string {
   if (value === 'running') return '运行中'
   if (value === 'completed') return '已完成'
@@ -29,6 +45,23 @@ function formatRunState(value: string): string {
   if (value === 'cancelled') return '已取消'
   if (value === 'accepted') return '已排队'
   return value
+}
+
+function compactText(value: string, maxLength = 88): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (!normalized) return ''
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized
+}
+
+function summarizeFailureReason(value?: string): string {
+  if (!value) return ''
+  if (value.includes('failed to open state db') || value.includes('state runtime')) return 'Codex 运行时状态库异常'
+  if (value.includes('model is not supported')) return '当前 Codex 模型不可用'
+  const firstMeaningfulLine = value
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line && !/^\d{4}-\d{2}-\d{2}T/.test(line))
+  return compactText((firstMeaningfulLine ?? value).replace(/^Error:\s*/, ''), 72)
 }
 
 function queuePreview(value: string): string {
@@ -81,133 +114,172 @@ function clearDraft(questId: string): void {
   persistDraft(questId, '')
 }
 
-function ToolUseCard({ event }: { event: QuestEvent }) {
-  const raw = event.content ?? event.toolInput ?? ''
-  let toolName = '工具调用'
-  let inputPreview = raw
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (parsed.name && typeof parsed.name === 'string') toolName = parsed.name
-    if (parsed.input) inputPreview = JSON.stringify(parsed.input, null, 2)
-  } catch {
-    // Keep raw preview.
-  }
-
-  return (
-    <details className="pluse-event-card pluse-tool-card">
-      <summary>
-        <span className="pluse-tool-label">
-          <span className="pluse-tool-icon">⚙</span>
-          {toolName}
-        </span>
-        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
-      </summary>
-      <pre>{inputPreview}</pre>
-    </details>
-  )
+type MetaEventDisplay = {
+  label: string
+  icon: string
+  content: string
+  isError?: boolean
 }
 
-function ToolResultCard({ event }: { event: QuestEvent }) {
-  const raw = event.content ?? event.output ?? event.bodyPreview ?? ''
-  let isError = false
-  let content = raw
+type ThreadSegment =
+  | { kind: 'message'; key: string; event: QuestEvent }
+  | { kind: 'meta'; key: string; events: QuestEvent[] }
 
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>
-    if (parsed.type === 'tool_result') {
-      isError = parsed.is_error === true
-      if (Array.isArray(parsed.content)) {
-        content = (parsed.content as Array<{ text?: string }>).map((item) => item.text ?? '').join('\n')
+function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
+  if (event.type === 'tool_use') {
+    const raw = event.content ?? event.toolInput ?? ''
+    let toolName = '工具调用'
+    let inputPreview = raw
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      if (parsed.name && typeof parsed.name === 'string') toolName = parsed.name
+      if (parsed.input) inputPreview = JSON.stringify(parsed.input, null, 2)
+    } catch {
+      // Keep raw preview.
+    }
+    return { label: 'tool-use', icon: '⚙', content: `${toolName}: ${inputPreview}` }
+  }
+
+  if (event.type === 'tool_result') {
+    const raw = event.content ?? event.output ?? event.bodyPreview ?? ''
+    let isError = false
+    let content = raw
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      if (parsed.type === 'tool_result') {
+        isError = parsed.is_error === true
+        if (Array.isArray(parsed.content)) {
+          content = (parsed.content as Array<{ text?: string }>).map((item) => item.text ?? '').join('\n')
+        }
       }
+    } catch {
+      // Keep raw preview.
     }
-  } catch {
-    // Keep raw preview.
+    return { label: '工具结果', icon: isError ? '✗' : '✓', content, isError }
   }
 
-  return (
-    <details className={`pluse-event-card pluse-tool-result-card${isError ? ' is-error' : ''}`}>
-      <summary>
-        <span className="pluse-tool-label">
-          <span className="pluse-tool-icon">{isError ? '✗' : '✓'}</span>
-          工具结果
-        </span>
-        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
-      </summary>
-      <pre>{content}</pre>
-    </details>
-  )
-}
-
-function ReasoningCard({ event }: { event: QuestEvent }) {
-  const raw = event.content ?? event.bodyPreview ?? ''
-  return (
-    <details className="pluse-event-card pluse-reasoning-card">
-      <summary>
-        <span className="pluse-tool-label">
-          <span className="pluse-tool-icon">💭</span>
-          思考过程
-        </span>
-        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
-      </summary>
-      <pre>{raw}</pre>
-    </details>
-  )
-}
-
-function StatusLine({ event }: { event: QuestEvent }) {
-  const content = event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''
-  return (
-    <div className="pluse-status-line">
-      <span className="pluse-status-line-label">状态</span>
-      <span className="pluse-status-line-content">{content}</span>
-      <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
-    </div>
-  )
-}
-
-function EventCard({ event }: { event: QuestEvent }) {
-  if (event.type === 'message') {
-    if (event.role === 'user') {
-      return (
-        <div className="pluse-message-row is-user">
-          <div className="pluse-message-stack">
-            <div className="pluse-user-bubble">{event.content}</div>
-            <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
-          </div>
-        </div>
-      )
+  if (event.type === 'reasoning') {
+    return {
+      label: '思考过程',
+      icon: '💭',
+      content: event.content ?? event.bodyPreview ?? '',
     }
+  }
 
+  if (event.type === 'status') {
+    const content = event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''
+    return {
+      label: '状态',
+      icon: '·',
+      content,
+      isError: content.toLowerCase().startsWith('error:'),
+    }
+  }
+
+  return {
+    label: event.type === 'file_change' ? '文件变更' : event.type === 'usage' ? '用量' : '事件',
+    icon: '•',
+    content: event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? '',
+  }
+}
+
+function buildThreadSegments(events: QuestEvent[]): ThreadSegment[] {
+  const segments: ThreadSegment[] = []
+  let pendingMeta: QuestEvent[] = []
+
+  const flushMeta = () => {
+    if (pendingMeta.length === 0) return
+    segments.push({
+      kind: 'meta',
+      key: `meta:${pendingMeta[0]!.seq}`,
+      events: pendingMeta,
+    })
+    pendingMeta = []
+  }
+
+  for (const event of events) {
+    if (event.type === 'message') {
+      flushMeta()
+      segments.push({ kind: 'message', key: `message:${event.seq}`, event })
+      continue
+    }
+    pendingMeta.push(event)
+  }
+
+  flushMeta()
+  return segments
+}
+
+function MessageEventCard({ event }: { event: QuestEvent }) {
+  if (event.role === 'user') {
     return (
-      <div className="pluse-message-row is-assistant">
-        <div className="pluse-assistant-copy pluse-markdown">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
+      <div className="pluse-message-row is-user">
+        <div className="pluse-user-bubble-shell">
+          <div className="pluse-user-bubble">{event.content}</div>
+          <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
         </div>
-        <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
       </div>
     )
   }
 
-  if (event.type === 'tool_use') return <ToolUseCard event={event} />
-  if (event.type === 'tool_result') return <ToolResultCard event={event} />
-  if (event.type === 'reasoning') return <ReasoningCard event={event} />
-  if (event.type === 'status') return <StatusLine event={event} />
+  return (
+    <div className="pluse-message-row is-assistant">
+      <div className="pluse-message-head is-assistant">
+        <span className="pluse-assistant-stamp" title={formatTime(event.timestamp)}>{formatRelativeTime(event.timestamp)}</span>
+      </div>
+      <div className="pluse-assistant-copy pluse-markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
+      </div>
+    </div>
+  )
+}
 
-  const label = event.type === 'file_change'
-    ? '文件变更'
-    : event.type === 'usage'
-      ? '用量'
-      : '事件'
+function MetaEventEntry({ event }: { event: QuestEvent }) {
+  const meta = describeMetaEvent(event)
+  if (event.type === 'status') {
+    return (
+      <details className={`pluse-status-detail${meta.isError ? ' is-error' : ''}`}>
+        <summary className="pluse-status-line">
+          <span className="pluse-status-line-label">{meta.label}</span>
+          <span className="pluse-status-line-content">{compactText(meta.content, 120)}</span>
+        </summary>
+        <pre>{meta.content}</pre>
+      </details>
+    )
+  }
+
+  if (event.type === 'tool_use') {
+    return (
+      <div className="pluse-meta-event is-tool-use">
+        <div className="pluse-meta-event-header">
+          <span className="pluse-tool-label">
+            <span className="pluse-tool-icon">{meta.icon}</span>
+            {meta.label}
+          </span>
+        </div>
+        <pre>{meta.content}</pre>
+      </div>
+    )
+  }
 
   return (
-    <details className="pluse-event-card">
-      <summary>
-        <span>{label}</span>
-        <span className="pluse-event-time">{formatTime(event.timestamp)}</span>
-      </summary>
-      <pre>{event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''}</pre>
-    </details>
+    <div className={`pluse-meta-event${meta.isError ? ' is-error' : ''}`}>
+      <div className="pluse-meta-event-header">
+        <span className="pluse-tool-label">
+          <span className="pluse-tool-icon">{meta.icon}</span>
+          {meta.label}
+        </span>
+      </div>
+      <pre>{meta.content}</pre>
+    </div>
+  )
+}
+
+function MetaEventGroup({ events }: { events: QuestEvent[] }) {
+  return (
+    <div className="pluse-meta-group-body">
+      {events.map((event) => <MetaEventEntry key={event.seq} event={event} />)}
+    </div>
   )
 }
 
@@ -227,10 +299,18 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([])
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [removingRequestId, setRemovingRequestId] = useState<string | null>(null)
+  const [convertTaskModalOpen, setConvertTaskModalOpen] = useState(false)
+  const [newMessageCount, setNewMessageCount] = useState(0)
+  const [composerHeight, setComposerHeight] = useState(110)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const composerRef = useRef<HTMLElement>(null)
+  const threadRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const reloadTimer = useRef<number | null>(null)
+  const eventCountRef = useRef(0)
+  const isAtBottomRef = useRef(true)
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
 
   const MAX_ATTACHMENTS = 4
   const MAX_FILE_SIZE = 20 * 1024 * 1024
@@ -242,7 +322,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
 
   function getMobileInitialInputHeight(): number {
     const viewportHeight = getViewportHeight()
-    return Math.max(120, Math.min(220, Math.round(viewportHeight * 0.2)))
+    return Math.max(72, Math.min(128, Math.round(viewportHeight * 0.115)))
   }
 
   function addFiles(files: File[]) {
@@ -318,6 +398,13 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }, [questId])
 
   useEffect(() => {
+    eventCountRef.current = 0
+    setNewMessageCount(0)
+    isAtBottomRef.current = true
+    setShowScrollBottom(false)
+  }, [questId])
+
+  useEffect(() => {
     setDraft(loadDraft(questId))
     setInputHeight(null)
     setHasManualInputResize(false)
@@ -353,7 +440,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   useEffect(() => {
     if (!quest?.tool) return
     void api.getRuntimeModelCatalog(quest.tool).then((result) => {
-      if (result.ok) setCatalog(result.data)
+      if (result.ok && result.data.models.length > 0) setCatalog(result.data)
+      else setCatalog(buildFallbackRuntimeModelCatalog(quest.tool))
     })
   }, [quest?.tool])
 
@@ -402,6 +490,62 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }, [catalog])
 
   const latestRun = runs[0] ?? null
+  const threadSegments = useMemo(() => buildThreadSegments(events), [events])
+
+  const updateScrollBottomVisibility = useCallback(() => {
+    const thread = threadRef.current
+    if (!thread) return
+    const distanceToBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight
+    const shouldShow = distanceToBottom > 72
+    isAtBottomRef.current = !shouldShow
+    setShowScrollBottom(shouldShow)
+  }, [])
+
+  function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+    setNewMessageCount(0)
+    isAtBottomRef.current = true
+    setShowScrollBottom(false)
+    bottomRef.current?.scrollIntoView({ behavior })
+  }
+
+  useEffect(() => {
+    const previousCount = eventCountRef.current
+    const nextCount = events.length
+    const delta = nextCount - previousCount
+    if (delta > 0 && !isAtBottomRef.current) {
+      setNewMessageCount((current) => current + delta)
+    }
+    if (isAtBottomRef.current) {
+      setNewMessageCount(0)
+    }
+    eventCountRef.current = nextCount
+  }, [events.length])
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => updateScrollBottomVisibility())
+    return () => window.cancelAnimationFrame(frame)
+  }, [events, updateScrollBottomVisibility])
+
+  useEffect(() => {
+    const composer = composerRef.current
+    if (!composer) return
+
+    const syncComposerMetrics = () => {
+      setComposerHeight(Math.round(composer.getBoundingClientRect().height))
+      updateScrollBottomVisibility()
+    }
+
+    syncComposerMetrics()
+
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => syncComposerMetrics())
+    observer.observe(composer)
+    return () => observer.disconnect()
+  }, [quest?.id, updateScrollBottomVisibility])
+
+  const chatShellStyle = useMemo<CSSProperties & { '--chat-composer-height': string }>(() => ({
+    '--chat-composer-height': `${composerHeight}px`,
+  }), [composerHeight])
 
   function handleResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     const textarea = textareaRef.current
@@ -531,20 +675,38 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
 
   return (
     <div className="pluse-page pluse-session-page">
-      <div className="pluse-chat-shell">
-        <div className="pluse-thread">
+      <div className="pluse-chat-shell" style={chatShellStyle}>
+        <div className="pluse-thread" ref={threadRef} onScroll={updateScrollBottomVisibility}>
           <div className="pluse-thread-inner">
             {events.length === 0 ? (
               <div className="pluse-empty-state pluse-chat-empty">
                 <h2>开始会话</h2>
               </div>
             ) : null}
-            {events.map((event) => <EventCard key={event.seq} event={event} />)}
+            {threadSegments.map((segment) => segment.kind === 'message'
+              ? <MessageEventCard key={segment.key} event={segment.event} />
+              : <MetaEventGroup key={segment.key} events={segment.events} />)}
             <div ref={bottomRef} />
           </div>
         </div>
+        {showScrollBottom ? (
+          <button
+            type="button"
+            className="pluse-scroll-bottom-btn"
+            onClick={() => scrollToBottom()}
+            aria-label={newMessageCount > 0 ? `有 ${newMessageCount} 条新消息，滚动到底部` : '滚动到底部'}
+            title={newMessageCount > 0 ? `有 ${newMessageCount} 条新消息` : '滚动到底部'}
+          >
+            <span className="pluse-scroll-bottom-icon" aria-hidden="true">↓</span>
+            {newMessageCount > 0 ? (
+              <span className="pluse-scroll-bottom-badge" aria-hidden="true">
+                {newMessageCount > 99 ? '99+' : newMessageCount}
+              </span>
+            ) : null}
+          </button>
+        ) : null}
 
-        <footer className="pluse-composer">
+        <footer className="pluse-composer" ref={composerRef}>
           <button
             type="button"
             className="pluse-composer-resize-handle"
@@ -555,30 +717,15 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             <span />
           </button>
           {quest.followUpQueue.length > 0 ? (
-            <div
-              className="pluse-event-card"
-              style={{ display: 'grid', gap: 8, marginBottom: 12, padding: 12 }}
-            >
-              <div className="pluse-inline-status" style={{ justifyContent: 'space-between' }}>
+            <div className="pluse-queue-panel">
+              <div className="pluse-inline-status pluse-queue-panel-head">
                 <span>排队中的消息</span>
                 <span>{quest.followUpQueue.length}</span>
               </div>
               {quest.followUpQueue.map((item) => (
-                <div
-                  key={item.requestId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 10,
-                    padding: '8px 10px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(148, 163, 184, 0.16)',
-                    background: 'rgba(15, 23, 42, 0.04)',
-                  }}
-                >
-                  <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-                    <strong style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div key={item.requestId} className="pluse-queue-item">
+                  <div className="pluse-queue-item-copy">
+                    <strong className="pluse-queue-item-title">
                       {queuePreview(item.text)}
                     </strong>
                     <span className="pluse-message-time">{formatTime(Date.parse(item.queuedAt))}</span>
@@ -601,23 +748,38 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             <div className="pluse-composer-toolbar">
               <div className="pluse-composer-mainline">
                 <div className="pluse-inline-status pluse-inline-status-compact">
-                  {quest.activeRunId ? <span>运行中</span> : <span>Cmd / Ctrl + Enter</span>}
-                  {latestRun ? <span>上次：{formatRunState(latestRun.state)}</span> : null}
-                  {quest.followUpQueue.length > 0 ? <span>排队 {quest.followUpQueue.length}</span> : null}
+                  {quest.followUpQueue.length > 0
+                    ? <span>排队中 {quest.followUpQueue.length}</span>
+                    : quest.activeRunId
+                      ? <span>运行中</span>
+                      : <span>Enter 发送</span>}
+                  {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>上次：{formatRunState(latestRun.state)}</span> : null}
+                  {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason)}</span> : null}
                 </div>
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">
-                  <select value={quest.tool ?? 'codex'} onChange={(event) => void patchQuest({ tool: event.target.value })}>
+                  <select
+                    value={quest.tool ?? 'codex'}
+                    onChange={(event) => {
+                      const tool = event.target.value
+                      setCatalog(buildFallbackRuntimeModelCatalog(tool))
+                      void patchQuest({
+                        tool,
+                        model: defaultRuntimeModelId(tool),
+                        effort: defaultRuntimeEffortId(tool),
+                      })
+                    }}
+                  >
                     {runtimeTools.map((tool) => (
                       <option key={tool.id} value={tool.id}>{tool.name}</option>
                     ))}
                   </select>
-                  <select value={quest.tool === 'claude' ? quest.model ?? 'sonnet' : quest.tool === 'codex' ? quest.model ?? '5.3-codex-spark' : quest.model ?? ''} onChange={(event) => void patchQuest({ model: event.target.value || null })}>
+                  <select value={resolveRuntimeModelSelection(quest.tool, quest.model, catalog)} onChange={(event) => void patchQuest({ model: event.target.value || null })}>
                     {catalog?.models.map((model) => (
                       <option key={model.id} value={model.id}>{model.label}</option>
                     ))}
                   </select>
                   {!!effortOptions.length ? (
-                    <select value={quest.tool === 'codex' ? quest.effort ?? 'low' : quest.effort ?? ''} onChange={(event) => void patchQuest({ effort: event.target.value || null })}>
+                    <select value={resolveRuntimeEffortSelection(quest.tool, quest.effort, catalog)} onChange={(event) => void patchQuest({ effort: event.target.value || null })}>
                       {effortOptions.map((effort) => (
                         <option key={effort} value={effort}>{effort}</option>
                       ))}
@@ -640,7 +802,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                     className="pluse-icon-button pluse-transfer-action"
                     title="转任务"
                     aria-label="转任务"
-                    onClick={() => void patchQuest({ kind: 'task', title: displaySessionName(quest.name), status: 'pending' })}
+                    onClick={() => setConvertTaskModalOpen(true)}
                     disabled={Boolean(quest.activeRunId)}
                   >
                     <ConvertIcon className="pluse-icon" />
@@ -686,10 +848,10 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
               style={inputHeight ? { height: `${inputHeight}px` } : undefined}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                  event.preventDefault()
-                  void handleSend()
-                }
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                if (event.metaKey || event.ctrlKey || event.shiftKey) return
+                event.preventDefault()
+                void handleSend()
               }}
               onPaste={(event) => {
                 const items = event.clipboardData?.items
@@ -735,7 +897,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                 onClick={() => void handleSend()}
                 disabled={sending}
                 aria-label={sending ? '发送中' : '发送'}
-                title="发送 (Cmd+Enter)"
+                title="发送 (Enter) · 换行 (Cmd/Ctrl+Enter)"
               >
                 <SendIcon className="pluse-icon" />
               </button>
@@ -759,6 +921,22 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             </div>
           </div>
         </footer>
+
+        <TaskComposerModal
+          open={convertTaskModalOpen}
+          projectId={quest.projectId}
+          projectName={null}
+          initialKind="ai"
+          conversionQuestId={quest.id}
+          conversionQuestName={displaySessionName(quest.name)}
+          conversionQuestDescription={quest.description ?? ''}
+          conversionPrompt=""
+          conversionContinueQuest={true}
+          onClose={() => setConvertTaskModalOpen(false)}
+          onCreated={async () => {
+            await onDataChanged?.()
+          }}
+        />
       </div>
     </div>
   )

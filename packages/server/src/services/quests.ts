@@ -2,6 +2,7 @@ import type { CreateQuestInput, Quest, QuestOp, Run, UpdateQuestInput } from '@p
 import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDb } from '../db'
+import { listEvents } from '../models/history'
 import { createQuestOp, getQuestOps } from '../models/quest-op'
 import { createQuest, deleteQuest, getQuest, listQuests, updateQuest } from '../models/quest'
 import { getRunsByQuest } from '../models/run'
@@ -34,8 +35,37 @@ function archiveSessionStorage(questId: string, archivedAt: string): void {
   }
 }
 
+function hasStableSessionName(name?: string | null): boolean {
+  const normalized = name?.trim()
+  return Boolean(normalized && normalized !== '新会话' && normalized !== 'New Session' && normalized !== 'Untitled Session')
+}
+
+function compactSessionName(source: string): string {
+  const compact = source
+    .replace(/\[[^\]]+\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compact.length > 48 ? `${compact.slice(0, 45).trim()}...` : compact
+}
+
+function deriveSessionListName(quest: Quest): string | undefined {
+  if (quest.kind !== 'session' || hasStableSessionName(quest.name)) return quest.name
+  const firstUserMessage = listEvents(quest.id)
+    .find((event) => event.type === 'message' && event.role === 'user' && event.content?.trim())
+    ?.content
+    ?.trim()
+  return firstUserMessage ? compactSessionName(firstUserMessage) : quest.name
+}
+
 export function listQuestViews(filter: Parameters<typeof listQuests>[0] = {}): Quest[] {
-  return listQuests(filter)
+  return listQuests(filter).map((quest) => (
+    quest.kind === 'session'
+      ? {
+          ...quest,
+          name: deriveSessionListName(quest),
+        }
+      : quest
+  ))
 }
 
 export function createQuestWithEffects(input: CreateQuestInput): Quest {

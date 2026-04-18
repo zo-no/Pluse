@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { statSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type {
   MessageAttachment,
   Quest,
@@ -21,10 +23,20 @@ import {
   updateQuest,
 } from '../models/quest'
 import { getProject } from '../models/project'
-import { appendRunSpoolLine, cancelRun, createRun, getRun, getRunByQuestRequestId, getRunsByQuest, updateRun } from '../models/run'
+import {
+  appendRunSpoolLine,
+  cancelRun,
+  createRun,
+  getLatestRunForQuest,
+  getRun,
+  getRunByQuestRequestId,
+  getRunsByQuest,
+  updateRun,
+} from '../models/run'
 import { createTodo } from '../models/todo'
 import { emit } from '../services/events'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
+import { getManagedCodexHome } from '../support/paths'
 import { getRuntimeModelCatalog } from './catalog'
 
 type ToolName = 'codex' | 'claude'
@@ -91,6 +103,7 @@ const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? p
 const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'], 15_000)
 const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'] ?? process.env['PULSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
 const activeRunners = new Map<string, ActiveRunner>()
+const CODEX_AUTH_FILENAME = 'auth.json'
 const AUTO_RENAME_SYSTEM_PROMPT = [
   'You generate short titles for Pluse session quests.',
   'Return only the title text.',
@@ -108,6 +121,26 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
 
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'string') return error
+  return 'unknown runtime error'
+}
+
+function isInFlightRunState(state: Run['state']): boolean {
+  return state === 'accepted' || state === 'running'
+}
+
+function isQuestBusyForChat(quest: Quest): boolean {
+  if (quest.activeRunId) {
+    const activeRun = getRun(quest.activeRunId)
+    if (activeRun && isInFlightRunState(activeRun.state)) return true
+  }
+
+  const latestRun = getLatestRunForQuest(quest.id)
+  return Boolean(latestRun && isInFlightRunState(latestRun.state))
 }
 
 function genRequestId(): string {
@@ -223,8 +256,8 @@ function resolveTool(tool?: string | null): ToolName {
 
 function resolveModel(tool: ToolName, requested?: string | null): string {
   const next = requested?.trim()
-  if (next) return next
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : '5.3-codex-spark')
+  if (next) return next === '5.3-codex-spark' ? 'gpt-5.3-codex' : next
+  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : 'gpt-5.3-codex')
 }
 
 function resolveToolCommand(tool: ToolName): string {
@@ -232,6 +265,37 @@ function resolveToolCommand(tool: ToolName): string {
     return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude'
   }
   return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex'
+}
+
+function syncManagedCodexAuth(): string {
+  const managedHome = getManagedCodexHome()
+  const sourceHome = process.env['CODEX_HOME']?.trim() || join(homedir(), '.codex')
+  const sourceAuthPath = join(sourceHome, CODEX_AUTH_FILENAME)
+  const targetAuthPath = join(managedHome, CODEX_AUTH_FILENAME)
+
+  if (!existsSync(sourceAuthPath)) return managedHome
+
+  try {
+    const sourceAuth = readFileSync(sourceAuthPath, 'utf8')
+    const targetAuth = existsSync(targetAuthPath) ? readFileSync(targetAuthPath, 'utf8') : null
+    if (sourceAuth !== targetAuth) writeFileSync(targetAuthPath, sourceAuth, 'utf8')
+  } catch {
+    try {
+      copyFileSync(sourceAuthPath, targetAuthPath)
+    } catch {
+      // Ignore sync failures and let Codex surface its own auth error.
+    }
+  }
+
+  return managedHome
+}
+
+function runtimeEnvForTool(tool: ToolName): NodeJS.ProcessEnv {
+  if (tool !== 'codex') return process.env
+  return {
+    ...process.env,
+    CODEX_HOME: syncManagedCodexAuth(),
+  }
 }
 
 function validateProjectWorkingDirectory(projectPath: string): string | null {
@@ -298,6 +362,26 @@ function buildScriptCommand(quest: Quest): { command: string; timeoutMs: number;
     env: config.env ?? {},
     cwd: config.workDir ?? project?.workDir ?? process.cwd(),
   }
+}
+
+function validateTaskRunConfig(quest: Quest): string | null {
+  if (quest.executorKind === 'script') {
+    const config = quest.executorConfig
+    if (!config || !('command' in config) || !config.command?.trim()) {
+      return 'Quest script command is missing'
+    }
+    return null
+  }
+
+  if (quest.executorKind === 'ai_prompt') {
+    const config = quest.executorConfig
+    if (!config || !('prompt' in config) || !config.prompt?.trim()) {
+      return 'Quest ai prompt is missing'
+    }
+    return null
+  }
+
+  return 'Quest executor is not configured'
 }
 
 function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePreferences>): RuntimePreferences {
@@ -610,7 +694,7 @@ async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameS
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd: project.workDir,
-      env: process.env,
+      env: runtimeEnvForTool(tool),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -680,7 +764,7 @@ async function maybeAutoRenameQuest(questId: string, snapshot: AutoRenameSnapsho
 
 function maybeStartNextFollowUp(questId: string): void {
   const quest = getQuest(questId)
-  if (!quest || quest.kind !== 'session' || quest.activeRunId) return
+  if (!quest || quest.kind !== 'session' || isQuestBusyForChat(quest)) return
   const next = dequeueFollowUp(questId)
   if (!next.message) return
   const message = next.message
@@ -921,7 +1005,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
 
     const child = spawn(command, args, {
       cwd: project.workDir,
-      env: process.env,
+      env: runtimeEnvForTool(tool),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -1034,19 +1118,27 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
 }
 
 async function executeQuestRun(runId: string, questId: string, promptText?: string): Promise<void> {
-  const quest = getQuest(questId)
-  const run = getRun(runId)
-  if (!quest || !run) return
-  if (run.cancelRequested) {
-    finalizeRun(runId, 'cancelled', 'cancelled')
-    return
+  try {
+    const quest = getQuest(questId)
+    const run = getRun(runId)
+    if (!quest || !run) return
+    if (run.cancelRequested) {
+      finalizeRun(runId, 'cancelled', 'cancelled')
+      return
+    }
+    if (quest.kind === 'task' && quest.executorKind === 'script') {
+      await executeScriptRun(runId, questId)
+      return
+    }
+    const prompt = promptText ?? (quest.kind === 'task' ? buildTaskPrompt(quest) : '')
+    await executeProviderRun(runId, questId, prompt)
+  } catch (error) {
+    const run = getRun(runId)
+    if (!run || !isInFlightRunState(run.state)) return
+    const failureReason = normalizeErrorMessage(error)
+    appendQuestEvents(questId, [makeStatusEvent(`error: ${failureReason}`)])
+    finalizeRun(runId, 'failed', failureReason)
   }
-  if (quest.kind === 'task' && quest.executorKind === 'script') {
-    await executeScriptRun(runId, questId)
-    return
-  }
-  const prompt = promptText ?? (quest.kind === 'task' ? buildTaskPrompt(quest) : '')
-  await executeProviderRun(runId, questId, prompt)
 }
 
 export async function startQuestRun(input: StartQuestRunInput): Promise<StartQuestRunResult> {
@@ -1057,7 +1149,7 @@ export async function startQuestRun(input: StartQuestRunInput): Promise<StartQue
     return { skipped: false, run: existingRun, quest: getQuest(quest.id) }
   }
 
-  if (quest.activeRunId) {
+  if (isQuestBusyForChat(quest)) {
     if (input.trigger === 'automation') {
       return { skipped: true, run: null, quest }
     }
@@ -1069,6 +1161,10 @@ export async function startQuestRun(input: StartQuestRunInput): Promise<StartQue
   }
   if (quest.enabled === false) {
     throw new Error('Quest is disabled')
+  }
+  const runConfigError = validateTaskRunConfig(quest)
+  if (runConfigError) {
+    throw new Error(runConfigError)
   }
 
   const runtime = questRuntimePreferences(quest)
@@ -1109,7 +1205,7 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
     thinking: input.thinking,
   })
 
-  if (updatedQuest.activeRunId) {
+  if (isQuestBusyForChat(updatedQuest)) {
     enqueueFollowUp(updatedQuest.id, {
       requestId,
       text: aiPromptText,
@@ -1157,7 +1253,7 @@ export function clearQueuedRequests(questId: string): Quest {
 
 export function recoverFollowUpQueues(): void {
   for (const quest of listQuestsWithPendingQueue()) {
-    if (quest.activeRunId) continue
+    if (isQuestBusyForChat(quest)) continue
     maybeStartNextFollowUp(quest.id)
   }
 }

@@ -90,6 +90,14 @@ export function getRunsByQuest(questId: string): Run[] {
   return rows.map(rowToRun)
 }
 
+export function getLatestRunForQuest(questId: string): Run | null {
+  const db = getDb()
+  const row = db.query<RunRow, [string]>(
+    'SELECT * FROM runs WHERE quest_id = ? ORDER BY created_at DESC LIMIT 1',
+  ).get(questId)
+  return row ? rowToRun(row) : null
+}
+
 export function getRunsByProject(projectId: string, limit = 20): Run[] {
   const db = getDb()
   const rows = db.query<RunRow, [string, number]>(

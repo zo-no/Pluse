@@ -14,10 +14,12 @@ import type {
   RuntimeModelCatalog,
   RuntimeTool,
   SendMessageInput,
+  AppSettings,
   Todo,
   UpdateProjectInput,
   UpdateQuestInput,
   UpdateTodoInput,
+  UpdateAppSettingsInput,
   UploadedAsset,
 } from '@pluse/types'
 
@@ -109,6 +111,14 @@ export function updateProject(id: string, input: UpdateProjectInput): Promise<Ap
 
 export function deleteProject(id: string): Promise<ApiResult<{ deleted: boolean }>> {
   return request<{ deleted: boolean }>('DELETE', `/projects/${id}`)
+}
+
+export function getSettings(): Promise<ApiResult<AppSettings>> {
+  return request<AppSettings>('GET', '/settings')
+}
+
+export function updateSettings(input: UpdateAppSettingsInput): Promise<ApiResult<AppSettings>> {
+  return request<AppSettings>('PATCH', '/settings', input)
 }
 
 export function getQuests(params: {

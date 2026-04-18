@@ -11,14 +11,13 @@ const CLAUDE_MODELS = [
   { id: 'haiku', label: 'Haiku 4.5' },
 ]
 
-const CODEX_DEFAULT_MODEL = '5.3-codex-spark'
+const CODEX_DEFAULT_MODEL = 'gpt-5.3-codex'
 const DEFAULT_CODEX_EFFORT = 'low'
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh']
 const CODEX_MODEL_LABELS: Record<string, string> = {
   'gpt-5.4': 'GPT-5.4',
   'gpt-5.4-mini': 'GPT-5.4-Mini',
   'gpt-5.3-codex': 'GPT-5.3-Codex',
-  '5.3-codex-spark': 'GPT-5.3-Codex-Spark',
   'gpt-5.2': 'GPT-5.2',
 }
 
@@ -135,7 +134,7 @@ function buildCodexCatalog(): RuntimeModelCatalog {
     const raw = readFileSync(getCodexModelsCachePath(), 'utf8')
     const parsed = JSON.parse(raw) as { models?: Array<Record<string, unknown>> }
     const models = (parsed.models ?? [])
-      .filter((model) => model.visibility === 'list')
+      .filter((model) => model.visibility === 'list' && model.supported_in_api !== false)
       .map((model) => {
         const id = String(model.slug ?? '').trim()
         const effortLevels = toStringArray(model.supported_reasoning_levels)

@@ -3,10 +3,11 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, typ
 import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { ChatView } from '@/views/components/ChatView'
-import { ClockIcon, MenuIcon, MoonIcon, RailIcon, SidebarIcon, SparkIcon, SunIcon } from '@/views/components/icons'
+import { ClockIcon, MenuIcon, MoonIcon, RailIcon, SettingsIcon, SidebarIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TaskDetail } from '@/views/components/TaskDetail'
 import { TodoPanel } from '@/views/components/TodoPanel'
+import { SettingsPage } from './SettingsPage'
 import { displayQuestName } from '@/views/utils/display'
 import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
@@ -55,15 +56,8 @@ function questLabel(quest: Quest): string {
   return displayQuestName(quest)
 }
 
-function formatScheduleKind(value?: Quest['scheduleKind']): string {
-  if (value === 'scheduled') return '定时'
-  if (value === 'recurring') return '周期'
-  return '手动'
-}
-
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
-  const state = location.state as { backgroundLocation?: RouterLocation } | null
-  return { backgroundLocation: state?.backgroundLocation ?? location }
+  return { backgroundLocation: location }
 }
 
 function WorkspaceSection(props: {
@@ -86,9 +80,52 @@ function WorkspaceSection(props: {
   )
 }
 
+function ProjectCompactSection(props: {
+  title: string
+  count?: number
+  defaultOpen?: boolean
+  note?: string
+  scrollable?: boolean
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(props.defaultOpen ?? true)
+
+  useEffect(() => {
+    setOpen(props.defaultOpen ?? true)
+  }, [props.defaultOpen])
+
+  return (
+    <section className={`pluse-project-group${open ? ' is-open' : ' is-collapsed'}`}>
+      <button
+        type="button"
+        className="pluse-project-group-head"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+      >
+        <div className="pluse-project-group-head-main">
+          <span className="pluse-project-group-title">{props.title}</span>
+          {typeof props.count === 'number' ? <span className="pluse-project-group-count">{props.count}</span> : null}
+          {props.note ? <span className="pluse-project-group-note">{props.note}</span> : null}
+        </div>
+        <span className={`pluse-project-group-chevron${open ? ' is-open' : ''}`} aria-hidden="true">
+          ⌄
+        </span>
+      </button>
+      {open ? (
+        <div className={`pluse-project-group-body${props.scrollable ? ' is-scrollable' : ''}`}>
+          {props.children}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function OutputRow({ output }: { output: ProjectRecentOutput }) {
   const location = useLocation()
   const target = output.questId ? `/quests/${output.questId}` : undefined
+  const summary = output.summary?.trim()
+  const isGenericSummary = Boolean(summary && summary.includes('运行已完成'))
+  const visibleSummary = summary && !isGenericSummary ? summary : null
   const content = (
     <>
       <div className="pluse-output-row-main">
@@ -96,7 +133,7 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
           <strong>{output.title}</strong>
           <span className={`pluse-task-status is-${String(output.status).toLowerCase()}`}>{formatOutputStatus(output.status)}</span>
         </div>
-        <p>{output.summary || (output.kind === 'chat_run' ? '该次会话运行已完成。' : '该次任务运行已完成。')}</p>
+        {visibleSummary ? <p>{visibleSummary}</p> : null}
       </div>
       <div className="pluse-output-row-meta">
         <span>{output.kind === 'chat_run' ? '会话' : '任务'}</span>
@@ -117,32 +154,6 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
       {content}
     </Link>
   ) : <div className="pluse-output-row">{content}</div>
-}
-
-function ProjectTaskRow({ quest }: { quest: Quest }) {
-  const location = useLocation()
-  return (
-    <Link className="pluse-task-row" to={`/quests/${quest.id}`} state={taskOverlayState(location)}>
-      <div className="pluse-task-row-main">
-        <div className="pluse-task-row-top">
-          <strong>{questLabel(quest)}</strong>
-          <span className={`pluse-task-status is-${quest.status ?? 'idle'}`}>{formatOutputStatus(quest.status ?? 'idle')}</span>
-        </div>
-        {quest.description ? <p>{quest.description}</p> : null}
-      </div>
-      <div className="pluse-task-row-chips">
-        <span className="pluse-meta-inline">
-          <SparkIcon className="pluse-icon pluse-inline-icon" />
-          {quest.executorKind === 'script' ? '脚本' : 'AI'}
-        </span>
-        <span className="pluse-meta-inline">
-          <ClockIcon className="pluse-icon pluse-inline-icon" />
-          {formatScheduleKind(quest.scheduleKind)}
-        </span>
-        {quest.enabled === false ? <span>已暂停</span> : null}
-      </div>
-    </Link>
-  )
 }
 
 function ProjectPage({
@@ -240,7 +251,7 @@ function ProjectPage({
 
         {tab === 'overview' ? (
           <div className="pluse-detail-grid">
-            <div className="pluse-overview-row">
+            <div className="pluse-overview-row pluse-overview-strip">
               <div className="pluse-overview-stat">
                 <span>会话</span>
                 <strong>{overview.counts.sessions}</strong>
@@ -264,8 +275,15 @@ function ProjectPage({
             </div>
 
             {overview.waitingTodos.length > 0 ? (
-              <WorkspaceSection title="等待中">
-                <div className="pluse-note-list">
+              <ProjectCompactSection
+                key={`waiting-${overview.project.id}`}
+                title="等待中"
+                count={overview.waitingTodos.length}
+                defaultOpen
+                note="人类待办"
+                scrollable={overview.waitingTodos.length > 3}
+              >
+                <div className="pluse-note-list pluse-overview-scroll-list">
                   {overview.waitingTodos.map((todo) => (
                     <div key={todo.id} className="pluse-note-item">
                       <div>
@@ -276,54 +294,24 @@ function ProjectPage({
                     </div>
                   ))}
                 </div>
-              </WorkspaceSection>
+              </ProjectCompactSection>
             ) : null}
 
-            <div className="pluse-overview-two-col">
-              <WorkspaceSection title="会话">
-                {overview.sessions.length > 0 ? (
-                  <div className="pluse-session-grid pluse-overview-scroll-list">
-                    {overview.sessions.map((quest) => (
-                      <Link key={quest.id} className="pluse-session-row" to={`/quests/${quest.id}`}>
-                        <div>
-                          <div className="pluse-sidebar-item-title">
-                            {quest.activeRunId ? <span className="pluse-sidebar-running-dot" aria-hidden="true" /> : null}
-                            <strong>{questLabel(quest)}</strong>
-                          </div>
-                        </div>
-                        <span className="pluse-meta-inline">
-                          <ClockIcon className="pluse-icon pluse-inline-icon" />
-                          {formatDateTime(quest.updatedAt)}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="pluse-empty-inline">暂无会话</p>
-                )}
-              </WorkspaceSection>
-
-              <WorkspaceSection title="任务">
-                {overview.tasks.length > 0 ? (
-                  <div className="pluse-task-list pluse-overview-scroll-list">
-                    {overview.tasks.map((quest) => (
-                      <ProjectTaskRow key={quest.id} quest={quest} />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="pluse-empty-inline">暂无任务</p>
-                )}
-              </WorkspaceSection>
-            </div>
-
             {overview.recentOutputs.length > 0 ? (
-              <WorkspaceSection title="最近输出">
+              <ProjectCompactSection
+                key={`outputs-${overview.project.id}`}
+                title="最近输出"
+                count={overview.recentOutputs.length}
+                defaultOpen={overview.recentOutputs.length <= 2}
+                note="可折叠"
+                scrollable={overview.recentOutputs.length > 2}
+              >
                 <div className="pluse-output-list pluse-output-list-scroll">
                   {overview.recentOutputs.map((output) => (
                     <OutputRow key={`${output.kind}:${output.id}`} output={output} />
                   ))}
                 </div>
-              </WorkspaceSection>
+              </ProjectCompactSection>
             ) : null}
           </div>
         ) : (
@@ -338,13 +326,14 @@ function ProjectPage({
                 <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={2} />
               </label>
               <label className="pluse-form-span">
-                <span>系统 Prompt</span>
+                <span>项目 Prompt</span>
                 <textarea
                   value={systemPrompt}
                   onChange={(event) => setSystemPrompt(event.target.value)}
                   rows={5}
-                  placeholder="输入项目级 Prompt，留空则不设置。"
+                  placeholder="输入项目 Prompt"
                 />
+                <p className="pluse-info-copy">仅当前项目生效。全局系统 Prompt 在右上角设置里。</p>
               </label>
             </div>
             <div className="pluse-settings-actions">
@@ -458,19 +447,25 @@ function WorkspaceHeader(props: {
   activeProject: Project | null
   activeQuest: Quest | null
   theme: ThemeMode
+  title?: string
+  subtitle?: string | null
+  floating?: boolean
+  overlayOpen?: boolean
   sidebarVisible: boolean
   railVisible: boolean
   showSidebarToggle: boolean
   showRailToggle: boolean
+  showSettingsToggle: boolean
   onToggleTheme: () => void
   onToggleSidebar: () => void
   onToggleRail: () => void
+  onOpenSettings: () => void
   onOpenWorkspace: () => void
 }) {
-  const title = props.activeQuest
+  const title = props.title ?? (props.activeQuest
     ? questLabel(props.activeQuest)
-    : props.activeProject?.name || 'Pluse'
-  const subtitle = props.activeQuest
+    : props.activeProject?.name || 'Pluse')
+  const subtitle = props.subtitle ?? (props.activeQuest
     ? props.activeQuest.kind === 'task'
       ? formatOutputStatus(props.activeQuest.status ?? 'idle')
       : props.activeQuest.activeRunId
@@ -480,10 +475,10 @@ function WorkspaceHeader(props: {
           : null
     : props.activeProject?.workDir
       ? shortPath(props.activeProject.workDir)
-      : null
+      : null)
 
   return (
-    <header className="pluse-header">
+    <header className={`pluse-header${props.floating ? ' is-floating' : ''}${props.overlayOpen ? ' has-panel-overlay' : ''}`}>
       <div className="pluse-header-primary">
         <button type="button" className="pluse-icon-button pluse-mobile-only" onClick={props.onToggleSidebar} aria-label="打开侧栏">
           <MenuIcon className="pluse-icon" />
@@ -511,6 +506,17 @@ function WorkspaceHeader(props: {
         >
           {props.theme === 'dark' ? <SunIcon className="pluse-icon" /> : <MoonIcon className="pluse-icon" />}
         </button>
+        {props.showSettingsToggle ? (
+          <button
+            type="button"
+            className="pluse-icon-button pluse-header-action-icon"
+            onClick={props.onOpenSettings}
+            aria-label="打开设置"
+            title="设置"
+          >
+            <SettingsIcon className="pluse-icon" />
+          </button>
+        ) : null}
         {props.showSidebarToggle ? (
           <button
             type="button"
@@ -569,6 +575,7 @@ function Shell({
 
   const isQuestRoute = location.pathname.startsWith('/quests/')
   const isProjectRoute = location.pathname.startsWith('/projects/')
+  const isSettingsRoute = location.pathname === '/settings'
   const routeState = location.state as { backgroundLocation?: RouterLocation } | null
   const backgroundLocation = routeState?.backgroundLocation ?? null
   const showRail = Boolean(activeProjectId)
@@ -618,6 +625,10 @@ function Shell({
   const handleQuestResolved = useCallback((quest: Quest) => {
     setActiveProjectId(quest.projectId)
     setActiveQuest(quest)
+  }, [])
+
+  const handleProjectSelected = useCallback((projectId: string) => {
+    setActiveProjectId(projectId)
   }, [])
 
   useEffect(() => {
@@ -671,10 +682,15 @@ function Shell({
         activeProject={activeProject}
         activeQuest={activeQuest}
         theme={theme}
+        title={isSettingsRoute ? '设置' : undefined}
+        subtitle={isSettingsRoute ? '全局系统 Prompt' : undefined}
+        floating={!isDesktop && isQuestRoute && isSessionRoute}
+        overlayOpen={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
         sidebarVisible={sidebarVisible}
         railVisible={railVisible}
         showSidebarToggle={isDesktop}
         showRailToggle={showRail}
+        showSettingsToggle={!isSettingsRoute}
         onToggleTheme={onToggleTheme}
         onToggleSidebar={() => {
           if (isDesktop) setDesktopSidebarVisible((value) => !value)
@@ -684,6 +700,7 @@ function Shell({
           if (isDesktop) setDesktopRailVisible((value) => !value)
           else setMobileRailOpen((value) => !value)
         }}
+        onOpenSettings={() => navigate('/settings')}
         onOpenWorkspace={() => {
           if (activeProjectId) navigate(`/projects/${activeProjectId}`)
           else navigate('/')
@@ -715,6 +732,7 @@ function Shell({
             projects={projects}
             activeProjectId={activeProjectId}
             activeQuestId={activeQuestId}
+            onSelectProject={handleProjectSelected}
             onProjectsChanged={loadProjects}
             onOverviewChanged={handleOverviewChanged}
             onNavigate={() => setMobileSidebarOpen(false)}
@@ -735,6 +753,7 @@ function Shell({
                   />
                 }
               />
+              <Route path="/settings" element={<SettingsPage />} />
               <Route
                 path="/quests/:questId"
                 element={

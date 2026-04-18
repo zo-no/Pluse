@@ -14,7 +14,7 @@ const PLUSE_CONCEPT_BLOCK = `你在 Pluse 系统中运行。
 
 Pluse 的核心概念：
 - Project（项目）：工作容器，对应本地文件夹。
-- Quest（统一工作容器）：内部技术概念。UI 上按 kind 显示为 Session（会话）或 Task（任务）。
+- Quest（统一工作容器）：内部技术概念。UI 上按 kind 显示为会话态或任务态。
 - Todo（人工待办）：独立于 Quest 的人工事项，可选记录来源 Quest。
 - Run（执行）：Quest 的一次执行记录，可能来自 chat、manual 或 automation。
 - Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。`
@@ -34,7 +34,7 @@ function buildLayer2(project: Project): string {
   return parts.join('\n\n')
 }
 
-// ─── 第三层：Session 执行上下文 ────────────────────────────────────────────
+// ─── 第三层：Quest 会话上下文 ─────────────────────────────────────────────
 
 export function buildSessionSystemPrompt(
   project: Project,
@@ -44,15 +44,15 @@ export function buildSessionSystemPrompt(
   const layer3 = [
     PLUSE_CONCEPT_BLOCK,
     '',
-    '当前上下文：会话',
+    '当前上下文：会话 Quest',
     '',
     `项目: ${project.name} (${project.id})`,
     `Quest: ${quest.id}`,
-    `会话: ${quest.name ?? quest.id}`,
+    `会话名称: ${quest.name ?? quest.id}`,
     `工作目录: ${project.workDir ?? ''}`,
     '',
     '你正在与人类对话。',
-    '需要执行独立自动化工作时，把当前 Quest 切换为 task 或创建新的 task 态 Quest。',
+    '需要执行独立自动化工作时，把当前 Quest 切换为任务态，或创建新的任务态 Quest。',
     '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
@@ -63,7 +63,7 @@ export function buildSessionSystemPrompt(
     .join('\n\n')
 }
 
-// ─── 第三层：Task 执行上下文 ───────────────────────────────────────────────
+// ─── 第三层：Quest 任务上下文 ─────────────────────────────────────────────
 
 export function buildTaskSystemPrompt(
   project: Project,
@@ -73,15 +73,15 @@ export function buildTaskSystemPrompt(
   const layer3 = [
     PLUSE_CONCEPT_BLOCK,
     '',
-    '当前上下文：任务执行',
+    '当前上下文：任务 Quest',
     '',
     `项目: ${project.name} (${project.id})`,
     `Quest: ${quest.id}`,
-    `任务: ${quest.title ?? quest.id}`,
+    `任务名称: ${quest.title ?? quest.id}`,
     `工作目录: ${project.workDir ?? ''}`,
     '',
     '你正在执行一个自动化任务。',
-    '执行配置来自当前 Quest 的 task 字段。',
+    '执行配置来自当前 Quest 的任务配置。',
     '需要人类介入时，创建 Todo 并说明原因。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,

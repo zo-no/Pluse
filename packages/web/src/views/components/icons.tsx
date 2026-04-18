@@ -57,6 +57,35 @@ export function RailIcon(props: IconProps) {
   )
 }
 
+export function SettingsIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3.5v2" />
+      <path d="M12 18.5v2" />
+      <path d="M3.5 12h2" />
+      <path d="M18.5 12h2" />
+      <path d="m5.5 5.5 1.4 1.4" />
+      <path d="m17.1 17.1 1.4 1.4" />
+      <path d="m18.5 5.5-1.4 1.4" />
+      <path d="m5.5 18.5 1.4-1.4" />
+    </BaseIcon>
+  )
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M4 7h9" />
+      <circle cx="17" cy="7" r="1.5" />
+      <path d="M4 12h6" />
+      <circle cx="13" cy="12" r="1.5" />
+      <path d="M4 17h11" />
+      <circle cx="19" cy="17" r="1.5" />
+    </BaseIcon>
+  )
+}
+
 export function SunIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

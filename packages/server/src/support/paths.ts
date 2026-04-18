@@ -52,6 +52,10 @@ export function getSystemRuntimeDir(): string {
   return ensureDir(join(getPluseRoot(), 'system', 'runtime'))
 }
 
+export function getManagedCodexHome(): string {
+  return ensureDir(join(getPluseRoot(), 'system', 'codex-home'))
+}
+
 export function resolveWorkDir(workDir: string): string {
   return resolveHomePath(workDir)
 }

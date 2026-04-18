@@ -7,6 +7,7 @@ import { assetsRouter } from './controllers/http/assets'
 import { commandsRouter } from './controllers/http/commands'
 import { eventsRouter } from './controllers/http/events'
 import { projectsRouter } from './controllers/http/projects'
+import { settingsRouter } from './controllers/http/settings'
 import { questsRouter } from './controllers/http/quests'
 import { runsRouter } from './controllers/http/runs'
 import { todosRouter } from './controllers/http/todos'
@@ -31,6 +32,7 @@ app.route('/api', projectsRouter)
 app.route('/api', questsRouter)
 app.route('/api', runsRouter)
 app.route('/api', todosRouter)
+app.route('/api', settingsRouter)
 app.route('/api', runtimeRouter)
 app.route('/api', eventsRouter)
 app.route('/api', commandsRouter)

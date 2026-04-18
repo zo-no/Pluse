@@ -15,16 +15,18 @@ import type {
 } from '@pluse/types'
 import type { StartQuestRunResult, SubmitQuestMessageResult } from '../runtime/session-runner'
 import { appendEvent } from '../models/history'
-import { getQuest } from '../models/quest'
+import { getQuest, updateQuest } from '../models/quest'
 import { getRun, getRunsByQuest } from '../models/run'
 import { listTodos } from '../models/todo'
 import { stopScheduler } from '../services/scheduler'
-import { getAssetsDir, getHistoryRoot } from '../support/paths'
+import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
 
 const RUNTIME_ENV_KEYS = [
+  'CODEX_HOME',
   'PLUSE_CODEX_COMMAND',
   'PLUSE_FAKE_CODEX_ARGS_LOG',
+  'PLUSE_FAKE_CODEX_HOME_LOG',
   'PLUSE_FAKE_CODEX_AUTO_RENAME_FAIL',
   'PLUSE_FAKE_CODEX_AUTO_RENAME_REPLY',
   'PLUSE_FAKE_CODEX_DELAY_SECONDS',
@@ -62,16 +64,20 @@ async function createQuest(input: Record<string, unknown>): Promise<Quest> {
   return mustOk(response)
 }
 
-function installFakeCodex(): { commandPath: string; argsLogPath: string } {
+function installFakeCodex(): { commandPath: string; argsLogPath: string; homeLogPath: string } {
   const binDir = join(getTestRoot(), 'bin')
   const commandPath = join(binDir, 'fake-codex.sh')
   const argsLogPath = join(getTestRoot(), 'fake-codex-args.log')
+  const homeLogPath = join(getTestRoot(), 'fake-codex-home.log')
 
   mkdirSync(binDir, { recursive: true })
   writeFileSync(commandPath, `#!/bin/sh
 set -eu
 if [ -n "\${PLUSE_FAKE_CODEX_ARGS_LOG:-}" ]; then
   printf '%s\\n' "$*" >> "$PLUSE_FAKE_CODEX_ARGS_LOG"
+fi
+if [ -n "\${PLUSE_FAKE_CODEX_HOME_LOG:-}" ]; then
+  printf '%s\\n' "\${CODEX_HOME:-}" >> "$PLUSE_FAKE_CODEX_HOME_LOG"
 fi
 if [ -n "\${PLUSE_FAKE_CODEX_DELAY_SECONDS:-}" ]; then
   sleep "$PLUSE_FAKE_CODEX_DELAY_SECONDS"
@@ -101,16 +107,18 @@ printf '{"thread_id":"%s","type":"message","role":"assistant","content":"%s"}\\n
 `)
   chmodSync(commandPath, 0o755)
   writeFileSync(argsLogPath, '')
+  writeFileSync(homeLogPath, '')
 
   process.env['PLUSE_CODEX_COMMAND'] = commandPath
   process.env['PLUSE_FAKE_CODEX_ARGS_LOG'] = argsLogPath
+  process.env['PLUSE_FAKE_CODEX_HOME_LOG'] = homeLogPath
   process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Fake reply'
   process.env['PLUSE_FAKE_CODEX_THREAD_ID'] = 'thread_fake'
   delete process.env['PLUSE_FAKE_CODEX_AUTO_RENAME_FAIL']
   delete process.env['PLUSE_FAKE_CODEX_AUTO_RENAME_REPLY']
   delete process.env['PLUSE_FAKE_CODEX_DELAY_SECONDS']
 
-  return { commandPath, argsLogPath }
+  return { commandPath, argsLogPath, homeLogPath }
 }
 
 beforeAll(() => setupTestDb())
@@ -248,6 +256,39 @@ describe('quest/todo/run APIs', () => {
     expect(todoModule?.commands.map((command) => command.name)).toEqual(['todo list', 'todo get', 'todo create', 'todo done', 'todo update', 'todo delete'])
     expect(todoModule?.commands.some((command) => command.api.includes('/cancel'))).toBe(false)
     expect(todoModule?.commands.some((command) => command.api.includes('/done'))).toBe(false)
+  })
+
+  it('filters deleted=false tasks from active list', async () => {
+    const project = await openProject('quest-delete-filter')
+    const activeTask = await createQuest({
+      projectId: project.id,
+      kind: 'task',
+      title: 'Active Task',
+      executorKind: 'ai_prompt',
+      executorConfig: { prompt: 'ok' },
+      scheduleKind: 'once',
+    })
+    const archivedTask = await createQuest({
+      projectId: project.id,
+      kind: 'task',
+      title: 'Archived Task',
+      executorKind: 'ai_prompt',
+      executorConfig: { prompt: 'ok' },
+      scheduleKind: 'once',
+    })
+
+    const archived = await PATCH<Quest>(`/api/quests/${archivedTask.id}`, { deleted: true })
+    expect(archived.status).toBe(200)
+
+    const activeTasks = await GET<Quest[]>(`/api/quests?projectId=${project.id}&kind=task&deleted=false`)
+    expect(activeTasks.status).toBe(200)
+    const activeTaskIds = mustOk(activeTasks).map((quest) => quest.id)
+    expect(activeTaskIds).toEqual([activeTask.id])
+
+    const archivedTasks = await GET<Quest[]>(`/api/quests?projectId=${project.id}&kind=task&deleted=true`)
+    expect(archivedTasks.status).toBe(200)
+    const archivedTaskIds = mustOk(archivedTasks).map((quest) => quest.id)
+    expect(archivedTaskIds).toEqual([archivedTask.id])
   })
 
   it('persists assets under quest storage and removes quest data when deleting a project', async () => {
@@ -405,6 +446,74 @@ describe('quest/todo/run APIs', () => {
     }, { timeoutMs: 6_000 })
   })
 
+  it('queues a new chat message when latest run is still in-flight but activeRunId was cleared', async () => {
+    process.env['PLUSE_FAKE_CODEX_DELAY_SECONDS'] = '0.5'
+    installFakeCodex()
+
+    const project = await openProject('chat-run-stale-active-run-id')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Prepare stale-id repro',
+      requestId: 'stale-1',
+    })
+    expect(started.status).toBe(200)
+    const startedData = mustOk(started)
+    expect(startedData.queued).toBe(false)
+    expect(startedData.run?.id).toBeTruthy()
+
+    const stale = updateQuest(quest.id, { activeRunId: null })
+    expect(stale.activeRunId).toBeUndefined()
+
+    const queued = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Should be queued',
+      requestId: 'stale-2',
+    })
+    const queuedData = mustOk(queued)
+    expect(queuedData.queued).toBe(true)
+    expect(queuedData.run).toBeNull()
+
+    const fresh = getQuest(quest.id)
+    expect(fresh?.followUpQueue.map((entry) => entry.requestId)).toEqual(['stale-2'])
+  })
+
+  it('runs codex inside a Pluse-managed CODEX_HOME', async () => {
+    const { homeLogPath } = installFakeCodex()
+    const sourceHome = join(getTestRoot(), 'personal-codex')
+    mkdirSync(sourceHome, { recursive: true })
+    writeFileSync(join(sourceHome, 'auth.json'), '{"token":"abc"}')
+    process.env['CODEX_HOME'] = sourceHome
+
+    const project = await openProject('managed-codex-home')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Check managed codex home',
+      requestId: 'managed-home-1',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    const managedHome = getManagedCodexHome()
+    const loggedHome = readFileSync(homeLogPath, 'utf8').split('\n').map((line) => line.trim()).find(Boolean)
+    expect(loggedHome).toBe(managedHome)
+    expect(readFileSync(join(managedHome, 'auth.json'), 'utf8')).toBe('{"token":"abc"}')
+  })
+
   it('enforces manual task run conflicts, skips overlapping automation runs, and records review todos', async () => {
     const project = await openProject('script-task')
     const task = await createQuest({
@@ -469,6 +578,55 @@ describe('quest/todo/run APIs', () => {
       expect(todos.some((todo) => todo.originQuestId === task.id && todo.title.includes('Review: Nightly Build'))).toBe(true)
       return todos
     })
+  })
+
+  it('rejects misconfigured task runs without crashing subsequent task execution', async () => {
+    const project = await openProject('task-run-validation')
+
+    const invalidTask = await createQuest({
+      projectId: project.id,
+      kind: 'task',
+      title: 'Missing Executor Task',
+      tool: 'codex',
+    })
+
+    const rejected = await POST<StartQuestRunResult>(`/api/quests/${invalidTask.id}/run`, {
+      requestId: 'task-invalid-1',
+      trigger: 'manual',
+      triggeredBy: 'api',
+    })
+    expect(rejected.status).toBe(400)
+    expect(rejected.json.ok).toBe(false)
+    if (rejected.json.ok) throw new Error('Expected run validation error')
+    expect(rejected.json.error).toContain('Quest executor is not configured')
+    expect(getQuest(invalidTask.id)?.activeRunId).toBeUndefined()
+
+    const validTask = await createQuest({
+      projectId: project.id,
+      kind: 'task',
+      title: 'Healthy Task',
+      tool: 'codex',
+      executorKind: 'script',
+      executorConfig: {
+        command: "printf 'ok\\n'",
+      },
+    })
+
+    const started = await POST<StartQuestRunResult>(`/api/quests/${validTask.id}/run`, {
+      requestId: 'task-valid-1',
+      trigger: 'manual',
+      triggeredBy: 'api',
+    })
+    expect(started.status).toBe(200)
+    const startedData = mustOk(started)
+    expect(startedData.skipped).toBe(false)
+    expect(startedData.run?.id).toBeTruthy()
+
+    await waitFor(() => {
+      const run = getRun(startedData.run!.id)
+      expect(run?.state).toBe('completed')
+      return run
+    }, { timeoutMs: 6_000 })
   })
 
   it('returns cancelled task runs to pending status', async () => {
