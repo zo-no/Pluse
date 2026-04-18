@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Session, Task } from '@pluse/types'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
+import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { ChatView } from '@/views/components/ChatView'
-import { ClockIcon, MenuIcon, RailIcon, SidebarIcon, SparkIcon } from '@/views/components/icons'
+import { ClockIcon, MenuIcon, MoonIcon, RailIcon, SidebarIcon, SparkIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
-import { TaskRail } from '@/views/components/TaskRail'
+import { TaskDetail } from '@/views/components/TaskDetail'
+import { TodoPanel } from '@/views/components/TodoPanel'
+import { displayQuestName } from '@/views/utils/display'
+import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
 
 function shortPath(value?: string | null): string {
@@ -34,22 +37,33 @@ function formatOutputStatus(status: string): string {
   if (normalized === 'failed') return '失败'
   if (normalized === 'cancelled') return '已取消'
   if (normalized === 'pending') return '待处理'
-  if (normalized === 'blocked') return '等待中'
+  if (normalized === 'idle') return '空闲'
   return status
 }
 
 function scheduleSummary(schedule: ProjectOverview['schedule']): string {
   if (!schedule) return '暂无周期触发'
   if (schedule.lastRunAt && schedule.nextRunAt) {
-    return `${formatDateTime(schedule.lastRunAt)} -> ${formatDateTime(schedule.nextRunAt)}`
+    return `${formatDateTime(schedule.lastRunAt)} → ${formatDateTime(schedule.nextRunAt)}`
   }
-  if (schedule.nextRunAt) {
-    return `下次 ${formatDateTime(schedule.nextRunAt)}`
-  }
-  if (schedule.lastRunAt) {
-    return `最近 ${formatDateTime(schedule.lastRunAt)}`
-  }
+  if (schedule.nextRunAt) return `下次 ${formatDateTime(schedule.nextRunAt)}`
+  if (schedule.lastRunAt) return `最近 ${formatDateTime(schedule.lastRunAt)}`
   return '已配置，未触发'
+}
+
+function questLabel(quest: Quest): string {
+  return displayQuestName(quest)
+}
+
+function formatScheduleKind(value?: Quest['scheduleKind']): string {
+  if (value === 'scheduled') return '定时'
+  if (value === 'recurring') return '周期'
+  return '手动'
+}
+
+function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
+  const state = location.state as { backgroundLocation?: RouterLocation } | null
+  return { backgroundLocation: state?.backgroundLocation ?? location }
 }
 
 function WorkspaceSection(props: {
@@ -73,7 +87,8 @@ function WorkspaceSection(props: {
 }
 
 function OutputRow({ output }: { output: ProjectRecentOutput }) {
-  const linkTarget = output.sessionId ? `/sessions/${output.sessionId}` : undefined
+  const location = useLocation()
+  const target = output.questId ? `/quests/${output.questId}` : undefined
   const content = (
     <>
       <div className="pluse-output-row-main">
@@ -81,10 +96,10 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
           <strong>{output.title}</strong>
           <span className={`pluse-task-status is-${String(output.status).toLowerCase()}`}>{formatOutputStatus(output.status)}</span>
         </div>
-        <p>{output.summary || (output.kind === 'session_run' ? '该次会话运行已完成，输出可在对应会话里继续查看。' : '该次任务运行已完成。')}</p>
+        <p>{output.summary || (output.kind === 'chat_run' ? '该次会话运行已完成。' : '该次任务运行已完成。')}</p>
       </div>
       <div className="pluse-output-row-meta">
-        <span>{output.kind === 'session_run' ? '会话' : '任务'}</span>
+        <span>{output.kind === 'chat_run' ? '会话' : '任务'}</span>
         <span className="pluse-meta-inline">
           <ClockIcon className="pluse-icon pluse-inline-icon" />
           {formatDateTime(output.completedAt)}
@@ -93,41 +108,52 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
     </>
   )
 
-  if (linkTarget) {
-    return <Link className="pluse-output-row" to={linkTarget}>{content}</Link>
-  }
-
-  return <div className="pluse-output-row">{content}</div>
+  return target ? (
+    <Link
+      className="pluse-output-row"
+      to={target}
+      state={output.kind === 'chat_run' ? undefined : taskOverlayState(location)}
+    >
+      {content}
+    </Link>
+  ) : <div className="pluse-output-row">{content}</div>
 }
 
-function ProjectTaskRow({ task }: { task: Task }) {
+function ProjectTaskRow({ quest }: { quest: Quest }) {
+  const location = useLocation()
   return (
-    <article className="pluse-task-row">
+    <Link className="pluse-task-row" to={`/quests/${quest.id}`} state={taskOverlayState(location)}>
       <div className="pluse-task-row-main">
         <div className="pluse-task-row-top">
-          <strong>{task.title}</strong>
-          <span className={`pluse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
+          <strong>{questLabel(quest)}</strong>
+          <span className={`pluse-task-status is-${quest.status ?? 'idle'}`}>{formatOutputStatus(quest.status ?? 'idle')}</span>
         </div>
-        {task.description || task.waitingInstructions ? (
-          <p>{task.description || task.waitingInstructions}</p>
-        ) : null}
+        {quest.description ? <p>{quest.description}</p> : null}
       </div>
       <div className="pluse-task-row-chips">
         <span className="pluse-meta-inline">
           <SparkIcon className="pluse-icon pluse-inline-icon" />
-          {task.assignee === 'ai' ? 'AI' : '人工'}
+          {quest.executorKind === 'script' ? '脚本' : 'AI'}
         </span>
         <span className="pluse-meta-inline">
           <ClockIcon className="pluse-icon pluse-inline-icon" />
-          {task.kind === 'scheduled' ? '定时' : task.kind === 'recurring' ? '周期' : '单次'}
+          {formatScheduleKind(quest.scheduleKind)}
         </span>
-        {!task.enabled ? <span>已暂停</span> : null}
+        {quest.enabled === false ? <span>已暂停</span> : null}
       </div>
-    </article>
+    </Link>
   )
 }
 
-function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProjectLoaded: (overview: ProjectOverview) => void }) {
+function ProjectPage({
+  projectId,
+  onProjectLoaded,
+  onProjectDeleted,
+}: {
+  projectId: string
+  onProjectLoaded: (overview: ProjectOverview) => void
+  onProjectDeleted: () => Promise<void>
+}) {
   const navigate = useNavigate()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
   const [tab, setTab] = useState<'overview' | 'settings'>('overview')
@@ -169,37 +195,16 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
     await loadOverview()
   }
 
-  async function toggleBrain() {
-    if (!overview) return
-    if (!overview.brainTask) {
-      const result = await api.createTask({
-        projectId,
-        title: 'Project Brain',
-        description: 'Periodically review the project and propose the next useful work items.',
-        assignee: 'ai',
-        kind: 'recurring',
-        createdBy: 'system',
-        scheduleConfig: { kind: 'recurring', cron: '*/30 * * * *' },
-        executor: {
-          kind: 'ai_prompt',
-          agent: 'codex',
-          prompt: 'Review the current project state at {workDir}. Summarize the next valuable actions and create any needed Pluse tasks for concrete follow-up work.',
-        },
-      })
-      if (!result.ok) { setError(result.error); return }
-    } else {
-      const result = await api.updateTask(overview.brainTask.id, { enabled: !overview.brainTask.enabled })
-      if (!result.ok) { setError(result.error); return }
-    }
-    await loadOverview()
-  }
-
   async function handleDeleteProject() {
     if (!overview || deleteConfirmName !== overview.project.name) return
     setDeleting(true)
     const result = await api.deleteProject(projectId)
     setDeleting(false)
-    if (!result.ok) { setError(result.error); return }
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await onProjectDeleted()
     navigate('/')
   }
 
@@ -241,16 +246,16 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                 <strong>{overview.counts.sessions}</strong>
               </div>
               <div className="pluse-overview-stat">
-                <span>短期任务</span>
-                <strong>{overview.counts.chatShortTasks}</strong>
+                <span>AI 任务</span>
+                <strong>{overview.counts.tasks}</strong>
               </div>
               <div className="pluse-overview-stat">
-                <span>项目任务</span>
-                <strong>{overview.counts.projectTasks}</strong>
+                <span>人类任务</span>
+                <strong>{overview.counts.todos}</strong>
               </div>
               <div className="pluse-overview-stat">
-                <span>AI 大脑</span>
-                <strong>{overview.brainTask?.enabled ? '运行中' : '未启用'}</strong>
+                <span>等待中</span>
+                <strong>{overview.waitingTodos.length}</strong>
               </div>
               <div className="pluse-overview-stat">
                 <span>调度</span>
@@ -258,16 +263,16 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
               </div>
             </div>
 
-            {overview.waitingTasks.length > 0 ? (
-              <WorkspaceSection title="等待">
+            {overview.waitingTodos.length > 0 ? (
+              <WorkspaceSection title="等待中">
                 <div className="pluse-note-list">
-                  {overview.waitingTasks.map((task) => (
-                    <div key={task.id} className="pluse-note-item">
+                  {overview.waitingTodos.map((todo) => (
+                    <div key={todo.id} className="pluse-note-item">
                       <div>
-                        <strong>{task.title}</strong>
-                        <p>{task.waitingInstructions || task.description || '等待新的输入后再继续。'}</p>
+                        <strong>{todo.title}</strong>
+                        <p>{todo.waitingInstructions || todo.description || '等待新的输入后再继续。'}</p>
                       </div>
-                      <span className={`pluse-task-status is-${task.status}`}>{formatOutputStatus(task.status)}</span>
+                      <span className={`pluse-task-status is-${todo.status}`}>{todo.status}</span>
                     </div>
                   ))}
                 </div>
@@ -278,15 +283,17 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
               <WorkspaceSection title="会话">
                 {overview.sessions.length > 0 ? (
                   <div className="pluse-session-grid pluse-overview-scroll-list">
-                    {overview.sessions.map((session) => (
-                      <Link key={session.id} className="pluse-session-row" to={`/sessions/${session.id}`}>
+                    {overview.sessions.map((quest) => (
+                      <Link key={quest.id} className="pluse-session-row" to={`/quests/${quest.id}`}>
                         <div>
-                          <strong>{session.name}</strong>
-                          {session.activeRunId ? <p>运行中</p> : null}
+                          <div className="pluse-sidebar-item-title">
+                            {quest.activeRunId ? <span className="pluse-sidebar-running-dot" aria-hidden="true" /> : null}
+                            <strong>{questLabel(quest)}</strong>
+                          </div>
                         </div>
                         <span className="pluse-meta-inline">
                           <ClockIcon className="pluse-icon pluse-inline-icon" />
-                          {formatDateTime(session.updatedAt)}
+                          {formatDateTime(quest.updatedAt)}
                         </span>
                       </Link>
                     ))}
@@ -296,15 +303,15 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                 )}
               </WorkspaceSection>
 
-              <WorkspaceSection title="项目任务">
-                {overview.projectTasks.length > 0 ? (
+              <WorkspaceSection title="任务">
+                {overview.tasks.length > 0 ? (
                   <div className="pluse-task-list pluse-overview-scroll-list">
-                    {overview.projectTasks.map((task) => (
-                      <ProjectTaskRow key={task.id} task={task} />
+                    {overview.tasks.map((quest) => (
+                      <ProjectTaskRow key={quest.id} quest={quest} />
                     ))}
                   </div>
                 ) : (
-                  <p className="pluse-empty-inline">暂无项目任务</p>
+                  <p className="pluse-empty-inline">暂无任务</p>
                 )}
               </WorkspaceSection>
             </div>
@@ -320,8 +327,8 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
             ) : null}
           </div>
         ) : (
-          <div className="pluse-detail-grid pluse-settings-grid">
-            <div className="pluse-form-grid pluse-form-grid-compact">
+          <div className="pluse-detail-grid">
+            <div className="pluse-form-grid">
               <label>
                 <span>项目名称</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -341,9 +348,6 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
               </label>
             </div>
             <div className="pluse-settings-actions">
-              <button type="button" className="pluse-button pluse-button-ghost" onClick={() => void toggleBrain()}>
-                {overview.brainTask?.enabled ? '停用 AI 大脑' : '启用 AI 大脑'}
-              </button>
               <button type="button" className="pluse-button" onClick={() => void saveProject()} disabled={saving}>
                 {saving ? '保存中…' : '保存'}
               </button>
@@ -356,11 +360,11 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
                 </button>
               ) : (
                 <div className="pluse-delete-confirm">
-                  <p>此操作将永久删除项目及其所有会话、任务和数据，不可恢复。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
+                  <p>此操作将永久删除项目及其所有会话、AI 任务、人类任务和运行数据，不可恢复。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
                   <input
                     type="text"
                     value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    onChange={(event) => setDeleteConfirmName(event.target.value)}
                     placeholder={overview.project.name}
                     autoFocus
                   />
@@ -389,37 +393,94 @@ function ProjectPage({ projectId, onProjectLoaded }: { projectId: string; onProj
   )
 }
 
-function SessionRoute({ onProjectResolved }: { onProjectResolved: (projectId: string, sessionId: string, session: Session) => void }) {
-  const { sessionId } = useParams()
-  const navigate = useNavigate()
+function QuestRoute({
+  onQuestResolved,
+  onDataChanged,
+}: {
+  onQuestResolved: (quest: Quest) => void
+  onDataChanged: () => Promise<void>
+}) {
+  const location = useLocation()
+  const { questId } = useParams()
+  const [quest, setQuest] = useState<Quest | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const isOverlay = Boolean((location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation)
 
-  if (!sessionId) return <Navigate to="/" replace />
+  useEffect(() => {
+    if (!questId) return
+    setQuest(null)
+    void api.getQuest(questId).then((result) => {
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      setQuest(result.data)
+      onQuestResolved(result.data)
+      setError(null)
+    })
+  }, [questId, onQuestResolved])
 
-  return (
-    <ChatView
-      sessionId={sessionId}
-      onSessionLoaded={(session) => {
-        onProjectResolved(session.projectId, session.id, session)
-        if (!session.id) navigate('/')
-      }}
-    />
-  )
+  if (!questId) return <Navigate to="/" replace />
+  if (error) {
+    return isOverlay ? (
+      <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
+        <section className="pluse-modal-panel pluse-task-detail-modal">
+          <div className="pluse-task-detail-loading">
+            <p className="pluse-empty-inline">加载失败：{error}</p>
+          </div>
+        </section>
+      </div>
+    ) : <div className="pluse-page pluse-page-loading">加载失败：{error}</div>
+  }
+  if (!quest) {
+    return isOverlay ? (
+      <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
+        <section className="pluse-modal-panel pluse-task-detail-modal">
+          <div className="pluse-task-detail-loading">
+            <p className="pluse-empty-inline">正在加载任务…</p>
+          </div>
+        </section>
+      </div>
+    ) : <div className="pluse-page pluse-page-loading">正在加载内容…</div>
+  }
+
+  const handleQuestLoaded = (nextQuest: Quest) => {
+    setQuest(nextQuest)
+    onQuestResolved(nextQuest)
+  }
+
+  return quest.kind === 'task'
+    ? <TaskDetail questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
+    : <ChatView questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
 }
 
 function WorkspaceHeader(props: {
   activeProject: Project | null
-  activeSession: Session | null
+  activeQuest: Quest | null
+  theme: ThemeMode
   sidebarVisible: boolean
   railVisible: boolean
   showSidebarToggle: boolean
   showRailToggle: boolean
+  onToggleTheme: () => void
   onToggleSidebar: () => void
   onToggleRail: () => void
-  onOpenProject: () => void
   onOpenWorkspace: () => void
 }) {
-  const title = props.activeSession?.name || props.activeProject?.name || 'Pluse'
-  const subtitle = props.activeSession?.activeRunId ? '运行中' : null
+  const title = props.activeQuest
+    ? questLabel(props.activeQuest)
+    : props.activeProject?.name || 'Pluse'
+  const subtitle = props.activeQuest
+    ? props.activeQuest.kind === 'task'
+      ? formatOutputStatus(props.activeQuest.status ?? 'idle')
+      : props.activeQuest.activeRunId
+        ? '运行中'
+        : props.activeQuest.followUpQueue.length > 0
+          ? `排队 ${props.activeQuest.followUpQueue.length}`
+          : null
+    : props.activeProject?.workDir
+      ? shortPath(props.activeProject.workDir)
+      : null
 
   return (
     <header className="pluse-header">
@@ -441,6 +502,15 @@ function WorkspaceHeader(props: {
 
       <div className="pluse-header-actions">
         <span className="pluse-header-presence" aria-hidden="true" />
+        <button
+          type="button"
+          className="pluse-icon-button pluse-header-action-icon pluse-theme-toggle"
+          onClick={props.onToggleTheme}
+          aria-label={props.theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+          title={props.theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+        >
+          {props.theme === 'dark' ? <SunIcon className="pluse-icon" /> : <MoonIcon className="pluse-icon" />}
+        </button>
         {props.showSidebarToggle ? (
           <button
             type="button"
@@ -457,8 +527,8 @@ function WorkspaceHeader(props: {
             type="button"
             className={`pluse-icon-button pluse-header-action-icon pluse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
-            aria-label="切换任务栏"
-            title="切换任务栏"
+            aria-label="切换任务面板"
+            title="切换任务面板"
           >
             <RailIcon className="pluse-icon" />
           </button>
@@ -468,13 +538,21 @@ function WorkspaceHeader(props: {
   )
 }
 
-function Shell({ auth }: { auth: AuthMe }) {
+function Shell({
+  auth,
+  theme,
+  onToggleTheme,
+}: {
+  auth: AuthMe
+  theme: ThemeMode
+  onToggleTheme: () => void
+}) {
   const location = useLocation()
   const navigate = useNavigate()
+  const locationPathRef = useRef(location.pathname)
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [activeSession, setActiveSession] = useState<Session | null>(null)
+  const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 861 : true)
@@ -483,31 +561,68 @@ function Shell({ auth }: { auth: AuthMe }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [mobileRailOpen, setMobileRailOpen] = useState(false)
 
+  const activeQuestId = activeQuest?.id ?? (location.pathname.startsWith('/quests/') ? location.pathname.split('/')[2] : null)
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [projects, activeProjectId],
   )
 
-  const isSessionRoute = location.pathname.startsWith('/sessions/')
+  const isQuestRoute = location.pathname.startsWith('/quests/')
   const isProjectRoute = location.pathname.startsWith('/projects/')
-  const showRail = isSessionRoute || isProjectRoute
+  const routeState = location.state as { backgroundLocation?: RouterLocation } | null
+  const backgroundLocation = routeState?.backgroundLocation ?? null
+  const showRail = Boolean(activeProjectId)
   const sidebarVisible = isDesktop ? desktopSidebarVisible : mobileSidebarOpen
   const railVisible = showRail && (isDesktop ? desktopRailVisible : mobileRailOpen)
+  const isSessionRoute = activeQuest?.kind === 'session'
 
-  async function loadProjects() {
+  useEffect(() => {
+    locationPathRef.current = location.pathname
+  }, [location.pathname])
+
+  const loadProjects = useCallback(async () => {
     const result = await api.getProjects()
-    if (!result.ok) { setLoadError(result.error); return }
+    if (!result.ok) {
+      setLoadError(result.error)
+      return
+    }
     setLoadError(null)
     setProjects(result.data)
-    if (!activeProjectId && result.data[0]) setActiveProjectId(result.data[0].id)
-    if (location.pathname === '/' && result.data[0]) {
+
+    setActiveProjectId((current) => {
+      if (current && result.data.some((project) => project.id === current)) {
+        return current
+      }
+      return result.data[0]?.id ?? null
+    })
+
+    if (locationPathRef.current === '/' && result.data[0]) {
       navigate(`/projects/${result.data[0].id}`, { replace: true })
     }
-  }
+  }, [navigate])
+
+  const handleOverviewChanged = useCallback(async () => {
+    await loadProjects()
+  }, [loadProjects])
+
+  const handleProjectOverviewLoaded = useCallback((overview: ProjectOverview) => {
+    setActiveProjectId(overview.project.id)
+    setActiveQuest(null)
+    setProjects((current) => {
+      const exists = current.some((project) => project.id === overview.project.id)
+      if (!exists) return [...current, overview.project]
+      return current.map((project) => project.id === overview.project.id ? overview.project : project)
+    })
+  }, [])
+
+  const handleQuestResolved = useCallback((quest: Quest) => {
+    setActiveProjectId(quest.projectId)
+    setActiveQuest(quest)
+  }, [])
 
   useEffect(() => {
     void loadProjects().finally(() => setLoading(false))
-  }, [])
+  }, [loadProjects])
 
   useEffect(() => {
     setMobileSidebarOpen(false)
@@ -530,13 +645,13 @@ function Shell({ auth }: { auth: AuthMe }) {
 
   useEffect(() => {
     if (!activeProjectId) return
-    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`, { withCredentials: true })
+    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
     source.onmessage = () => {
       void loadProjects()
     }
     source.onerror = () => source.close()
     return () => source.close()
-  }, [activeProjectId, location.pathname])
+  }, [activeProjectId, loadProjects])
 
   if (!auth.setupRequired && !auth.authenticated) {
     return <Navigate to="/login" replace />
@@ -554,11 +669,13 @@ function Shell({ auth }: { auth: AuthMe }) {
     <div className="pluse-app-shell">
       <WorkspaceHeader
         activeProject={activeProject}
-        activeSession={activeSession}
+        activeQuest={activeQuest}
+        theme={theme}
         sidebarVisible={sidebarVisible}
         railVisible={railVisible}
         showSidebarToggle={isDesktop}
         showRailToggle={showRail}
+        onToggleTheme={onToggleTheme}
         onToggleSidebar={() => {
           if (isDesktop) setDesktopSidebarVisible((value) => !value)
           else setMobileSidebarOpen((value) => !value)
@@ -567,9 +684,6 @@ function Shell({ auth }: { auth: AuthMe }) {
           if (isDesktop) setDesktopRailVisible((value) => !value)
           else setMobileRailOpen((value) => !value)
         }}
-        onOpenProject={() => {
-          if (activeProjectId) navigate(`/projects/${activeProjectId}`)
-        }}
         onOpenWorkspace={() => {
           if (activeProjectId) navigate(`/projects/${activeProjectId}`)
           else navigate('/')
@@ -577,7 +691,7 @@ function Shell({ auth }: { auth: AuthMe }) {
       />
 
       <div
-        className={`pluse-workspace${isProjectRoute ? ' is-project-route' : ''}${isSessionRoute ? ' is-session-route' : ''}`}
+        className={`pluse-workspace${isProjectRoute ? ' is-project-route' : ''}${isQuestRoute && isSessionRoute ? ' is-session-route' : ''}`}
         style={isDesktop
           ? {
               gridTemplateColumns: showRail
@@ -600,8 +714,9 @@ function Shell({ auth }: { auth: AuthMe }) {
           <SessionList
             projects={projects}
             activeProjectId={activeProjectId}
-            activeSessionId={activeSessionId}
+            activeQuestId={activeQuestId}
             onProjectsChanged={loadProjects}
+            onOverviewChanged={handleOverviewChanged}
             onNavigate={() => setMobileSidebarOpen(false)}
             onRequestClose={() => setMobileSidebarOpen(false)}
           />
@@ -609,49 +724,52 @@ function Shell({ auth }: { auth: AuthMe }) {
 
         <main className="pluse-main-shell">
           <div className="pluse-main">
-            <Routes>
+            <Routes location={backgroundLocation || location}>
               <Route path="/" element={<Navigate to={projects[0] ? `/projects/${projects[0].id}` : '/login'} replace />} />
               <Route
                 path="/projects/:projectId"
                 element={
                   <ProjectRoute
-                    onOverviewLoaded={(overview) => {
-                      setActiveProjectId(overview.project.id)
-                      setActiveSessionId(null)
-                      setActiveSession(null)
-                      setProjects((current) => {
-                        const hasProject = current.some((project) => project.id === overview.project.id)
-                        if (!hasProject) return [...current, overview.project]
-                        return current.map((project) => project.id === overview.project.id ? overview.project : project)
-                      })
-                    }}
+                    onOverviewLoaded={handleProjectOverviewLoaded}
+                    onProjectDeleted={loadProjects}
                   />
                 }
               />
               <Route
-                path="/sessions/:sessionId"
+                path="/quests/:questId"
                 element={
-                  <SessionRoute
-                    onProjectResolved={(projectId, sessionId, session) => {
-                      setActiveProjectId(projectId)
-                      setActiveSessionId(sessionId)
-                      setActiveSession(session)
-                    }}
+                  <QuestRoute
+                    onQuestResolved={handleQuestResolved}
+                    onDataChanged={loadProjects}
                   />
                 }
               />
             </Routes>
+
+            {backgroundLocation ? (
+              <Routes>
+                <Route
+                  path="/quests/:questId"
+                  element={
+                    <QuestRoute
+                      onQuestResolved={handleQuestResolved}
+                      onDataChanged={loadProjects}
+                    />
+                  }
+                />
+              </Routes>
+            ) : null}
           </div>
         </main>
 
         {showRail ? (
           <div className={`pluse-rail-shell${railVisible ? ' is-open' : ''}${isDesktop && !desktopRailVisible ? ' is-hidden' : ''}`}>
-            <TaskRail
+            <TodoPanel
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
-              sessionId={isSessionRoute ? activeSessionId : null}
-              defaultTab={isProjectRoute ? 'Project' : 'Session'}
+              activeQuestId={activeQuestId}
               onRequestClose={() => setMobileRailOpen(false)}
+              onDataChanged={loadProjects}
             />
           </div>
         ) : null}
@@ -660,14 +778,21 @@ function Shell({ auth }: { auth: AuthMe }) {
   )
 }
 
-function ProjectRoute({ onOverviewLoaded }: { onOverviewLoaded: (overview: ProjectOverview) => void }) {
+function ProjectRoute({
+  onOverviewLoaded,
+  onProjectDeleted,
+}: {
+  onOverviewLoaded: (overview: ProjectOverview) => void
+  onProjectDeleted: () => Promise<void>
+}) {
   const { projectId } = useParams()
   if (!projectId) return <Navigate to="/" replace />
-  return <ProjectPage projectId={projectId} onProjectLoaded={onOverviewLoaded} />
+  return <ProjectPage projectId={projectId} onProjectLoaded={onOverviewLoaded} onProjectDeleted={onProjectDeleted} />
 }
 
 export function MainPage() {
   const [auth, setAuth] = useState<AuthMe | null>(null)
+  const [theme, setTheme] = useState<ThemeMode>(resolveInitialTheme)
 
   useEffect(() => {
     void api.getAuthMe().then((result) => {
@@ -675,6 +800,11 @@ export function MainPage() {
       else setAuth({ authenticated: false, setupRequired: true })
     })
   }, [])
+
+  useEffect(() => {
+    applyTheme(theme)
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+  }, [theme])
 
   if (!auth) return <div className="pluse-loading">正在加载 Pluse…</div>
 
@@ -685,10 +815,10 @@ export function MainPage() {
         element={
           auth.authenticated
             ? <Navigate to="/" replace />
-            : <LoginPage onAuthenticated={setAuth} />
+            : <LoginPage onAuthenticated={setAuth} theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
         }
       />
-      <Route path="/*" element={<Shell auth={auth} />} />
+      <Route path="/*" element={<Shell auth={auth} theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />} />
     </Routes>
   )
 }

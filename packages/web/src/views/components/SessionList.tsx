@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Project, Session } from '@pluse/types'
+import type { Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
+import { displayQuestName } from '@/views/utils/display'
 import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, TrashIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
   activeProjectId: string | null
-  activeSessionId: string | null
+  activeQuestId: string | null
   onProjectsChanged: () => Promise<void>
+  onOverviewChanged?: (projectId?: string) => Promise<void>
   onNavigate?: () => void
   onRequestClose?: () => void
 }
-
 
 function shortPath(value?: string | null): string {
   if (!value) return ''
@@ -33,18 +34,29 @@ function formatSidebarTime(value?: string): string {
   }).format(new Date(value))
 }
 
+function questLabel(quest: Quest): string {
+  return displayQuestName(quest)
+}
+
+function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'running' | 'complete' | null {
+  if (quest.activeRunId) return 'running'
+  if (quest.completionOutput && activeQuestId !== quest.id) return 'complete'
+  return null
+}
+
 export function SessionList({
   projects,
   activeProjectId,
-  activeSessionId,
+  activeQuestId,
   onProjectsChanged,
+  onOverviewChanged,
   onNavigate,
   onRequestClose,
 }: SessionListProps) {
   const navigate = useNavigate()
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [archivedSessions, setArchivedSessions] = useState<Session[]>([])
-  const [archivedExpanded, setArchivedExpanded] = useState(false)
+  const [sessions, setSessions] = useState<Quest[]>([])
+  const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
+  const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [projectName, setProjectName] = useState('')
@@ -55,26 +67,56 @@ export function SessionList({
   const [renameValue, setRenameValue] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
 
   const activeProject = useMemo(
-    () => projects.find((p) => p.id === activeProjectId) ?? null,
+    () => projects.find((project) => project.id === activeProjectId) ?? null,
     [projects, activeProjectId],
   )
+  const nextSessionIdAfterDelete = useCallback((questId: string): string | null => {
+    const index = sessions.findIndex((quest) => quest.id === questId)
+    if (index === -1) return null
+    const nextQuest = sessions[index + 1] || sessions[index - 1]
+    return nextQuest ? nextQuest.id : null
+  }, [sessions])
+  const knownQuests = useMemo(
+    () => [...sessions, ...archivedSessions],
+    [sessions, archivedSessions],
+  )
 
-  async function loadSessions() {
-    if (!activeProjectId) { setSessions([]); setArchivedSessions([]); return }
-    const [activeResult, archivedResult] = await Promise.all([
-      api.getSessions({ projectId: activeProjectId, archived: false }),
-      api.getSessions({ projectId: activeProjectId, archived: true }),
+  const loadQuests = useCallback(async () => {
+    if (!activeProjectId) {
+      setSessions([])
+      setArchivedSessions([])
+      return
+    }
+
+    const [sessionResult, archivedSessionResult] = await Promise.all([
+      api.getQuests({ projectId: activeProjectId, kind: 'session', deleted: false }),
+      api.getQuests({ projectId: activeProjectId, kind: 'session', deleted: true }),
     ])
-    if (activeResult.ok) setSessions(activeResult.data)
-    if (archivedResult.ok) setArchivedSessions(archivedResult.data)
-  }
 
-  useEffect(() => { void loadSessions(); setConfirmDeleteId(null) }, [activeProjectId])
+    if (sessionResult.ok) setSessions(sessionResult.data)
+    if (archivedSessionResult.ok) setArchivedSessions(archivedSessionResult.data)
+  }, [activeProjectId])
+
+  useEffect(() => {
+    void loadQuests()
+    setConfirmDeleteId(null)
+  }, [loadQuests])
+
+  useEffect(() => {
+    if (!activeProjectId) return
+    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
+    source.onmessage = () => {
+      void loadQuests()
+    }
+    source.onerror = () => source.close()
+    return () => source.close()
+  }, [activeProjectId, loadQuests])
 
   useEffect(() => {
     if (!projectPickerOpen) return
@@ -94,7 +136,6 @@ export function SessionList({
     }
   }, [renamingId])
 
-  // Cancel delete confirm when clicking outside the sidebar
   useEffect(() => {
     if (!confirmDeleteId) return
     function handleClick(event: MouseEvent) {
@@ -109,8 +150,16 @@ export function SessionList({
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
     setError(null)
-    const result = await api.openProject({ name: projectName || undefined, workDir: projectDir, goal: projectGoal || undefined })
-    if (!result.ok) { setError(result.error); return }
+    const result = await api.openProject({
+      name: projectName || undefined,
+      workDir: projectDir,
+      goal: projectGoal || undefined,
+    })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
     setProjectName('')
     setProjectDir('')
     setProjectGoal('')
@@ -121,143 +170,225 @@ export function SessionList({
     navigate(`/projects/${result.data.id}`)
   }
 
-  async function handleCreateSession() {
+  async function handleCreateQuest(kind: Quest['kind']) {
     if (!activeProjectId) return
-    const result = await api.createSession({ projectId: activeProjectId, name: 'New Session' })
-    if (!result.ok) { setError(result.error); return }
+    const result = await api.createQuest(
+      kind === 'session'
+        ? {
+            projectId: activeProjectId,
+            kind,
+            createdBy: 'human',
+            tool: 'codex',
+            name: '新会话',
+            autoRenamePending: true,
+          }
+        : {
+            projectId: activeProjectId,
+            kind,
+            createdBy: 'human',
+            tool: 'codex',
+            title: '新任务',
+            status: 'pending',
+            enabled: true,
+            scheduleKind: 'once',
+            executorKind: 'ai_prompt',
+            executorConfig: { prompt: '' },
+            executorOptions: { continueQuest: true },
+          },
+    )
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+
+    await loadQuests()
+    await onOverviewChanged?.(activeProjectId)
     onNavigate?.()
-    navigate(`/sessions/${result.data.id}`)
+    navigate(`/quests/${result.data.id}`)
   }
 
-  async function handleRename(sessionId: string, name: string) {
+  async function handleRename(questId: string, nextName: string) {
     setRenamingId(null)
-    if (!name.trim()) return
-    const result = await api.updateSession(sessionId, { name: name.trim() })
-    if (!result.ok) { setError(result.error); return }
-    await loadSessions()
+    const quest = knownQuests.find((item) => item.id === questId)
+    if (!quest || !nextName.trim()) return
+    const result = await api.updateQuest(questId, quest.kind === 'session'
+      ? { name: nextName.trim() }
+      : { title: nextName.trim() })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await loadQuests()
+    await onOverviewChanged?.(activeProjectId ?? undefined)
   }
 
-  async function handlePin(sessionId: string, pinned: boolean) {
-    const result = await api.updateSession(sessionId, { pinned })
-    if (!result.ok) { setError(result.error); return }
-    await loadSessions()
+  async function handlePin(questId: string, pinned: boolean) {
+    const result = await api.updateQuest(questId, { pinned })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await loadQuests()
   }
 
-  async function handleArchive(sessionId: string) {
-    const result = await api.updateSession(sessionId, { archived: true })
-    if (!result.ok) { setError(result.error); return }
-    if (sessionId === activeSessionId) navigate(activeProjectId ? `/projects/${activeProjectId}` : '/')
-    await loadSessions()
+  async function handleArchive(questId: string, deleted: boolean) {
+    const quest = knownQuests.find((item) => item.id === questId)
+    if (deleted && quest?.activeRunId) {
+      const confirmed = window.confirm('正在执行中，归档会先取消当前执行。继续吗？')
+      if (!confirmed) return
+      const cancelled = await api.cancelRun(quest.activeRunId)
+      if (!cancelled.ok) {
+        setError(cancelled.error)
+        return
+      }
+      let cleared = false
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const current = await api.getQuest(questId)
+        if (current.ok && !current.data.activeRunId) {
+          cleared = true
+          break
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 150))
+      }
+      if (!cleared) {
+        setError('当前执行尚未完全停止，请稍后再试')
+        return
+      }
+    }
+
+    const result = await api.updateQuest(questId, { deleted })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    if (!deleted && activeQuestId === questId) {
+      navigate(`/quests/${questId}`)
+    } else if (deleted && activeQuestId === questId && activeProjectId) {
+      const nextQuestId = nextSessionIdAfterDelete(questId)
+      if (nextQuestId) navigate(`/quests/${nextQuestId}`)
+      else navigate(`/projects/${activeProjectId}`)
+    }
+    await loadQuests()
+    await onOverviewChanged?.(activeProjectId ?? undefined)
   }
 
-  async function handleUnarchive(sessionId: string) {
-    const result = await api.updateSession(sessionId, { archived: false })
-    if (!result.ok) { setError(result.error); return }
-    await loadSessions()
-  }
-
-  async function handleDelete(sessionId: string) {
-    setDeletingId(sessionId)
-    const result = await api.deleteSession(sessionId)
+  async function handleDelete(questId: string) {
+    setDeletingId(questId)
+    const result = await api.deleteQuest(questId)
     setDeletingId(null)
     setConfirmDeleteId(null)
-    if (!result.ok) { setError(result.error); return }
-    if (sessionId === activeSessionId) navigate(activeProjectId ? `/projects/${activeProjectId}` : '/')
-    await loadSessions()
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    if (activeQuestId === questId && activeProjectId) {
+      const nextQuestId = nextSessionIdAfterDelete(questId)
+      if (nextQuestId) navigate(`/quests/${nextQuestId}`)
+      else navigate(`/projects/${activeProjectId}`)
+    }
+    await loadQuests()
+    await onOverviewChanged?.(activeProjectId ?? undefined)
   }
 
-  const [searchQuery, setSearchQuery] = useState('')
-
   const filteredSessions = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    return q ? sessions.filter((s) => s.name.toLowerCase().includes(q)) : sessions
+    const normalized = searchQuery.trim().toLowerCase()
+    return normalized
+      ? sessions.filter((quest) => questLabel(quest).toLowerCase().includes(normalized))
+      : sessions
   }, [sessions, searchQuery])
 
-  const pinnedSessions = filteredSessions.filter((s) => s.pinned)
-  const unpinnedSessions = filteredSessions.filter((s) => !s.pinned)
+  const pinnedSessions = filteredSessions.filter((quest) => quest.pinned)
+  const unpinnedSessions = filteredSessions.filter((quest) => !quest.pinned)
 
-  function renderSession(session: Session, isArchived = false) {
-    if (renamingId === session.id) {
+  function renderQuest(quest: Quest, archived = false) {
+    const presenceState = getSessionPresenceState(quest, activeQuestId)
+    if (renamingId === quest.id) {
       return (
-        <div key={session.id} className="pluse-sidebar-item pluse-sidebar-row pluse-sidebar-rename-row">
-          <span className="pluse-sidebar-dot" aria-hidden="true" />
+        <div key={quest.id} className="pluse-sidebar-item pluse-sidebar-row pluse-sidebar-rename-row">
           <input
             ref={renameInputRef}
             className="pluse-sidebar-rename-input"
             value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleRename(session.id, renameValue)
-              if (e.key === 'Escape') setRenamingId(null)
+            onChange={(event) => setRenameValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void handleRename(quest.id, renameValue)
+              if (event.key === 'Escape') setRenamingId(null)
             }}
-            onBlur={() => void handleRename(session.id, renameValue)}
+            onBlur={() => void handleRename(quest.id, renameValue)}
           />
         </div>
       )
     }
 
     return (
-      <div key={session.id} className={`pluse-sidebar-item pluse-sidebar-row${session.id === activeSessionId ? ' is-active' : ''}`}>
-        <span className={`pluse-sidebar-dot${session.pinned ? ' is-pinned' : ''}`} aria-hidden="true" />
+      <div
+        key={quest.id}
+        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}`}
+      >
         <Link
           className="pluse-sidebar-item-main"
-          to={`/sessions/${session.id}`}
+          style={{ display: 'grid', gap: 4, minWidth: 0 }}
+          to={`/quests/${quest.id}`}
           onClick={onNavigate}
-          onDoubleClick={(e) => {
-            e.preventDefault()
-            setRenamingId(session.id)
-            setRenameValue(session.name)
+          onDoubleClick={(event) => {
+            event.preventDefault()
+            setRenamingId(quest.id)
+            setRenameValue(questLabel(quest))
           }}
         >
-          <strong>{session.name}</strong>
+          <div className="pluse-sidebar-item-title">
+            {presenceState ? (
+              <span
+                className={`pluse-sidebar-presence-dot is-${presenceState}`}
+                aria-hidden="true"
+              />
+            ) : null}
+            <strong>{questLabel(quest)}</strong>
+          </div>
           <div className="pluse-sidebar-item-meta">
-            {session.activeRunId ? <span className="pluse-sidebar-badge is-running">运行</span> : null}
             <span className="pluse-meta-inline">
               <ClockIcon className="pluse-icon pluse-inline-icon" />
-              {formatSidebarTime(session.updatedAt)}
+              {formatSidebarTime(quest.updatedAt)}
             </span>
           </div>
         </Link>
         <div className="pluse-sidebar-item-actions">
-          {!isArchived ? (
+          {!archived ? (
             <button
               type="button"
-              className={`pluse-sidebar-action-btn${session.pinned ? ' is-active' : ''}`}
-              onClick={(e) => { e.preventDefault(); void handlePin(session.id, !session.pinned) }}
-              aria-label={session.pinned ? '取消固定' : '固定'}
-              title={session.pinned ? '取消固定' : '固定'}
+              className={`pluse-sidebar-action-btn${quest.pinned ? ' is-active' : ''}`}
+              onClick={(event) => {
+                event.preventDefault()
+                void handlePin(quest.id, !quest.pinned)
+              }}
+              aria-label={quest.pinned ? '取消固定' : '固定'}
+              title={quest.pinned ? '取消固定' : '固定'}
             >
               <PinIcon className="pluse-icon" />
             </button>
           ) : null}
-          {isArchived ? (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn"
-              onClick={(e) => { e.preventDefault(); void handleUnarchive(session.id) }}
-              aria-label="取消归档"
-              title="取消归档"
-            >
-              <ArchiveIcon className="pluse-icon" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn"
-              onClick={(e) => { e.preventDefault(); void handleArchive(session.id) }}
-              aria-label="归档"
-              title="归档"
-            >
-              <ArchiveIcon className="pluse-icon" />
-            </button>
-          )}
-          {confirmDeleteId === session.id ? (
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={(event) => {
+              event.preventDefault()
+              void handleArchive(quest.id, !archived)
+            }}
+            aria-label={archived ? '恢复' : '归档'}
+            title={archived ? '恢复' : '归档'}
+          >
+            <ArchiveIcon className="pluse-icon" />
+          </button>
+          {confirmDeleteId === quest.id ? (
             <>
               <button
                 type="button"
                 className="pluse-sidebar-action-btn is-danger"
-                onClick={(e) => { e.preventDefault(); void handleDelete(session.id) }}
-                disabled={deletingId === session.id}
+                onClick={(event) => {
+                  event.preventDefault()
+                  void handleDelete(quest.id)
+                }}
+                disabled={deletingId === quest.id}
                 aria-label="确认删除"
                 title="确认删除"
               >
@@ -266,7 +397,10 @@ export function SessionList({
               <button
                 type="button"
                 className="pluse-sidebar-action-btn"
-                onClick={(e) => { e.preventDefault(); setConfirmDeleteId(null) }}
+                onClick={(event) => {
+                  event.preventDefault()
+                  setConfirmDeleteId(null)
+                }}
                 aria-label="取消"
                 title="取消"
               >
@@ -277,7 +411,10 @@ export function SessionList({
             <button
               type="button"
               className="pluse-sidebar-action-btn is-danger"
-              onClick={(e) => { e.preventDefault(); setConfirmDeleteId(session.id) }}
+              onClick={(event) => {
+                event.preventDefault()
+                setConfirmDeleteId(quest.id)
+              }}
               aria-label="删除"
               title="删除"
             >
@@ -292,146 +429,155 @@ export function SessionList({
   return (
     <aside className="pluse-sidebar" ref={sidebarRef}>
       <div className="pluse-mobile-panel-header">
-        <div>
-          <span className="pluse-section-kicker">工作区</span>
-        </div>
         <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label="关闭侧栏">
           <CloseIcon className="pluse-icon" />
         </button>
       </div>
 
       <div className="pluse-sidebar-body">
-        {/* Project switcher */}
-        <div className="pluse-project-switcher" ref={pickerRef}>
-          <button
-            type="button"
-            className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
-            onClick={() => { setProjectPickerOpen((v) => !v); setNewProjectOpen(false) }}
-          >
-            <div className="pluse-project-switcher-label">
-              <strong>{activeProject?.name ?? '选择项目'}</strong>
-              <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
-            </div>
-            <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
-          </button>
-
-          {projectPickerOpen ? (
-            <div className="pluse-project-picker">
-              <div className="pluse-project-picker-list">
-                {projects.map((project) => (
-                  <Link
-                    key={project.id}
-                    className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
-                    to={`/projects/${project.id}`}
-                    onClick={() => { setProjectPickerOpen(false); onNavigate?.() }}
-                  >
-                    <span className="pluse-sidebar-dot" aria-hidden="true" />
-                    <div className="pluse-project-picker-item-text">
-                      <strong>{project.name}</strong>
-                      <span>{shortPath(project.workDir)}</span>
-                    </div>
-                  </Link>
-                ))}
+        <section className="pluse-sidebar-section pluse-sidebar-section-context">
+          <div className="pluse-sidebar-context-label">项目</div>
+          <div className="pluse-project-switcher" ref={pickerRef}>
+            <button
+              type="button"
+              className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+              onClick={() => {
+                setProjectPickerOpen((value) => !value)
+                setNewProjectOpen(false)
+              }}
+            >
+              <div className="pluse-project-switcher-label">
+                <strong>{activeProject?.name ?? '选择项目'}</strong>
+                <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
               </div>
-              <div className="pluse-project-picker-footer">
-                {newProjectOpen ? (
-                  <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
-                    <input
-                      value={projectName}
-                      onChange={(e) => setProjectName(e.target.value)}
-                      placeholder="项目名称（可选）"
-                    />
-                    <input
-                      value={projectDir}
-                      onChange={(e) => setProjectDir(e.target.value)}
-                      placeholder="工作目录，如 ~/projects/xxx"
-                      required
-                    />
-                    <textarea
-                      value={projectGoal}
-                      onChange={(e) => setProjectGoal(e.target.value)}
-                      placeholder="项目目标（可选）"
-                      rows={2}
-                    />
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>取消</button>
-                      <button type="submit" className="pluse-button" style={{ flex: 1 }}>打开</button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    type="button"
-                    className="pluse-project-picker-add"
-                    onClick={() => setNewProjectOpen(true)}
-                  >
-                    <PlusIcon className="pluse-icon" />
-                    添加项目
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : null}
-        </div>
+              <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
+            </button>
 
-        {/* Search */}
-        {sessions.length > 0 && (
+            {projectPickerOpen ? (
+              <div className="pluse-project-picker">
+                <div className="pluse-project-picker-list">
+                  {projects.map((project) => (
+                    <Link
+                      key={project.id}
+                      className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                      to={`/projects/${project.id}`}
+                      onClick={() => {
+                        setProjectPickerOpen(false)
+                        onNavigate?.()
+                      }}
+                    >
+                      <span className="pluse-sidebar-dot" aria-hidden="true" />
+                      <div className="pluse-project-picker-item-text">
+                        <strong>{project.name}</strong>
+                        <span>{shortPath(project.workDir)}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+                <div className="pluse-project-picker-footer">
+                  {newProjectOpen ? (
+                    <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
+                      <input
+                        value={projectName}
+                        onChange={(event) => setProjectName(event.target.value)}
+                        placeholder="项目名称（可选）"
+                      />
+                      <input
+                        value={projectDir}
+                        onChange={(event) => setProjectDir(event.target.value)}
+                        placeholder="工作目录，如 ~/projects/xxx"
+                        required
+                      />
+                      <textarea
+                        value={projectGoal}
+                        onChange={(event) => setProjectGoal(event.target.value)}
+                        placeholder="项目目标（可选）"
+                        rows={2}
+                      />
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>
+                          取消
+                        </button>
+                        <button type="submit" className="pluse-button" style={{ flex: 1 }}>
+                          打开
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <button type="button" className="pluse-project-picker-add" onClick={() => setNewProjectOpen(true)}>
+                      <PlusIcon className="pluse-icon" />
+                      添加项目
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="pluse-sidebar-section pluse-sidebar-section-context">
+          <div className="pluse-sidebar-context-label">会话</div>
+        </section>
+
+        {sessions.length > 0 ? (
           <div className="pluse-sidebar-search">
             <input
               type="search"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="搜索会话…"
               className="pluse-sidebar-search-input"
             />
           </div>
-        )}
+        ) : null}
 
-        {/* Session list */}
-        <section className="pluse-sidebar-section pluse-sidebar-section-list">
-          <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-            {pinnedSessions.length > 0 ? pinnedSessions.map((s) => renderSession(s)) : null}
-            {unpinnedSessions.length > 0 ? unpinnedSessions.map((s) => renderSession(s)) : null}
-            {sessions.length === 0 ? (
-              <div className="pluse-empty-state pluse-sidebar-empty">还没有会话</div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="pluse-empty-state pluse-sidebar-empty">无搜索结果</div>
-            ) : null}
-
-            {archivedSessions.length > 0 ? (
-              <div className="pluse-sidebar-archive-group">
-                <button
-                  type="button"
-                  className="pluse-sidebar-archive-toggle"
-                  onClick={() => setArchivedExpanded((v) => !v)}
-                >
-                  <span>{archivedExpanded ? '▾' : '▸'} 归档 ({archivedSessions.length})</span>
-                </button>
-                {archivedExpanded ? (
-                  <div className="pluse-sidebar-archive-list">
-                    {archivedSessions.map((s) => renderSession(s, true))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-        </section>
+        <div className="pluse-sidebar-scroll-pane">
+          <section className="pluse-sidebar-section pluse-sidebar-section-list">
+            <div className="pluse-sidebar-list pluse-sidebar-list-dense">
+              {pinnedSessions.map((quest) => renderQuest(quest))}
+              {unpinnedSessions.map((quest) => renderQuest(quest))}
+              {sessions.length === 0 ? (
+                <div className="pluse-empty-state pluse-sidebar-empty">还没有会话</div>
+              ) : filteredSessions.length === 0 ? (
+                <div className="pluse-empty-state pluse-sidebar-empty">无搜索结果</div>
+              ) : null}
+              {archivedSessions.length > 0 ? (
+                <div className="pluse-sidebar-archive-group">
+                  <button
+                    type="button"
+                    className="pluse-sidebar-archive-toggle"
+                    onClick={() => setArchivedSessionsExpanded((value) => !value)}
+                  >
+                    <span>{archivedSessionsExpanded ? '▾' : '▸'} 归档会话 ({archivedSessions.length})</span>
+                  </button>
+                  {archivedSessionsExpanded ? (
+                    <div className="pluse-sidebar-archive-list">
+                      {archivedSessions.map((quest) => renderQuest(quest, true))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
 
         <section className="pluse-sidebar-section-new-session">
-          <button
-            type="button"
-            className="pluse-sidebar-new-session-btn"
-            onClick={() => void handleCreateSession()}
-            disabled={!activeProjectId}
-            aria-label="开始新会话"
-            title="开始新会话"
-          >
-            <PlusIcon className="pluse-icon" />
-          </button>
+          <div style={{ width: '100%' }}>
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link"
+              aria-label="新建会话"
+              onClick={() => void handleCreateQuest('session')}
+              disabled={!activeProjectId}
+            >
+              <PlusIcon className="pluse-icon" />
+              新建会话
+            </button>
+          </div>
         </section>
 
         {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
       </div>
-
     </aside>
   )
 }

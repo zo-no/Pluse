@@ -2,12 +2,16 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AuthMe } from '@pluse/types'
 import * as api from '@/api/client'
+import { MoonIcon, SunIcon } from '@/views/components/icons'
+import type { ThemeMode } from '@/views/utils/theme'
 
 interface LoginPageProps {
   onAuthenticated?: (auth: AuthMe) => void
+  theme: ThemeMode
+  onToggleTheme: () => void
 }
 
-export function LoginPage({ onAuthenticated }: LoginPageProps) {
+export function LoginPage({ onAuthenticated, theme, onToggleTheme }: LoginPageProps) {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -48,9 +52,20 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
 
   return (
     <div className="pluse-login">
-      <div className="pluse-login-card">
-        <h1>Pluse</h1>
-        <p>单端口、本地优先，项目 / 会话 / 任务共用同一个工作域。</p>
+        <div className="pluse-login-card">
+          <div className="pluse-login-card-topbar">
+            <button
+              type="button"
+              className="pluse-icon-button pluse-header-action-icon pluse-theme-toggle"
+              onClick={onToggleTheme}
+              aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+              title={theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+            >
+              {theme === 'dark' ? <SunIcon className="pluse-icon" /> : <MoonIcon className="pluse-icon" />}
+            </button>
+          </div>
+          <h1>Pluse</h1>
+          <p>单端口、本地优先，项目、会话、任务与 Todo 共用同一个工作域。</p>
 
         <form className="pluse-login-form" onSubmit={handlePasswordLogin}>
           <label>用户名</label>

@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
-import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Task, TaskRun, UpdateProjectInput } from '@pluse/types'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import {
   createProjectRecord,
@@ -12,12 +12,13 @@ import {
   upsertProjectRecord,
 } from '../models/project'
 import { getRunsByProject } from '../models/run'
-import { listSessions } from '../models/session'
-import { listTasks } from '../models/task'
-import { getTaskRunsByProject } from '../models/task-run'
+import { listQuests } from '../models/quest'
+import { listTodos, updateTodo } from '../models/todo'
 import { emit } from './events'
 import {
   ensureDir,
+  getAssetsDir,
+  getHistoryRoot,
   getInboxDir,
   getProjectManifestDir,
   getProjectManifestPath,
@@ -62,30 +63,25 @@ function defaultProjectName(workDir: string): string {
   return basename(workDir) || 'Project'
 }
 
-function isBrainTask(task: Task): boolean {
-  return task.createdBy === 'system' && task.kind === 'recurring' && task.title === 'Project Brain'
-}
-
-function getMostRelevantScheduleTask(projectTasks: Task[]): Task | null {
-  return projectTasks.find((task) => task.enabled && isBrainTask(task))
-    ?? projectTasks.find((task) => task.enabled && (task.kind === 'recurring' || task.kind === 'scheduled'))
+function getMostRelevantScheduleQuest(projectTasks: Quest[]): Quest | null {
+  return projectTasks.find((quest) => quest.enabled && (quest.scheduleKind === 'recurring' || quest.scheduleKind === 'scheduled'))
     ?? null
 }
 
-function deriveSchedule(task: Task | null, taskRuns: TaskRun[]): ProjectOverview['schedule'] {
-  if (!task) return null
-  const latestRun = taskRuns.find((run) => run.taskId === task.id)
-  const config = task.scheduleConfig
-  if (config?.kind === 'recurring') {
+function deriveSchedule(quest: Quest | null, runs: Run[]): ProjectOverview['schedule'] {
+  if (!quest) return null
+  const latestRun = runs.find((run) => run.questId === quest.id)
+  const config = quest.scheduleConfig ?? {}
+  if (quest.scheduleKind === 'recurring') {
     return {
       lastRunAt: config.lastRunAt ?? latestRun?.completedAt ?? latestRun?.startedAt,
       nextRunAt: config.nextRunAt,
     }
   }
-  if (config?.kind === 'scheduled') {
+  if (quest.scheduleKind === 'scheduled') {
     return {
       lastRunAt: latestRun?.completedAt ?? latestRun?.startedAt,
-      nextRunAt: task.status === 'done' || task.status === 'cancelled' ? undefined : config.scheduledAt,
+      nextRunAt: quest.status === 'done' || quest.status === 'cancelled' ? undefined : config.runAt,
     }
   }
   if (!latestRun) return null
@@ -94,38 +90,24 @@ function deriveSchedule(task: Task | null, taskRuns: TaskRun[]): ProjectOverview
   }
 }
 
-function getRecentOutputs(projectId: string, sessions: ProjectOverview['sessions'], tasks: Task[]): ProjectRecentOutput[] {
-  const sessionMap = new Map(sessions.map((session) => [session.id, session]))
-  const taskMap = new Map(tasks.map((task) => [task.id, task]))
+function getRecentOutputs(projectId: string, sessions: Quest[], tasks: Quest[]): ProjectRecentOutput[] {
+  const questMap = new Map([...sessions, ...tasks].map((quest) => [quest.id, quest]))
 
-  const sessionOutputs: ProjectRecentOutput[] = getRunsByProject(projectId, 16)
+  const outputs: ProjectRecentOutput[] = getRunsByProject(projectId, 16)
     .filter((run) => run.completedAt || run.finalizedAt || ['completed', 'failed', 'cancelled'].includes(run.state))
     .map((run) => ({
       id: run.id,
-      kind: 'session_run',
-      title: sessionMap.get(run.sessionId)?.name ?? '未命名会话',
+      kind: questMap.get(run.questId)?.kind === 'task' ? 'task_run' : 'chat_run',
+      title: questMap.get(run.questId)?.name ?? questMap.get(run.questId)?.title ?? '未命名 Quest',
       status: run.state,
       completedAt: run.completedAt ?? run.finalizedAt,
-      summary: run.failureReason ?? (run.result === 'cancelled' ? '本次执行已取消。' : undefined),
-      sessionId: run.sessionId,
-    }))
-
-  const taskOutputs: ProjectRecentOutput[] = getTaskRunsByProject(projectId, 16)
-    .filter((run) => run.status !== 'running')
-    .map((run) => ({
-      id: run.id,
-      kind: 'task_run',
-      title: taskMap.get(run.taskId)?.title ?? '未命名任务',
-      status: run.status,
-      completedAt: run.completedAt ?? run.startedAt,
-      summary: run.error ?? taskMap.get(run.taskId)?.completionOutput,
-      sessionId: run.sessionId,
-      taskId: run.taskId,
+      summary: run.failureReason ?? (run.state === 'cancelled' ? '本次执行已取消。' : undefined),
+      questId: run.questId,
     }))
 
   const getSortTime = (item: ProjectRecentOutput) => item.completedAt ? Date.parse(item.completedAt) : 0
 
-  return [...sessionOutputs, ...taskOutputs]
+  return outputs
     .sort((a, b) => getSortTime(b) - getSortTime(a))
     .slice(0, 12)
 }
@@ -133,9 +115,9 @@ function getRecentOutputs(projectId: string, sessions: ProjectOverview['sessions
 function reassignProjectReferences(fromId: string, toId: string): void {
   const db = getDb()
   const tx = db.transaction(() => {
-    db.run(`UPDATE sessions SET project_id = ? WHERE project_id = ?`, [toId, fromId])
-    db.run(`UPDATE tasks SET project_id = ? WHERE project_id = ?`, [toId, fromId])
-    db.run(`UPDATE task_runs SET project_id = ? WHERE project_id = ?`, [toId, fromId])
+    db.run(`UPDATE quests SET project_id = ? WHERE project_id = ?`, [toId, fromId])
+    db.run(`UPDATE todos SET project_id = ? WHERE project_id = ?`, [toId, fromId])
+    db.run(`UPDATE runs SET project_id = ? WHERE project_id = ?`, [toId, fromId])
     db.run(`DELETE FROM projects WHERE id = ?`, [fromId])
   })
   tx()
@@ -340,42 +322,47 @@ export function archiveProject(id: string): Project {
 export function getProjectOverview(id: string): ProjectOverview | null {
   const project = getProject(id)
   if (!project) return null
-  const sessions = listSessions({ projectId: id, archived: false })
-  const tasks = listTasks({ projectId: id })
-  const taskRuns = getTaskRunsByProject(id, 24)
-  const brainTask = tasks.find(isBrainTask) ?? null
-  const waitingTasks = tasks.filter((task) => task.status === 'blocked' || Boolean(task.waitingInstructions))
-  const schedule = deriveSchedule(getMostRelevantScheduleTask(tasks), taskRuns)
+  const sessions = listQuests({ projectId: id, kind: 'session', deleted: false })
+  const tasks = listQuests({ projectId: id, kind: 'task', deleted: false })
+  const todos = listTodos({ projectId: id })
+  const waitingTodos = todos.filter((todo) => todo.status === 'pending' && Boolean(todo.waitingInstructions || todo.description))
+  const runs = getRunsByProject(id, 24)
+  const schedule = deriveSchedule(getMostRelevantScheduleQuest(tasks), runs)
   return {
     project,
     sessions,
     tasks,
-    brainTask,
-    waitingTasks,
-    projectTasks: tasks,
+    todos,
+    waitingTodos,
     recentOutputs: getRecentOutputs(id, sessions, tasks),
     schedule,
     counts: {
       sessions: sessions.length,
-      chatShortTasks: 0,
-      projectTasks: tasks.length,
+      tasks: tasks.length,
+      todos: todos.length,
     },
   }
 }
 
 export function deleteProjectWithCascade(id: string): void {
   const db = getDb()
-  // 级联删除顺序（遵循外键约束）
-  // task 相关（有 project_id 外键）
-  db.run(`DELETE FROM task_run_spool WHERE run_id IN (SELECT id FROM task_runs WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM task_runs WHERE project_id = ?`, [id])
-  db.run(`DELETE FROM task_logs WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM task_ops WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM tasks WHERE project_id = ?`, [id])
-  // session 相关（session events 存文件系统，runs 有 session_id 外键）
-  db.run(`DELETE FROM runs WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM sessions WHERE project_id = ?`, [id])
+  const quests = listQuests({ projectId: id })
+  for (const todo of listTodos({ projectId: id })) {
+    if (todo.originQuestId) {
+      updateTodo(todo.id, { originQuestId: null })
+    }
+  }
+  db.run(`DELETE FROM run_spool WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM runs WHERE project_id = ?`, [id])
+  db.run(`DELETE FROM assets WHERE quest_id IN (SELECT id FROM quests WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM quest_ops WHERE quest_id IN (SELECT id FROM quests WHERE project_id = ?)`, [id])
+  db.run(`DELETE FROM todos WHERE project_id = ?`, [id])
+  db.run(`DELETE FROM quests WHERE project_id = ?`, [id])
   deleteProjectRecord(id)
+  for (const quest of quests) {
+    rmSync(join(getHistoryRoot(), quest.id), { recursive: true, force: true })
+    rmSync(getAssetsDir(quest.id), { recursive: true, force: true })
+  }
   emit({ type: 'project_updated', data: { projectId: id } })
 }
 

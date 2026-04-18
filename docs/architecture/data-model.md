@@ -1,4 +1,4 @@
-# Pluse v2 数据模型
+# Pluse 数据模型
 
 > 正式口径，由 0003-quest-unified-model.md 收敛而来。
 

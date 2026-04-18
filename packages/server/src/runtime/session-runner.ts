@@ -1,26 +1,34 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
-import type { Run, SessionEvent, UpdateSessionInput, QueuedMessage } from '@pluse/types'
+import type {
+  MessageAttachment,
+  Quest,
+  QuestEvent,
+  Run,
+  RunTrigger,
+  RunTriggeredBy,
+} from '@pluse/types'
 import { appendEvent, listEvents } from '../models/history'
-import { getProject } from '../models/project'
-import { buildSessionSystemPrompt } from '../services/system-prompt'
-import { createRun, getRun, getRunsBySession, updateRun } from '../models/run'
+import { createQuestOp } from '../models/quest-op'
 import {
+  clearFollowUps,
   dequeueFollowUp,
   enqueueFollowUp,
-  getSession,
-  listSessionsWithPendingQueue,
-  updateSession,
-} from '../models/session'
+  getQuest,
+  listQuestsWithPendingQueue,
+  removeFollowUp,
+  updateQuest,
+} from '../models/quest'
+import { getProject } from '../models/project'
+import { appendRunSpoolLine, cancelRun, createRun, getRun, getRunByQuestRequestId, getRunsByQuest, updateRun } from '../models/run'
+import { createTodo } from '../models/todo'
+import { emit } from '../services/events'
+import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
+import { getRuntimeModelCatalog } from './catalog'
 
-const DEFAULT_TOOL = 'codex'
-const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'] ?? process.env['MELODYSYNC_RUN_TIMEOUT_MS'], 300_000)
-const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'] ?? process.env['MELODYSYNC_RUN_KILL_GRACE_MS'], 15_000)
-const DEFAULT_MODELS: Record<string, string> = {
-  codex: process.env['PLUSE_DEFAULT_CODEX_MODEL']?.trim() ?? process.env['PULSE_DEFAULT_CODEX_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CODEX_MODEL']?.trim() ?? '',
-  claude: process.env['PLUSE_DEFAULT_CLAUDE_MODEL']?.trim() ?? process.env['PULSE_DEFAULT_CLAUDE_MODEL']?.trim() ?? process.env['MELODYSYNC_DEFAULT_CLAUDE_MODEL']?.trim() ?? '',
-}
+type ToolName = 'codex' | 'claude'
+type ProviderEvent = Omit<QuestEvent, 'seq'>
 
 type ActiveRunner = {
   child: ChildProcess
@@ -29,41 +37,69 @@ type ActiveRunner = {
   killGraceId?: Timer
 }
 
-type ToolName = 'codex' | 'claude'
+type RuntimePreferences = {
+  tool: ToolName
+  model: string
+  effort: string | null
+  thinking: boolean
+}
 
-const activeRunners = new Map<string, ActiveRunner>()
+type ProviderParseResult = {
+  events: ProviderEvent[]
+  assistantText?: string
+  claudeSessionId?: string
+  codexThreadId?: string
+  providerError?: string
+}
 
-export interface SubmitSessionMessageInput {
-  sessionId: string
+type AutoRenameSnapshot = {
+  fallbackSource: string
+  transcript: string
+}
+
+export interface SubmitQuestMessageInput {
+  questId: string
   text: string
   requestId?: string
   tool?: string
   model?: string | null
   effort?: string | null
   thinking?: boolean
-  attachments?: Array<{
-    assetId: string
-    filename: string
-    savedPath: string
-    mimeType: string
-  }>
+  attachments?: MessageAttachment[]
 }
 
-export interface SubmitSessionMessageResult {
+export interface SubmitQuestMessageResult {
   queued: boolean
   run: Run | null
-  session: ReturnType<typeof getSession>
+  quest: Quest | null
 }
 
-type ProviderEvent = Omit<SessionEvent, 'seq'>
-type ProviderParseResult = {
-  events: ProviderEvent[]
-  claudeSessionId?: string
-  codexThreadId?: string
-  providerError?: string
+export interface StartQuestRunInput {
+  questId: string
+  requestId?: string
+  trigger: RunTrigger
+  triggeredBy: RunTriggeredBy
 }
 
-type RuntimePreferences = Omit<QueuedMessage, 'requestId' | 'text'>
+export interface StartQuestRunResult {
+  skipped: boolean
+  run: Run | null
+  quest: Quest | null
+}
+
+const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'], 300_000)
+const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'], 15_000)
+const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'] ?? process.env['PULSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
+const activeRunners = new Map<string, ActiveRunner>()
+const AUTO_RENAME_SYSTEM_PROMPT = [
+  'You generate short titles for Pluse session quests.',
+  'Return only the title text.',
+  'Use the conversation language when it is clear.',
+  'Be concrete and specific, not generic.',
+  'For Chinese titles, prefer 4 to 8 characters.',
+  'For non-Chinese titles, prefer 2 to 6 words.',
+  'Do not use quotes, prefixes, markdown, or trailing punctuation unless necessary.',
+].join('\n')
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw ?? '', 10)
@@ -78,74 +114,59 @@ function genRequestId(): string {
   return 'req_' + randomBytes(8).toString('hex')
 }
 
+function makeEvent(event: Omit<ProviderEvent, 'timestamp'>): ProviderEvent {
+  return { timestamp: Date.now(), ...event }
+}
+
 function makeStatusEvent(content: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'status',
-    content,
-  }
+  return makeEvent({ type: 'status', content })
 }
 
 function makeMessageEvent(role: 'user' | 'assistant', content: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'message',
-    role,
-    content,
-  }
+  return makeEvent({ type: 'message', role, content })
 }
 
 function makeReasoningEvent(content: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'reasoning',
-    role: 'assistant',
-    content,
-  }
+  return makeEvent({ type: 'reasoning', role: 'assistant', content })
 }
 
 function makeToolUseEvent(toolInput: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'tool_use',
-    role: 'assistant',
-    toolInput,
-  }
+  return makeEvent({ type: 'tool_use', role: 'assistant', toolInput })
 }
 
 function makeToolResultEvent(output: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'tool_result',
-    output,
-  }
-}
-
-function makeFileChangeEvent(content: string): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'file_change',
-    content,
-  }
+  return makeEvent({ type: 'tool_result', output })
 }
 
 function makeUsageEvent(parts: Array<string | null | undefined>): ProviderEvent {
-  return {
-    timestamp: Date.now(),
-    type: 'usage',
-    content: parts.filter(Boolean).join(' · '),
-  }
+  return makeEvent({ type: 'usage', content: parts.filter(Boolean).join(' · ') })
 }
 
-function safeJsonParse(value: string): unknown | null {
+function safeJsonParse(value: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(value)
+    const parsed = JSON.parse(value) as unknown
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
   } catch {
     return null
   }
 }
 
-function normalizeTextBlockArray(value: unknown): string {
+function normalizeProviderError(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const line = value
+      .split('\n')
+      .map((part) => part.trim())
+      .find((part) => part && !part.startsWith('at '))
+    return line?.replace(/^Error:\s*/, '')
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    return normalizeProviderError(record.error ?? record.message)
+  }
+  return undefined
+}
+
+function normalizeText(value: unknown): string {
   if (typeof value === 'string') return value
   if (!Array.isArray(value)) return ''
   return value
@@ -160,482 +181,24 @@ function normalizeTextBlockArray(value: unknown): string {
     .join('\n')
 }
 
-function normalizeProviderError(value: unknown): string | undefined {
-  if (typeof value === 'string') {
-    const firstLine = value
-      .split('\n')
-      .map((line) => line.trim())
-      .find((line) => line && !line.startsWith('at ') && !line.startsWith('[ede_diagnostic]'))
-    return firstLine?.replace(/^Error:\s*/, '') || undefined
-  }
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const normalized = normalizeProviderError(entry)
-      if (normalized) return normalized
-    }
-    return undefined
-  }
-
-  if (value && typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    if (typeof record.message === 'string') return normalizeProviderError(record.message)
-    if (typeof record.error === 'string') return normalizeProviderError(record.error)
-  }
-
-  return undefined
+function summarizeStderr(lines: string[]): string {
+  return lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim()
 }
 
-function parseClaudeLine(line: string): ProviderParseResult {
-  const parsed = safeJsonParse(line)
-  if (!parsed || typeof parsed !== 'object') return { events: [] }
-
-  const obj = parsed as Record<string, any>
-  const events: ProviderEvent[] = []
-  const result: ProviderParseResult = { events }
-
-  switch (obj.type) {
-    case 'system':
-      if (obj.subtype === 'init') {
-        events.push(makeStatusEvent(`Claude session started (${obj.session_id || 'unknown'})`))
-        if (typeof obj.session_id === 'string' && obj.session_id.trim()) {
-          result.claudeSessionId = obj.session_id.trim()
-        }
-      } else if (obj.subtype === 'api_retry') {
-        const attempt = Number.isFinite(obj.attempt) ? obj.attempt : '?'
-        const maxRetries = Number.isFinite(obj.max_retries) ? obj.max_retries : '?'
-        const reason = typeof obj.error === 'string' && obj.error.trim() ? obj.error.trim() : 'unknown'
-        const status = Number.isFinite(obj.error_status) ? ` (${obj.error_status})` : ''
-        events.push(makeStatusEvent(`Claude retry ${attempt}/${maxRetries}: ${reason}${status}`))
-      } else if (typeof obj.subtype === 'string') {
-        events.push(makeStatusEvent(`Claude: ${obj.subtype}`))
-      }
-      break
-
-    case 'assistant': {
-      const content = obj.message?.content
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (!block || typeof block !== 'object') continue
-          if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-            events.push(makeMessageEvent('assistant', block.text))
-          } else if (block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking.trim()) {
-            events.push(makeReasoningEvent(block.thinking))
-          } else if (block.type === 'tool_use') {
-            const input = typeof block.input === 'string'
-              ? block.input
-              : JSON.stringify(block.input ?? {}, null, 2)
-            events.push(makeToolUseEvent(`${block.name || 'tool'}\n${input}`.trim()))
-          } else if (block.type === 'tool_result') {
-            const output = normalizeTextBlockArray(block.content)
-            events.push(makeToolResultEvent(output || JSON.stringify(block.content ?? '')))
-          }
-        }
-      }
-      break
-    }
-
-    case 'user': {
-      const content = obj.message?.content
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block?.type !== 'tool_result') continue
-          const output = normalizeTextBlockArray(block.content)
-          events.push(makeToolResultEvent(output || JSON.stringify(block.content ?? '')))
-        }
-      }
-      break
-    }
-
-    case 'result': {
-      const usage = obj.usage ?? {}
-      const inputTokens = Number.isFinite(usage.input_tokens) ? usage.input_tokens : null
-      const cacheCreate = Number.isFinite(usage.cache_creation_input_tokens) ? usage.cache_creation_input_tokens : 0
-      const cacheRead = Number.isFinite(usage.cache_read_input_tokens) ? usage.cache_read_input_tokens : 0
-      const outputTokens = Number.isFinite(usage.output_tokens) ? usage.output_tokens : null
-      if (inputTokens !== null || outputTokens !== null) {
-        events.push(makeUsageEvent([
-          inputTokens !== null ? `input ${inputTokens}` : null,
-          outputTokens !== null ? `output ${outputTokens}` : null,
-          cacheCreate || cacheRead ? `cache ${cacheCreate + cacheRead}` : null,
-        ]))
-      }
-      if (obj.is_error === true) {
-        const errorMessage =
-          normalizeProviderError(obj.errors)
-          || normalizeProviderError(obj.error)
-          || normalizeProviderError(obj.result)
-        if (errorMessage) {
-          result.providerError = errorMessage
-          events.push(makeStatusEvent(`Claude error: ${errorMessage}`))
-        }
-      }
-      break
-    }
-
-    case 'stream_event': {
-      const evt = obj.event
-      if (
-        evt?.type === 'content_block_delta'
-        && evt.delta?.type === 'thinking_delta'
-        && typeof evt.delta.thinking === 'string'
-        && evt.delta.thinking.trim()
-      ) {
-        events.push(makeReasoningEvent(evt.delta.thinking))
-      }
-      break
-    }
-
-    default:
-      break
-  }
-
-  return result
-}
-
-function parseCodexCompletedItem(item: Record<string, any>): ProviderEvent[] {
-  const events: ProviderEvent[] = []
-
-  switch (item.type) {
-    case 'agent_message':
-      if (typeof item.text === 'string' && item.text.trim()) {
-        events.push(makeMessageEvent('assistant', item.text))
-      }
-      break
-
-    case 'reasoning':
-      if (typeof item.text === 'string' && item.text.trim()) {
-        events.push(makeReasoningEvent(item.text))
-      }
-      break
-
-    case 'command_execution': {
-      const command = typeof item.command === 'string' ? item.command : ''
-      if (command) {
-        events.push(makeToolUseEvent(`bash\n${command}`))
-      }
-      const output = typeof item.aggregated_output === 'string' ? item.aggregated_output : ''
-      if (output || item.status === 'failed') {
-        events.push(makeToolResultEvent(output || `Command failed (${item.exit_code ?? 'unknown'})`))
-      }
-      break
-    }
-
-    case 'mcp_tool_call': {
-      const toolName = [item.server, item.tool].filter(Boolean).join('/')
-      const args = JSON.stringify(item.arguments ?? {}, null, 2)
-      events.push(makeToolUseEvent(`${toolName || 'tool'}\n${args}`.trim()))
-      if (item.error?.message) {
-        events.push(makeToolResultEvent(`Error: ${item.error.message}`))
-      } else if (item.result !== undefined) {
-        events.push(makeToolResultEvent(JSON.stringify(item.result, null, 2)))
-      }
-      break
-    }
-
-    case 'file_change':
-      if (Array.isArray(item.changes)) {
-        for (const change of item.changes) {
-          if (!change) continue
-          const label = [change.path, change.kind].filter(Boolean).join(' · ')
-          if (label) events.push(makeFileChangeEvent(label))
-        }
-      }
-      break
-
-    case 'web_search':
-      if (typeof item.query === 'string' && item.query.trim()) {
-        events.push(makeToolUseEvent(`web_search\n${item.query}`))
-      }
-      break
-
-    case 'todo_list':
-      if (Array.isArray(item.items) && item.items.length > 0) {
-        const text = item.items
-          .map((entry) => `${entry.completed ? '[x]' : '[ ]'} ${entry.text ?? ''}`.trim())
-          .join('\n')
-        if (text) events.push(makeMessageEvent('assistant', text))
-      }
-      break
-
-    case 'error':
-      if (typeof item.message === 'string' && item.message.trim()) {
-        events.push(makeStatusEvent(`Codex error: ${item.message}`))
-      }
-      break
-
-    default:
-      break
-  }
-
-  return events
-}
-
-function parseCodexLine(line: string): ProviderParseResult {
-  const parsed = safeJsonParse(line)
-  if (!parsed || typeof parsed !== 'object') return { events: [] }
-
-  const obj = parsed as Record<string, any>
-  switch (obj.type) {
-    case 'thread.started':
-      return {
-        events: [makeStatusEvent(`Codex thread started (${obj.thread_id || 'unknown'})`)],
-        codexThreadId: typeof obj.thread_id === 'string' && obj.thread_id.trim()
-          ? obj.thread_id.trim()
-          : undefined,
-      }
-    case 'turn.completed': {
-      const usage = obj.usage ?? {}
-      const inputTokens = Number.isFinite(usage.input_tokens) ? usage.input_tokens : null
-      const cachedTokens = Number.isFinite(usage.cached_input_tokens) ? usage.cached_input_tokens : null
-      const outputTokens = Number.isFinite(usage.output_tokens) ? usage.output_tokens : null
-      return {
-        events: [
-          makeUsageEvent([
-            inputTokens !== null ? `input ${inputTokens}` : null,
-            cachedTokens !== null ? `cached ${cachedTokens}` : null,
-            outputTokens !== null ? `output ${outputTokens}` : null,
-          ]),
-        ],
-      }
-    }
-    case 'turn.failed':
-      return {
-        events: [makeStatusEvent(`Codex error: ${obj.error?.message || 'unknown error'}`)],
-        providerError: normalizeProviderError(obj.error?.message) || 'unknown error',
-      }
-    case 'item.completed':
-      return {
-        events: obj.item && typeof obj.item === 'object'
-          ? parseCodexCompletedItem(obj.item)
-          : [],
-      }
-    case 'error':
-      return {
-        events: [makeStatusEvent(`Codex error: ${obj.message || 'unknown error'}`)],
-        providerError: normalizeProviderError(obj.message) || 'unknown error',
-      }
-    default:
-      return { events: [] }
-  }
-}
-
-function parseProviderLine(tool: ToolName, line: string): ProviderParseResult {
-  return tool === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
-}
-
-function resolveToolPreference(tool?: string, model?: string): ToolName {
-  const normalizedTool = tool?.trim().toLowerCase()
-  if (normalizedTool === 'claude') return 'claude'
-  if (normalizedTool === 'codex') return 'codex'
-  if (typeof model === 'string' && model.toLowerCase().includes('claude')) return 'claude'
-  return 'codex'
-}
-
-function resolveModel(tool: ToolName, model?: string): string {
-  const trimmed = model?.trim()
-  if (trimmed) return trimmed
-  return DEFAULT_MODELS[tool] ?? ''
-}
-
-function hasSubmittedPreference<K extends keyof SubmitSessionMessageInput>(
-  input: SubmitSessionMessageInput,
-  key: K,
-): boolean {
-  return input[key] !== undefined
-}
-
-function buildSessionPreferencePatch(
-  sessionId: string,
-  input: SubmitSessionMessageInput,
-): UpdateSessionInput {
-  const session = getSession(sessionId)
-  if (!session) return {}
-
-  const patch: UpdateSessionInput = {}
-
-  if (hasSubmittedPreference(input, 'model')) {
-    patch.model = input.model ?? null
-  }
-  if (hasSubmittedPreference(input, 'effort')) {
-    patch.effort = input.effort ?? null
-  }
-  if (hasSubmittedPreference(input, 'thinking')) {
-    patch.thinking = input.thinking === true
-  }
-  if (hasSubmittedPreference(input, 'tool') || hasSubmittedPreference(input, 'model')) {
-    patch.tool = resolveToolPreference(
-      hasSubmittedPreference(input, 'tool') ? input.tool : session.tool,
-      hasSubmittedPreference(input, 'model') ? input.model ?? undefined : session.model,
-    )
-  }
-
-  return patch
-}
-
-function persistSubmittedPreferences(sessionId: string, input: SubmitSessionMessageInput): void {
-  const patch = buildSessionPreferencePatch(sessionId, input)
-  if (Object.keys(patch).length === 0) return
-  updateSession(sessionId, patch)
-}
-
-function snapshotSessionPreferences(sessionId: string): RuntimePreferences {
-  const session = getSession(sessionId)
-  if (!session) {
-    return {
-      tool: DEFAULT_TOOL,
-      model: null,
-      effort: null,
-      thinking: false,
-    }
-  }
-
-  return {
-    tool: resolveToolPreference(session.tool, session.model),
-    model: session.model ?? null,
-    effort: session.effort ?? null,
-    thinking: session.thinking === true,
-  }
-}
-
-function resolveRunPreferences(
-  sessionId: string,
-  preferences?: RuntimePreferences,
-): Required<RuntimePreferences> {
-  const session = getSession(sessionId)
-  if (!session) {
-    return {
-      tool: DEFAULT_TOOL,
-      model: null,
-      effort: null,
-      thinking: false,
-    }
-  }
-
-  const tool = resolveToolPreference(preferences?.tool ?? session.tool, preferences?.model ?? session.model ?? undefined)
-  return {
-    tool,
-    model: preferences?.model ?? session.model ?? null,
-    effort: tool === 'codex' ? (preferences?.effort ?? session.effort ?? null) : null,
-    thinking: tool === 'claude' ? (preferences?.thinking ?? (session.thinking === true)) : false,
-  }
-}
-
-function resolveToolCommand(tool: ToolName): string {
-  if (tool === 'claude') {
-    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || process.env['MELODYSYNC_CLAUDE_COMMAND']?.trim() || 'claude'
-  }
-  return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || process.env['MELODYSYNC_CODEX_COMMAND']?.trim() || 'codex'
-}
-
-function validateProjectWorkingDirectory(projectPath: string): string | null {
-  try {
-    const stats = statSync(projectPath)
-    if (!stats.isDirectory()) {
-      return `project path is not a directory: ${projectPath}`
-    }
-    return null
-  } catch {
-    return `project path does not exist: ${projectPath}`
-  }
-}
-
-function getSessionSystemPrompt(projectId: string, sessionId: string): string | undefined {
-  const project = getProject(projectId)
-  if (!project) return undefined
-  return buildSessionSystemPrompt(project, sessionId)
-}
-
-function resolveSpawnFailureMessage(
-  error: Error & { code?: string },
-  tool: ToolName,
-  command: string,
-): string {
-  if (error.code === 'ENOENT') {
-    return `${tool} command not found: ${command}`
-  }
-  return error.message
-}
-
-function buildCodexArgs(prompt: string, options: {
-  model?: string
-  effort?: string
-  systemPrompt?: string
-  threadId?: string
-}): string[] {
-  const args = [
-    'exec',
-    '--json',
-    '--dangerously-bypass-approvals-and-sandbox',
-    '--skip-git-repo-check',
-  ]
-
-  if (options.model) {
-    args.push('-m', options.model)
-  }
-  if (options.effort) {
-    args.push('-c', `model_reasoning_effort=${JSON.stringify(options.effort)}`)
-  }
-
-  const fullPrompt = options.systemPrompt?.trim()
-    ? `Project instructions:\n${options.systemPrompt.trim()}\n\n${prompt}`
-    : prompt
-
-  if (options.threadId?.trim()) {
-    args.push('resume', options.threadId.trim(), fullPrompt)
-  } else {
-    args.push(fullPrompt)
-  }
-  return args
-}
-
-function buildClaudeArgs(prompt: string, options: {
-  model?: string
-  thinking?: boolean
-  systemPrompt?: string
-  resumeSessionId?: string
-}): string[] {
-  const args = [
-    '-p',
-    prompt,
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    '--dangerously-skip-permissions',
-  ]
-
-  if (options.model) {
-    args.push('--model', options.model)
-  }
-  if (options.thinking) {
-    args.push('--effort', 'high')
-  }
-  if (options.systemPrompt?.trim()) {
-    args.push('--system-prompt', options.systemPrompt.trim())
-  }
-  if (options.resumeSessionId?.trim()) {
-    args.push('--resume', options.resumeSessionId.trim())
-  }
-
-  return args
-}
-
-function buildPrompt(sessionId: string, recordedText: string, opts: { nativeResume: boolean }): string {
-  if (opts.nativeResume) {
-    return recordedText
-  }
-
-  const conversation = listEvents(sessionId)
-    .filter((event) => event.type === 'message' && (event.role === 'user' || event.role === 'assistant'))
-    .slice(-40)
-    .map((event) => `${event.role === 'assistant' ? 'Assistant' : 'User'}:\n${event.content ?? ''}`)
-    .join('\n\n')
-
-  return [
-    'You are continuing an existing Pluse conversation.',
-    'Use the prior messages as context and reply only to the latest user message.',
-    conversation,
-  ].join('\n\n')
+function resolveFailureReason(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  providerError: string | undefined,
+  stderrLines: string[],
+): string | undefined {
+  if (providerError) return providerError
+  if (code === 0 && !signal) return undefined
+  const stderr = summarizeStderr(stderrLines)
+  return stderr || `exited with code ${code ?? 'null'}${signal ? ` (${signal})` : ''}`
 }
 
 function labelForMime(mimeType: string): string {
@@ -644,80 +207,291 @@ function labelForMime(mimeType: string): string {
   return 'file'
 }
 
-// Text recorded in session_events (shown to user — no local paths)
-function buildRecordedUserText(input: SubmitSessionMessageInput): string {
-  const base = input.text.trim()
-  const attachmentLines = (input.attachments ?? [])
-    .map((a) => `[User attached ${labelForMime(a.mimeType)}: ${a.filename}]`)
-  if (attachmentLines.length === 0) return base
-  return `${attachmentLines.join('\n')}\n\n${base}`.trim()
+function buildRecordedUserText(input: SubmitQuestMessageInput): string {
+  const attachments = (input.attachments ?? []).map((asset) => `[User attached ${labelForMime(asset.mimeType)}: ${asset.filename}]`)
+  return [attachments.join('\n'), input.text.trim()].filter(Boolean).join('\n\n')
 }
 
-// Prompt sent to AI — includes local savedPath so AI can read the file
-function buildAiPromptText(input: SubmitSessionMessageInput): string {
-  const base = input.text.trim()
-  const attachmentLines = (input.attachments ?? [])
-    .map((a) => `[User attached ${labelForMime(a.mimeType)}: ${a.filename} -> ${a.savedPath}]`)
-  if (attachmentLines.length === 0) return base
-  return `${attachmentLines.join('\n')}\n\n${base}`.trim()
+function buildAttachmentPrompt(input: SubmitQuestMessageInput): string {
+  const attachments = (input.attachments ?? []).map((asset) => `[User attached ${labelForMime(asset.mimeType)}: ${asset.filename} -> ${asset.savedPath}]`)
+  return [attachments.join('\n'), input.text.trim()].filter(Boolean).join('\n\n')
 }
 
-function appendProviderEvents(sessionId: string, events: ProviderEvent[]): void {
-  for (const event of events) {
-    if (
-      event.type !== 'message'
-      && event.type !== 'reasoning'
-      && event.type !== 'tool_use'
-      && event.type !== 'tool_result'
-      && event.type !== 'status'
-      && event.type !== 'file_change'
-      && event.type !== 'usage'
-    ) {
-      continue
+function resolveTool(tool?: string | null): ToolName {
+  return tool?.trim().toLowerCase() === 'claude' ? 'claude' : 'codex'
+}
+
+function resolveModel(tool: ToolName, requested?: string | null): string {
+  const next = requested?.trim()
+  if (next) return next
+  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : '5.3-codex-spark')
+}
+
+function resolveToolCommand(tool: ToolName): string {
+  if (tool === 'claude') {
+    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude'
+  }
+  return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex'
+}
+
+function validateProjectWorkingDirectory(projectPath: string): string | null {
+  try {
+    const stats = statSync(projectPath)
+    return stats.isDirectory() ? null : `project path is not a directory: ${projectPath}`
+  } catch {
+    return `project path does not exist: ${projectPath}`
+  }
+}
+
+function buildHistoryPrompt(questId: string, latestText: string): string {
+  const conversation = listEvents(questId)
+    .filter((event) => event.type === 'message' && (event.role === 'user' || event.role === 'assistant'))
+    .slice(-40)
+    .map((event) => `${event.role === 'assistant' ? 'Assistant' : 'User'}:\n${event.content ?? ''}`)
+    .join('\n\n')
+  if (!conversation.trim()) return latestText
+  return [
+    'You are continuing an existing Pluse quest.',
+    'Use the previous quest messages as context and respond to the latest input only.',
+    conversation,
+    latestText,
+  ].join('\n\n')
+}
+
+function buildTaskPrompt(quest: Quest): string {
+  if (quest.executorKind !== 'ai_prompt') {
+    throw new Error('Quest executor is not ai_prompt')
+  }
+  const config = quest.executorConfig
+  if (!config || !('prompt' in config) || !config.prompt?.trim()) {
+    throw new Error('Quest ai prompt is missing')
+  }
+
+  const project = getProject(quest.projectId)
+  const vars: Record<string, string> = {
+    date: new Date().toISOString().slice(0, 10),
+    datetime: nowIso(),
+    questId: quest.id,
+    questTitle: quest.title ?? quest.name ?? '',
+    questDescription: quest.description ?? '',
+    projectId: quest.projectId,
+    projectName: project?.name ?? '',
+    projectGoal: project?.goal ?? '',
+    workDir: project?.workDir ?? '',
+    completionOutput: quest.completionOutput ?? '',
+    ...(quest.executorOptions?.customVars ?? {}),
+  }
+
+  return config.prompt.replace(/\{(\w+)\}/g, (_, key: string) => vars[key] ?? `{${key}}`)
+}
+
+function buildScriptCommand(quest: Quest): { command: string; timeoutMs: number; env: Record<string, string>; cwd: string } {
+  if (quest.executorKind !== 'script') throw new Error('Quest executor is not script')
+  const config = quest.executorConfig
+  if (!config || !('command' in config) || !config.command?.trim()) {
+    throw new Error('Quest script command is missing')
+  }
+  const project = getProject(quest.projectId)
+  return {
+    command: config.command,
+    timeoutMs: ((config.timeout ?? quest.executorOptions?.timeout ?? 300) * 1000),
+    env: config.env ?? {},
+    cwd: config.workDir ?? project?.workDir ?? process.cwd(),
+  }
+}
+
+function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePreferences>): RuntimePreferences {
+  const tool = overrides?.tool ?? resolveTool(quest.tool)
+  return {
+    tool,
+    model: overrides?.model ?? resolveModel(tool, quest.model),
+    effort: overrides?.effort ?? (tool === 'codex' ? quest.effort ?? 'low' : null),
+    thinking: overrides?.thinking ?? (tool === 'claude' ? quest.thinking === true : false),
+  }
+}
+
+function systemPromptForQuest(quest: Quest): string | undefined {
+  const project = getProject(quest.projectId)
+  if (!project) return undefined
+  return quest.kind === 'task'
+    ? buildTaskSystemPrompt(project, quest)
+    : buildSessionSystemPrompt(project, quest)
+}
+
+function shouldContinueQuestContext(quest: Quest): boolean {
+  return quest.kind === 'session' || quest.executorOptions?.continueQuest !== false
+}
+
+function shouldPersistQuestProviderIds(quest: Quest): boolean {
+  return quest.kind === 'session' || quest.executorOptions?.continueQuest !== false
+}
+
+function shouldRetryResumeFailure(failureReason: string | undefined, sawProviderOutput: boolean): boolean {
+  if (!failureReason || sawProviderOutput) return false
+  return /resume|thread|session|conversation|context|expired|not found|invalid/i.test(failureReason)
+}
+
+function fallbackQuestName(source: string): string {
+  const compact = source
+    .replace(/\[[^\]]+\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return compact.length > 48 ? `${compact.slice(0, 45).trim()}...` : compact
+}
+
+function normalizeGeneratedQuestName(value: string): string {
+  const singleLine = value
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean) ?? ''
+  const normalized = singleLine
+    .replace(/^title:\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return fallbackQuestName(normalized)
+}
+
+function buildAutoRenameSnapshot(questId: string): AutoRenameSnapshot | null {
+  const messages = listEvents(questId)
+    .filter((event) =>
+      event.type === 'message'
+      && (event.role === 'user' || event.role === 'assistant')
+      && event.content?.trim())
+    .slice(0, 6)
+
+  const fallbackSource = messages.find((event) => event.role === 'user')?.content?.trim()
+  if (!fallbackSource) return null
+
+  return {
+    fallbackSource,
+    transcript: messages
+      .map((event) => `${event.role === 'assistant' ? 'Assistant' : 'User'}:\n${event.content?.trim() ?? ''}`)
+      .join('\n\n'),
+  }
+}
+
+function buildAutoRenamePrompt(snapshot: AutoRenameSnapshot): string {
+  return [
+    'Generate a short title for this Pluse session based on the first round conversation.',
+    'Conversation:',
+    snapshot.transcript,
+    'Return only the title.',
+  ].join('\n\n')
+}
+
+function parseClaudeLine(line: string): ProviderParseResult {
+  const obj = safeJsonParse(line)
+  if (!obj) return { events: [] }
+  const events: ProviderEvent[] = []
+  let assistantText = ''
+  let claudeSessionId: string | undefined
+  let providerError: string | undefined
+
+  if (obj.type === 'system' && typeof obj.session_id === 'string' && obj.session_id.trim()) {
+    claudeSessionId = obj.session_id.trim()
+  }
+
+  if (obj.type === 'assistant' && obj.message && typeof obj.message === 'object') {
+    const content = (obj.message as Record<string, unknown>).content
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue
+        const entry = block as Record<string, unknown>
+        if (entry.type === 'text' && typeof entry.text === 'string' && entry.text.trim()) {
+          assistantText = entry.text
+          events.push(makeMessageEvent('assistant', entry.text))
+        } else if (entry.type === 'thinking' && typeof entry.thinking === 'string' && entry.thinking.trim()) {
+          events.push(makeReasoningEvent(entry.thinking))
+        } else if (entry.type === 'tool_use') {
+          const input = typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input ?? {}, null, 2)
+          events.push(makeToolUseEvent(`${String(entry.name ?? 'tool')}\n${input}`.trim()))
+        } else if (entry.type === 'tool_result') {
+          events.push(makeToolResultEvent(normalizeText(entry.content)))
+        }
+      }
     }
-    appendEvent(sessionId, event)
   }
+
+  if (obj.type === 'result') {
+    const usage = obj.usage && typeof obj.usage === 'object' ? obj.usage as Record<string, unknown> : {}
+    events.push(makeUsageEvent([
+      typeof usage.input_tokens === 'number' ? `input ${usage.input_tokens}` : null,
+      typeof usage.output_tokens === 'number' ? `output ${usage.output_tokens}` : null,
+    ]))
+    providerError = normalizeProviderError(obj.error)
+  } else if (obj.type === 'error') {
+    providerError = normalizeProviderError(obj.error ?? obj.message)
+  }
+
+  return { events, assistantText, claudeSessionId, providerError }
 }
 
-function persistResumeIds(sessionId: string, runId: string, ids: {
-  claudeSessionId?: string
-  codexThreadId?: string
-}): void {
-  const session = getSession(sessionId)
-  const run = getRun(runId)
-  if (!session || !run) return
+function parseCodexLine(line: string): ProviderParseResult {
+  const obj = safeJsonParse(line)
+  if (!obj) return { events: [] }
+  const events: ProviderEvent[] = []
+  let assistantText = ''
+  const codexThreadId = typeof obj.thread_id === 'string'
+    ? obj.thread_id.trim()
+    : typeof obj.session_id === 'string'
+      ? obj.session_id.trim()
+      : undefined
 
-  const sessionPatch: UpdateSessionInput = {}
-  const runPatch: Partial<Run> = {}
+  if (obj.type === 'message' && obj.role === 'assistant' && typeof obj.content === 'string' && obj.content.trim()) {
+    assistantText = obj.content
+    events.push(makeMessageEvent('assistant', obj.content))
+  } else if (obj.type === 'item.completed' && obj.item && typeof obj.item === 'object') {
+    const item = obj.item as Record<string, unknown>
+    if (item.type === 'agent_message' && typeof item.text === 'string' && item.text.trim()) {
+      assistantText = item.text
+      events.push(makeMessageEvent('assistant', item.text))
+    } else if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim()) {
+      events.push(makeReasoningEvent(item.text))
+    } else if (item.type === 'tool_call') {
+      const input = typeof item.input === 'string' ? item.input : JSON.stringify(item.input ?? {}, null, 2)
+      events.push(makeToolUseEvent(`${String(item.name ?? 'tool')}\n${input}`.trim()))
+    } else if (item.type === 'tool_result' && typeof item.output === 'string' && item.output.trim()) {
+      events.push(makeToolResultEvent(item.output))
+    }
+  } else if (obj.type === 'reasoning' && typeof obj.text === 'string' && obj.text.trim()) {
+    events.push(makeReasoningEvent(obj.text))
+  } else if (obj.type === 'error') {
+    return { events, assistantText, codexThreadId, providerError: normalizeProviderError(obj.error ?? obj.message) }
+  }
 
-  if (ids.claudeSessionId && session.claudeSessionId !== ids.claudeSessionId) {
-    sessionPatch['claudeSessionId'] = ids.claudeSessionId
-  }
-  if (ids.codexThreadId && session.codexThreadId !== ids.codexThreadId) {
-    sessionPatch['codexThreadId'] = ids.codexThreadId
-  }
-  if (ids.claudeSessionId && run.claudeSessionId !== ids.claudeSessionId) {
-    runPatch['claudeSessionId'] = ids.claudeSessionId
-  }
-  if (ids.codexThreadId && run.codexThreadId !== ids.codexThreadId) {
-    runPatch['codexThreadId'] = ids.codexThreadId
-  }
-
-  if (Object.keys(sessionPatch).length > 0) {
-    updateSession(sessionId, sessionPatch)
-  }
-  if (Object.keys(runPatch).length > 0) {
-    updateRun(runId, runPatch)
-  }
+  return { events, assistantText, codexThreadId }
 }
 
-function wireLineStream(
-  stream: NodeJS.ReadableStream | null,
-  onLine: (line: string) => void,
-): void {
+function parseProviderLine(tool: ToolName, line: string): ProviderParseResult {
+  return tool === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
+}
+
+function buildClaudeArgs(prompt: string, options: { model?: string; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
+  if (options.model) args.push('--model', options.model)
+  if (options.thinking) args.push('--effort', 'high')
+  if (options.systemPrompt?.trim()) args.push('--system-prompt', options.systemPrompt.trim())
+  if (options.resumeSessionId?.trim()) args.push('--resume', options.resumeSessionId.trim())
+  return args
+}
+
+function buildCodexArgs(prompt: string, options: { model?: string; effort?: string | null; systemPrompt?: string; threadId?: string }): string[] {
+  const args = ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check']
+  if (options.model) args.push('-m', options.model)
+  if (options.effort) args.push('-c', `model_reasoning_effort=${JSON.stringify(options.effort)}`)
+  const fullPrompt = options.systemPrompt?.trim() ? `Project instructions:\n${options.systemPrompt.trim()}\n\n${prompt}` : prompt
+  if (options.threadId?.trim()) {
+    args.push('resume', options.threadId.trim(), fullPrompt)
+  } else {
+    args.push(fullPrompt)
+  }
+  return args
+}
+
+function wireLineStream(stream: NodeJS.ReadableStream | null, onLine: (line: string) => void): void {
   if (!stream) return
   let buffer = ''
-
   stream.on('data', (chunk) => {
     buffer += chunk.toString()
     while (true) {
@@ -728,10 +502,47 @@ function wireLineStream(
       if (line.trim()) onLine(line)
     }
   })
-
   stream.on('end', () => {
     if (buffer.trim()) onLine(buffer)
   })
+}
+
+function emitQuestUpdated(questId: string): void {
+  const quest = getQuest(questId)
+  if (!quest) return
+  emit({ type: 'quest_updated', data: { questId: quest.id, projectId: quest.projectId } })
+}
+
+function emitRunUpdated(runId: string): void {
+  const run = getRun(runId)
+  if (!run) return
+  emit({ type: 'run_updated', data: { runId: run.id, questId: run.questId, projectId: run.projectId } })
+}
+
+function appendQuestEvents(questId: string, events: ProviderEvent[]): void {
+  for (const event of events) {
+    appendEvent(questId, event)
+  }
+}
+
+function persistProviderIds(
+  questId: string,
+  runId: string,
+  ids: { codexThreadId?: string; claudeSessionId?: string },
+  options: { updateQuest: boolean },
+): void {
+  const quest = getQuest(questId)
+  const run = getRun(runId)
+  if (!quest || !run) return
+
+  const questPatch: Parameters<typeof updateQuest>[1] = {}
+  const runPatch: Partial<Run> = {}
+  if (options.updateQuest && ids.codexThreadId && quest.codexThreadId !== ids.codexThreadId) questPatch.codexThreadId = ids.codexThreadId
+  if (options.updateQuest && ids.claudeSessionId && quest.claudeSessionId !== ids.claudeSessionId) questPatch.claudeSessionId = ids.claudeSessionId
+  if (ids.codexThreadId && run.codexThreadId !== ids.codexThreadId) runPatch.codexThreadId = ids.codexThreadId
+  if (ids.claudeSessionId && run.claudeSessionId !== ids.claudeSessionId) runPatch.claudeSessionId = ids.claudeSessionId
+  if (Object.keys(questPatch).length > 0) updateQuest(questId, questPatch)
+  if (Object.keys(runPatch).length > 0) updateRun(runId, runPatch)
 }
 
 function clearRunnerTimers(handle: ActiveRunner): void {
@@ -742,189 +553,372 @@ function clearRunnerTimers(handle: ActiveRunner): void {
 function requestTermination(runId: string, reason: 'cancelled' | 'timeout'): void {
   const handle = activeRunners.get(runId)
   if (!handle) return
-
   handle.reason = reason
-  if (!handle.child.killed) {
-    handle.child.kill('SIGTERM')
-  }
+  if (!handle.child.killed) handle.child.kill('SIGTERM')
   if (!handle.killGraceId) {
     handle.killGraceId = setTimeout(() => {
-      if (!handle.child.killed) {
-        handle.child.kill('SIGKILL')
-      }
+      if (!handle.child.killed) handle.child.kill('SIGKILL')
     }, RUN_KILL_GRACE_MS)
   }
 }
 
-function finalizeRun(runId: string, patch: Partial<Run>, sessionId: string): void {
-  const existing = getRun(runId)
-  if (!existing) return
+function ensureTaskReviewTodo(quest: Quest, succeeded: boolean): void {
+  if (!succeeded || !quest.reviewOnComplete || quest.kind !== 'task' || quest.deleted) return
+  createTodo({
+    projectId: quest.projectId,
+    originQuestId: quest.id,
+    createdBy: 'system',
+    title: `Review: ${quest.title ?? quest.name ?? quest.id}`,
+    waitingInstructions: `Task "${quest.title ?? quest.name ?? quest.id}" completed. Please review the output and close the todo when done.`,
+  })
+}
+
+async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameSnapshot): Promise<string | null> {
+  const project = getProject(quest.projectId)
+  if (!project) return null
+
+  const workingDirectoryError = validateProjectWorkingDirectory(project.workDir)
+  if (workingDirectoryError) return null
+
+  const renameTool = resolveTool(quest.tool)
+  const runtime = questRuntimePreferences(quest, {
+    tool: renameTool,
+    model: renameTool === 'codex' ? getRuntimeModelCatalog('codex').defaultModel ?? undefined : undefined,
+    effort: 'low',
+    thinking: false,
+  })
+  const tool = runtime.tool
+  const command = resolveToolCommand(tool)
+  const args = tool === 'claude'
+    ? buildClaudeArgs(
+      buildAutoRenamePrompt(snapshot),
+      {
+        model: runtime.model,
+        thinking: false,
+        systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
+      },
+    )
+    : buildCodexArgs(
+      buildAutoRenamePrompt(snapshot),
+      {
+        model: runtime.model,
+        effort: 'low',
+        systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
+      },
+    )
+
+  return await new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd: project.workDir,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    let lastAssistantText = ''
+    let lastProviderError: string | undefined
+    const stderrLines: string[] = []
+    let timedOut = false
+    let killGraceId: Timer | undefined
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true
+      if (!child.killed) child.kill('SIGTERM')
+      killGraceId = setTimeout(() => {
+        if (!child.killed) child.kill('SIGKILL')
+      }, RUN_KILL_GRACE_MS)
+    }, AUTO_RENAME_TIMEOUT_MS)
+
+    wireLineStream(child.stdout, (line) => {
+      const parsed = parseProviderLine(tool, line)
+      if (parsed.assistantText?.trim()) lastAssistantText = parsed.assistantText
+      if (parsed.providerError) lastProviderError = parsed.providerError
+    })
+    wireLineStream(child.stderr, (line) => {
+      stderrLines.push(line)
+    })
+
+    child.once('error', () => {
+      clearTimeout(timeoutId)
+      if (killGraceId) clearTimeout(killGraceId)
+      resolve(null)
+    })
+
+    child.once('close', (code, signal) => {
+      clearTimeout(timeoutId)
+      if (killGraceId) clearTimeout(killGraceId)
+
+      if (timedOut) {
+        resolve(null)
+        return
+      }
+
+      const failureReason = resolveFailureReason(code, signal, lastProviderError, stderrLines)
+      if (failureReason) {
+        resolve(null)
+        return
+      }
+
+      const name = normalizeGeneratedQuestName(lastAssistantText)
+      resolve(name || null)
+    })
+  })
+}
+
+async function maybeAutoRenameQuest(questId: string, snapshot: AutoRenameSnapshot | null): Promise<void> {
+  const quest = getQuest(questId)
+  if (!quest || quest.kind !== 'session' || !quest.autoRenamePending) return
+
+  const fallbackName = snapshot?.fallbackSource ? fallbackQuestName(snapshot.fallbackSource) : ''
+  const generatedName = snapshot ? await generateQuestNameWithProvider(quest, snapshot) : null
+
+  updateQuest(questId, {
+    name: generatedName ?? (fallbackName || quest.name),
+    autoRenamePending: false,
+  })
+  emitQuestUpdated(questId)
+}
+
+function maybeStartNextFollowUp(questId: string): void {
+  const quest = getQuest(questId)
+  if (!quest || quest.kind !== 'session' || quest.activeRunId) return
+  const next = dequeueFollowUp(questId)
+  if (!next.message) return
+  const message = next.message
+  const queuedQuest = getQuest(questId)
+  if (!queuedQuest) return
+  const runtime = questRuntimePreferences(queuedQuest, {
+    tool: resolveTool(message.tool),
+    model: message.model ?? resolveModel(resolveTool(message.tool)),
+    effort: message.effort,
+    thinking: message.thinking,
+  })
+  const run = createAcceptedRun(queuedQuest, message.requestId, 'chat', 'human', runtime)
+  queueMicrotask(() => {
+    void executeQuestRun(run.id, questId, message.text)
+  })
+}
+
+function finalizeRun(runId: string, state: Run['state'], failureReason?: string, assistantText?: string): void {
+  const run = getRun(runId)
+  const quest = run ? getQuest(run.questId) : null
+  if (!run || !quest) return
+
+  const nextQuestStatus = quest.kind === 'task'
+    ? state === 'completed'
+      ? quest.scheduleKind === 'recurring' ? 'pending' : 'done'
+      : state === 'cancelled'
+        ? 'pending'
+        : 'failed'
+    : 'idle'
 
   updateRun(runId, {
-    ...patch,
-    completedAt: existing.completedAt ?? nowIso(),
+    state,
+    failureReason,
+    completedAt: nowIso(),
     finalizedAt: nowIso(),
+    runnerProcessId: undefined,
   })
 
-  const session = getSession(sessionId)
-  if (session?.activeRunId === runId) {
-    updateSession(sessionId, { activeRunId: null })
-  }
+  updateQuest(quest.id, {
+    activeRunId: null,
+    status: nextQuestStatus,
+    completionOutput: quest.kind === 'task' && assistantText ? assistantText : quest.completionOutput ?? null,
+  })
 
-  // autoRenamePending: 首轮 Run 完成后触发 AI 命名
-  if (patch.state === 'completed' && session?.autoRenamePending) {
-    const runCount = getRunsBySession(sessionId).length
-    if (runCount === 1) {
-      queueMicrotask(() => void autoRenameSession(sessionId))
-    }
-  }
-
-  const next = dequeueFollowUp(sessionId)
-  if (next) {
-    startRunForSession(sessionId, next.requestId, next.text, {
-      tool: next.tool,
-      model: next.model,
-      effort: next.effort,
-      thinking: next.thinking,
+  if (quest.kind === 'task') {
+    createQuestOp({
+      questId: quest.id,
+      op: state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'failed',
+      actor: 'system',
+      fromStatus: 'running',
+      toStatus: nextQuestStatus,
+      note: failureReason,
     })
   }
-}
 
-async function autoRenameSession(sessionId: string): Promise<void> {
-  const session = getSession(sessionId)
-  if (!session?.autoRenamePending) return
-
-  const events = listEvents(sessionId)
-  const messages = events
-    .filter((e) => e.type === 'message')
-    .slice(0, 6)
-    .map((e) => `${e.role === 'user' ? 'User' : 'Assistant'}: ${(e.content ?? e.bodyPreview ?? '').slice(0, 300)}`)
-    .join('\n')
-
-  if (!messages) return
-
-  const tool = (session.tool ?? DEFAULT_TOOL) as ToolName
-  const command = resolveToolCommand(tool)
-  const prompt = `Based on this conversation, generate a concise title (5-10 words, in the same language as the conversation). Reply with ONLY the title, no quotes or punctuation:\n\n${messages}`
-
-  try {
-    const args = tool === 'claude'
-      ? ['-p', prompt, '--output-format', 'text']
-      : ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', prompt]
-
-    const result = await new Promise<string>((resolve, reject) => {
-      const proc = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
-      const chunks: Buffer[] = []
-      proc.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
-      proc.on('close', (code) => {
-        if (code === 0) resolve(Buffer.concat(chunks).toString().trim())
-        else reject(new Error(`exit ${code}`))
-      })
-      proc.on('error', reject)
-      setTimeout(() => { proc.kill(); reject(new Error('timeout')) }, 30_000)
+  if (quest.kind === 'session' && run.trigger === 'chat' && getRunsByQuest(quest.id).filter((entry) => entry.trigger === 'chat').length === 1) {
+    const autoRenameSnapshot = buildAutoRenameSnapshot(quest.id)
+    queueMicrotask(() => {
+      void maybeAutoRenameQuest(quest.id, autoRenameSnapshot)
     })
-
-    const name = result.split('\n')[0]?.trim().slice(0, 100)
-    if (name) {
-      updateSession(sessionId, { name, autoRenamePending: false })
-    }
-  } catch {
-    // 命名失败不重试，保留默认名称
-    updateSession(sessionId, { autoRenamePending: false })
   }
+
+  ensureTaskReviewTodo(quest, state === 'completed')
+  emitRunUpdated(runId)
+  emitQuestUpdated(quest.id)
+  if (quest.kind === 'session') maybeStartNextFollowUp(quest.id)
 }
 
-function startRunForSession(
-  sessionId: string,
+function createAcceptedRun(
+  quest: Quest,
   requestId: string,
-  recordedText: string,
-  preferences?: RuntimePreferences,
+  trigger: RunTrigger,
+  triggeredBy: RunTriggeredBy,
+  runtime: RuntimePreferences,
 ): Run {
-  const session = getSession(sessionId)
-  if (!session) throw new Error(`Session not found: ${sessionId}`)
-
-  const runtimePreferences = resolveRunPreferences(sessionId, preferences)
-  const tool = runtimePreferences.tool as ToolName
   const run = createRun({
-    sessionId,
+    questId: quest.id,
+    projectId: quest.projectId,
     requestId,
-    tool,
-    model: resolveModel(tool, runtimePreferences.model ?? undefined),
-    effort: runtimePreferences.effort ?? undefined,
-    thinking: runtimePreferences.thinking,
-    claudeSessionId: tool === 'claude' ? session.claudeSessionId : undefined,
-    codexThreadId: tool === 'codex' ? session.codexThreadId : undefined,
+    trigger,
+    triggeredBy,
+    tool: runtime.tool,
+    model: runtime.model,
+    effort: runtime.effort ?? undefined,
+    thinking: runtime.thinking,
+    claudeSessionId: runtime.tool === 'claude' ? quest.claudeSessionId : undefined,
+    codexThreadId: runtime.tool === 'codex' ? quest.codexThreadId : undefined,
   })
-
-  updateSession(sessionId, { activeRunId: run.id, tool })
-  queueMicrotask(() => {
-    void executeRun(run.id, sessionId, recordedText)
+  updateQuest(quest.id, {
+    activeRunId: run.id,
+    tool: runtime.tool,
+    model: runtime.model,
+    effort: runtime.effort,
+    thinking: runtime.thinking,
+    status: quest.kind === 'task' ? 'running' : quest.status ?? 'idle',
   })
+  if (quest.kind === 'task') {
+    createQuestOp({
+      questId: quest.id,
+      op: 'triggered',
+      actor: triggeredBy === 'scheduler' ? 'scheduler' : 'human',
+      fromStatus: quest.status,
+      toStatus: 'running',
+    })
+  }
+  emitRunUpdated(run.id)
+  emitQuestUpdated(quest.id)
   return run
 }
 
-async function executeRun(runId: string, sessionId: string, recordedText: string): Promise<void> {
-  const session = getSession(sessionId)
+async function executeScriptRun(runId: string, questId: string): Promise<void> {
+  const quest = getQuest(questId)
   const run = getRun(runId)
-  if (!session || !run) return
+  if (!quest || !run) return
+  const { command, timeoutMs, env, cwd } = buildScriptCommand(quest)
 
-  const project = getProject(session.projectId)
+  const child = spawn('sh', ['-c', command], {
+    cwd,
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+
+  const handle: ActiveRunner = { child }
+  activeRunners.set(runId, handle)
+  updateRun(runId, { state: 'running', startedAt: nowIso(), runnerProcessId: child.pid ?? undefined })
+  emitRunUpdated(runId)
+
+  let lastLine = ''
+  let stderr = ''
+  const onLine = (line: string) => {
+    lastLine = line
+    appendRunSpoolLine(runId, line)
+    emit({ type: 'run_line', data: { runId, questId, projectId: quest.projectId, line, ts: nowIso() } })
+  }
+  wireLineStream(child.stdout, onLine)
+  wireLineStream(child.stderr, (line) => {
+    stderr += `${line}\n`
+    onLine(line)
+  })
+
+  handle.timeoutId = setTimeout(() => requestTermination(runId, 'timeout'), timeoutMs)
+
+  child.once('error', (error) => {
+    clearRunnerTimers(handle)
+    activeRunners.delete(runId)
+    appendQuestEvents(questId, [makeStatusEvent(`error: ${error.message}`)])
+    finalizeRun(runId, 'failed', error.message, lastLine)
+  })
+
+  child.once('close', (code) => {
+    clearRunnerTimers(handle)
+    activeRunners.delete(runId)
+    if (handle.reason === 'cancelled') {
+      appendQuestEvents(questId, [makeStatusEvent('cancelled')])
+      finalizeRun(runId, 'cancelled', 'cancelled', lastLine)
+      return
+    }
+    if (handle.reason === 'timeout') {
+      appendQuestEvents(questId, [makeStatusEvent('error: script run timed out')])
+      finalizeRun(runId, 'failed', 'script run timed out', lastLine)
+      return
+    }
+    if (code === 0) {
+      finalizeRun(runId, 'completed', undefined, lastLine)
+      return
+    }
+    const failure = stderr.trim() || `exited with code ${code}`
+    appendQuestEvents(questId, [makeStatusEvent(`error: ${failure}`)])
+    finalizeRun(runId, 'failed', failure, lastLine)
+  })
+}
+
+type ProviderAttemptResult = {
+  state: Run['state']
+  failureReason?: string
+  assistantText?: string
+  retryWithHistory?: boolean
+}
+
+async function executeProviderRun(runId: string, questId: string, latestPrompt: string): Promise<void> {
+  const quest = getQuest(questId)
+  const run = getRun(runId)
+  if (!quest || !run) return
+  const project = getProject(quest.projectId)
   if (!project) {
-    appendProviderEvents(sessionId, [makeStatusEvent(`error: project not found for session ${sessionId}`)])
-    finalizeRun(runId, {
-      state: 'failed',
-      result: 'error',
-      failureReason: 'project_not_found',
-    }, sessionId)
+    appendQuestEvents(questId, [makeStatusEvent('error: project not found')])
+    finalizeRun(runId, 'failed', 'project not found')
     return
   }
 
   const workingDirectoryError = validateProjectWorkingDirectory(project.workDir)
   if (workingDirectoryError) {
-    appendProviderEvents(sessionId, [makeStatusEvent(`error: ${workingDirectoryError}`)])
-    finalizeRun(runId, {
-      state: 'failed',
-      result: 'error',
-      failureReason: workingDirectoryError,
-    }, sessionId)
+    appendQuestEvents(questId, [makeStatusEvent(`error: ${workingDirectoryError}`)])
+    finalizeRun(runId, 'failed', workingDirectoryError)
     return
   }
 
-  if (run.cancelRequested) {
-    appendProviderEvents(sessionId, [makeStatusEvent('cancelled')])
-    finalizeRun(runId, {
-      state: 'cancelled',
-      result: 'cancelled',
-      failureReason: 'cancelled',
-    }, sessionId)
-    return
-  }
-
-  const tool = resolveToolPreference(run.tool, run.model)
-  const nativeResume = tool === 'claude'
-    ? Boolean(run.claudeSessionId)
-    : Boolean(run.codexThreadId)
-  const prompt = buildPrompt(sessionId, recordedText, { nativeResume })
+  const tool = resolveTool(run.tool)
   const command = resolveToolCommand(tool)
-  const args = tool === 'claude'
-    ? buildClaudeArgs(prompt, {
-      model: run.model || undefined,
-      thinking: run.thinking,
-      systemPrompt: getSessionSystemPrompt(project.id, sessionId),
-      resumeSessionId: run.claudeSessionId,
-    })
-    : buildCodexArgs(prompt, {
-      model: run.model || undefined,
-      effort: run.effort,
-      systemPrompt: getSessionSystemPrompt(project.id, sessionId),
-      threadId: run.codexThreadId,
-    })
+  const canContinueContext = shouldContinueQuestContext(quest)
+  const updateQuestProviderIds = shouldPersistQuestProviderIds(quest)
+  const initialNativeResume = tool === 'claude'
+    ? canContinueContext && Boolean(run.claudeSessionId)
+    : canContinueContext && Boolean(run.codexThreadId)
 
-  const stderrLines: string[] = []
-  let lastProviderError: string | undefined
-  let finalized = false
+  const attempt = (nativeResume: boolean): Promise<ProviderAttemptResult> => new Promise((resolve) => {
+    const currentRun = getRun(runId)
+    const currentQuest = getQuest(questId)
+    if (!currentRun || !currentQuest) {
+      resolve({ state: 'failed', failureReason: 'run or quest not found' })
+      return
+    }
 
-  try {
+    const prompt = nativeResume
+      ? latestPrompt
+      : canContinueContext
+        ? buildHistoryPrompt(questId, latestPrompt)
+        : latestPrompt
+    const args = tool === 'claude'
+      ? buildClaudeArgs(
+        prompt,
+        {
+          model: currentRun.model,
+          thinking: currentRun.thinking,
+          systemPrompt: systemPromptForQuest(currentQuest),
+          resumeSessionId: nativeResume ? currentRun.claudeSessionId : undefined,
+        },
+      )
+      : buildCodexArgs(
+        prompt,
+        {
+          model: currentRun.model,
+          effort: currentRun.effort,
+          systemPrompt: systemPromptForQuest(currentQuest),
+          threadId: nativeResume ? currentRun.codexThreadId : undefined,
+        },
+      )
+
     const child = spawn(command, args, {
       cwd: project.workDir,
       env: process.env,
@@ -933,173 +927,237 @@ async function executeRun(runId: string, sessionId: string, recordedText: string
 
     const handle: ActiveRunner = { child }
     activeRunners.set(runId, handle)
-
     updateRun(runId, {
       state: 'running',
-      startedAt: nowIso(),
+      startedAt: currentRun.startedAt ?? nowIso(),
       runnerProcessId: child.pid ?? undefined,
     })
-    appendProviderEvents(sessionId, [makeStatusEvent(`Running with ${tool}${nativeResume ? ' (resume)' : ''}`)])
+    emitRunUpdated(runId)
+    appendQuestEvents(questId, [makeStatusEvent(`Running with ${tool}${nativeResume ? ' (resume)' : ''}`)])
+
+    let sawProviderOutput = false
+    let lastAssistantText = ''
+    let lastProviderError: string | undefined
+    const stderrLines: string[] = []
 
     wireLineStream(child.stdout, (line) => {
+      appendRunSpoolLine(runId, line)
+      emit({ type: 'run_line', data: { runId, questId, projectId: currentQuest.projectId, line, ts: nowIso() } })
       const parsed = parseProviderLine(tool, line)
-      if (parsed.providerError) {
-        lastProviderError = parsed.providerError
+      if (parsed.assistantText?.trim()) lastAssistantText = parsed.assistantText
+      if (parsed.providerError) lastProviderError = parsed.providerError
+      if (
+        parsed.events.length > 0
+        || Boolean(parsed.assistantText?.trim())
+        || Boolean(parsed.codexThreadId)
+        || Boolean(parsed.claudeSessionId)
+      ) {
+        sawProviderOutput = true
       }
-      persistResumeIds(sessionId, runId, {
-        claudeSessionId: parsed.claudeSessionId,
-        codexThreadId: parsed.codexThreadId,
-      })
-      appendProviderEvents(sessionId, parsed.events)
+      persistProviderIds(
+        questId,
+        runId,
+        {
+          codexThreadId: parsed.codexThreadId,
+          claudeSessionId: parsed.claudeSessionId,
+        },
+        { updateQuest: updateQuestProviderIds },
+      )
+      appendQuestEvents(questId, parsed.events)
     })
-
     wireLineStream(child.stderr, (line) => {
       stderrLines.push(line)
     })
 
-    handle.timeoutId = setTimeout(() => {
-      appendProviderEvents(sessionId, [makeStatusEvent(`error: ${tool} run timed out`)]);
-      requestTermination(runId, 'timeout')
-    }, RUN_TIMEOUT_MS)
+    handle.timeoutId = setTimeout(() => requestTermination(runId, 'timeout'), RUN_TIMEOUT_MS)
 
     child.once('error', (error) => {
-      if (finalized) return
-      finalized = true
       clearRunnerTimers(handle)
       activeRunners.delete(runId)
-      const message = resolveSpawnFailureMessage(error, tool, command)
-      appendProviderEvents(sessionId, [makeStatusEvent(`error: ${message}`)])
-      finalizeRun(runId, {
-        state: 'failed',
-        result: 'error',
-        failureReason: message,
-      }, sessionId)
+      resolve({ state: 'failed', failureReason: error.message, assistantText: lastAssistantText })
     })
 
     child.once('close', (code, signal) => {
-      if (finalized) return
-      finalized = true
       clearRunnerTimers(handle)
       activeRunners.delete(runId)
-
-      const terminalReason = handle.reason
-      if (terminalReason === 'cancelled') {
-        appendProviderEvents(sessionId, [makeStatusEvent('cancelled')])
-        finalizeRun(runId, {
-          state: 'cancelled',
-          result: 'cancelled',
-          failureReason: 'cancelled',
-        }, sessionId)
+      if (handle.reason === 'cancelled') {
+        resolve({ state: 'cancelled', failureReason: 'cancelled', assistantText: lastAssistantText })
         return
       }
-
-      if (terminalReason === 'timeout') {
-        finalizeRun(runId, {
-          state: 'failed',
-          result: 'error',
-          failureReason: 'timeout',
-        }, sessionId)
+      if (handle.reason === 'timeout') {
+        resolve({ state: 'failed', failureReason: `${tool} run timed out`, assistantText: lastAssistantText })
         return
       }
-
-      if (signal || code !== 0) {
-        const failureReason = lastProviderError || stderrLines.at(-1)?.trim() || `process exited with code ${code ?? 'unknown'}`
-        appendProviderEvents(sessionId, [makeStatusEvent(`error: ${failureReason}`)])
-        finalizeRun(runId, {
-          state: 'failed',
-          result: 'error',
-          failureReason,
-        }, sessionId)
+      const failureReason = resolveFailureReason(code, signal, lastProviderError, stderrLines)
+      if (!failureReason && code === 0) {
+        resolve({ state: 'completed', assistantText: lastAssistantText })
         return
       }
-
-      if (lastProviderError) {
-        appendProviderEvents(sessionId, [makeStatusEvent(`error: ${lastProviderError}`)])
-        finalizeRun(runId, {
-          state: 'failed',
-          result: 'error',
-          failureReason: lastProviderError,
-        }, sessionId)
-        return
-      }
-
-      finalizeRun(runId, {
-        state: 'completed',
-        result: 'success',
-      }, sessionId)
+      resolve({
+        state: 'failed',
+        failureReason,
+        assistantText: lastAssistantText,
+        retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
+      })
     })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    appendProviderEvents(sessionId, [makeStatusEvent(`error: ${message}`)])
-    finalizeRun(runId, {
-      state: 'failed',
-      result: 'error',
-      failureReason: message,
-    }, sessionId)
+  })
+
+  const firstAttempt = await attempt(initialNativeResume)
+  if (firstAttempt.retryWithHistory) {
+    appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
+    const fallbackAttempt = await attempt(false)
+    if (fallbackAttempt.state === 'completed') {
+      finalizeRun(runId, 'completed', undefined, fallbackAttempt.assistantText)
+      return
+    }
+    if (fallbackAttempt.state === 'cancelled') {
+      appendQuestEvents(questId, [makeStatusEvent('cancelled')])
+      finalizeRun(runId, 'cancelled', fallbackAttempt.failureReason, fallbackAttempt.assistantText)
+      return
+    }
+    appendQuestEvents(questId, [makeStatusEvent(`error: ${fallbackAttempt.failureReason}`)])
+    finalizeRun(runId, 'failed', fallbackAttempt.failureReason, fallbackAttempt.assistantText)
+    return
   }
+
+  if (firstAttempt.state === 'completed') {
+    finalizeRun(runId, 'completed', undefined, firstAttempt.assistantText)
+    return
+  }
+  if (firstAttempt.state === 'cancelled') {
+    appendQuestEvents(questId, [makeStatusEvent('cancelled')])
+    finalizeRun(runId, 'cancelled', firstAttempt.failureReason, firstAttempt.assistantText)
+    return
+  }
+  appendQuestEvents(questId, [makeStatusEvent(`error: ${firstAttempt.failureReason}`)])
+  finalizeRun(runId, 'failed', firstAttempt.failureReason, firstAttempt.assistantText)
 }
 
-export function submitSessionMessage(input: SubmitSessionMessageInput): SubmitSessionMessageResult {
-  const initialSession = getSession(input.sessionId)
-  if (!initialSession) throw new Error(`Session not found: ${input.sessionId}`)
+async function executeQuestRun(runId: string, questId: string, promptText?: string): Promise<void> {
+  const quest = getQuest(questId)
+  const run = getRun(runId)
+  if (!quest || !run) return
+  if (run.cancelRequested) {
+    finalizeRun(runId, 'cancelled', 'cancelled')
+    return
+  }
+  if (quest.kind === 'task' && quest.executorKind === 'script') {
+    await executeScriptRun(runId, questId)
+    return
+  }
+  const prompt = promptText ?? (quest.kind === 'task' ? buildTaskPrompt(quest) : '')
+  await executeProviderRun(runId, questId, prompt)
+}
 
-  persistSubmittedPreferences(input.sessionId, input)
-  const session = getSession(input.sessionId)
-  if (!session) throw new Error(`Session not found: ${input.sessionId}`)
+export async function startQuestRun(input: StartQuestRunInput): Promise<StartQuestRunResult> {
+  const quest = getQuest(input.questId)
+  if (!quest) throw new Error(`Quest not found: ${input.questId}`)
+  const existingRun = input.requestId ? getRunByQuestRequestId(quest.id, input.requestId) : null
+  if (existingRun) {
+    return { skipped: false, run: existingRun, quest: getQuest(quest.id) }
+  }
+
+  if (quest.activeRunId) {
+    if (input.trigger === 'automation') {
+      return { skipped: true, run: null, quest }
+    }
+    throw new Error('QUEST_RUN_CONFLICT')
+  }
+
+  if (quest.kind !== 'task') {
+    throw new Error('Only task quests can be triggered via /run')
+  }
+  if (quest.enabled === false) {
+    throw new Error('Quest is disabled')
+  }
+
+  const runtime = questRuntimePreferences(quest)
+  const requestId = input.requestId?.trim() || genRequestId()
+  const run = createAcceptedRun(quest, requestId, input.trigger, input.triggeredBy, runtime)
+  queueMicrotask(() => {
+    void executeQuestRun(run.id, quest.id)
+  })
+  return { skipped: false, run, quest: getQuest(quest.id) }
+}
+
+export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestMessageResult {
+  const initialQuest = getQuest(input.questId)
+  if (!initialQuest) throw new Error(`Quest not found: ${input.questId}`)
+  if (initialQuest.kind !== 'session') throw new Error('Only session quests accept chat messages')
 
   const requestId = input.requestId?.trim() || genRequestId()
+  const existingRun = getRunByQuestRequestId(initialQuest.id, requestId)
+  if (existingRun) {
+    return { queued: false, run: existingRun, quest: getQuest(initialQuest.id) }
+  }
+
   const recordedText = buildRecordedUserText(input)
-  const aiPromptText = buildAiPromptText(input)
-  const runtimePreferences = snapshotSessionPreferences(input.sessionId)
+  const aiPromptText = buildAttachmentPrompt(input)
+  appendEvent(initialQuest.id, makeMessageEvent('user', recordedText))
 
-  appendEvent(input.sessionId, makeMessageEvent('user', recordedText))
+  const updatedQuest = updateQuest(initialQuest.id, {
+    tool: input.tool ? resolveTool(input.tool) : initialQuest.tool ?? null,
+    model: input.model !== undefined ? input.model : initialQuest.model ?? null,
+    effort: input.effort !== undefined ? input.effort : initialQuest.effort ?? null,
+    thinking: input.thinking !== undefined ? input.thinking : initialQuest.thinking === true,
+  })
 
-  if (session.activeRunId) {
-    enqueueFollowUp(input.sessionId, {
+  const runtime = questRuntimePreferences(updatedQuest, {
+    tool: input.tool ? resolveTool(input.tool) : undefined,
+    model: input.model ?? undefined,
+    effort: input.effort ?? undefined,
+    thinking: input.thinking,
+  })
+
+  if (updatedQuest.activeRunId) {
+    enqueueFollowUp(updatedQuest.id, {
       requestId,
       text: aiPromptText,
-      tool: runtimePreferences.tool,
-      model: runtimePreferences.model,
-      effort: runtimePreferences.effort,
-      thinking: runtimePreferences.thinking,
+      tool: runtime.tool,
+      model: runtime.model,
+      effort: runtime.effort,
+      thinking: runtime.thinking,
+      queuedAt: nowIso(),
     })
-    return {
-      queued: true,
-      run: null,
-      session: getSession(input.sessionId),
-    }
+    emitQuestUpdated(updatedQuest.id)
+    return { queued: true, run: null, quest: getQuest(updatedQuest.id) }
   }
 
-  const run = startRunForSession(input.sessionId, requestId, aiPromptText, runtimePreferences)
-  return {
-    queued: false,
-    run,
-    session: getSession(input.sessionId),
-  }
+  const run = createAcceptedRun(updatedQuest, requestId, 'chat', 'human', runtime)
+  queueMicrotask(() => {
+    void executeQuestRun(run.id, updatedQuest.id, aiPromptText)
+  })
+  return { queued: false, run, quest: getQuest(updatedQuest.id) }
 }
 
-export function cancelActiveRun(runId: string): Run {
-  const run = updateRun(runId, { cancelRequested: true })
-  requestTermination(runId, 'cancelled')
-  return run
+export function cancelActiveRun(id: string): Run {
+  const run = getRun(id)
+  if (!run) throw new Error(`Run not found: ${id}`)
+  const next = cancelRun(id)
+  requestTermination(id, 'cancelled')
+  emitRunUpdated(id)
+  return next
 }
 
-// server 启动时恢复未消费的 followUpQueue
+export function cancelQueuedRequest(questId: string, requestId: string): Quest {
+  removeFollowUp(questId, requestId)
+  emitQuestUpdated(questId)
+  const quest = getQuest(questId)
+  if (!quest) throw new Error(`Quest not found: ${questId}`)
+  return quest
+}
+
+export function clearQueuedRequests(questId: string): Quest {
+  clearFollowUps(questId)
+  emitQuestUpdated(questId)
+  const quest = getQuest(questId)
+  if (!quest) throw new Error(`Quest not found: ${questId}`)
+  return quest
+}
+
 export function recoverFollowUpQueues(): void {
-  const sessions = listSessionsWithPendingQueue()
-  for (const session of sessions) {
-    if (session.activeRunId) continue  // 已有运行中的 run，跳过
-    const next = dequeueFollowUp(session.id)
-    if (!next) continue
-    try {
-      startRunForSession(session.id, next.requestId, next.text, {
-        tool: next.tool,
-        model: next.model,
-        effort: next.effort,
-        thinking: next.thinking,
-      })
-    } catch {
-      // 单个 session 恢复失败不影响其他 session
-    }
+  for (const quest of listQuestsWithPendingQueue()) {
+    if (quest.activeRunId) continue
+    maybeStartNextFollowUp(quest.id)
   }
 }

@@ -1,9 +1,6 @@
-export type PluseEvent =
-  | { type: 'connected'; data: { ts: string } }
-  | { type: 'project_opened' | 'project_updated'; data: { projectId: string } }
-  | { type: 'session_updated'; data: { sessionId: string; projectId: string } }
-  | { type: 'task_created' | 'task_updated' | 'task_deleted'; data: { taskId: string; projectId: string; sessionId?: string } }
-  | { type: 'run_line'; data: { taskId: string; projectId: string; runId: string; line: string; ts: string } }
+import type { SseMessage } from '@pluse/types'
+
+export type PluseEvent = SseMessage
 
 type Listener = (event: PluseEvent) => void
 

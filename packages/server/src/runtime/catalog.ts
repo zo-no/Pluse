@@ -11,7 +11,16 @@ const CLAUDE_MODELS = [
   { id: 'haiku', label: 'Haiku 4.5' },
 ]
 
+const CODEX_DEFAULT_MODEL = '5.3-codex-spark'
+const DEFAULT_CODEX_EFFORT = 'low'
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh']
+const CODEX_MODEL_LABELS: Record<string, string> = {
+  'gpt-5.4': 'GPT-5.4',
+  'gpt-5.4-mini': 'GPT-5.4-Mini',
+  'gpt-5.3-codex': 'GPT-5.3-Codex',
+  '5.3-codex-spark': 'GPT-5.3-Codex-Spark',
+  'gpt-5.2': 'GPT-5.2',
+}
 
 const BUILTIN_TOOLS: Array<Omit<RuntimeTool, 'available' | 'command'>> = [
   {
@@ -94,16 +103,27 @@ function toStringArray(value: unknown): string[] {
   return result
 }
 
+function codexModelLabel(id: string, label?: string): string {
+  return CODEX_MODEL_LABELS[id] ?? label?.trim() ?? id
+}
+
 function buildFallbackCodexCatalog(): RuntimeModelCatalog {
-  return {
-    models: [],
+  const fallbackModel = {
+    id: CODEX_DEFAULT_MODEL,
+    label: codexModelLabel(CODEX_DEFAULT_MODEL),
+    defaultEffort: DEFAULT_CODEX_EFFORT,
     effortLevels: DEFAULT_CODEX_REASONING_LEVELS,
-    defaultModel: null,
+  }
+
+  return {
+    models: [fallbackModel],
+    effortLevels: DEFAULT_CODEX_REASONING_LEVELS,
+    defaultModel: CODEX_DEFAULT_MODEL,
     reasoning: {
       kind: 'enum',
       label: 'Thinking',
       levels: DEFAULT_CODEX_REASONING_LEVELS,
-      default: 'medium',
+      default: DEFAULT_CODEX_EFFORT,
     },
   }
 }
@@ -117,29 +137,45 @@ function buildCodexCatalog(): RuntimeModelCatalog {
     const models = (parsed.models ?? [])
       .filter((model) => model.visibility === 'list')
       .map((model) => {
+        const id = String(model.slug ?? '').trim()
         const effortLevels = toStringArray(model.supported_reasoning_levels)
         const defaultEffort = typeof model.default_reasoning_level === 'string'
           ? model.default_reasoning_level.trim()
           : 'medium'
         return {
-          id: String(model.slug ?? '').trim(),
-          label: String(model.display_name ?? model.slug ?? '').trim(),
+          id,
+          label: codexModelLabel(id, String(model.display_name ?? model.slug ?? '').trim()),
           defaultEffort,
           effortLevels,
         }
       })
       .filter((model) => model.id && model.label)
 
-    const effortLevels = [...new Set(models.flatMap((model) => model.effortLevels ?? []))]
+    if (!models.some((model) => model.id === CODEX_DEFAULT_MODEL)) {
+      models.unshift({
+        id: CODEX_DEFAULT_MODEL,
+        label: codexModelLabel(CODEX_DEFAULT_MODEL),
+        defaultEffort: DEFAULT_CODEX_EFFORT,
+        effortLevels: DEFAULT_CODEX_REASONING_LEVELS,
+      })
+    }
+
+    const effortLevels = [...new Set([
+      ...DEFAULT_CODEX_REASONING_LEVELS,
+      ...models.flatMap((model) => model.effortLevels ?? []),
+    ])]
+    const defaultEffort = models.find((model) => model.id === CODEX_DEFAULT_MODEL)?.defaultEffort
+      ?? DEFAULT_CODEX_EFFORT
+
     cachedCodexCatalog = {
       models,
       effortLevels,
-      defaultModel: null,
+      defaultModel: CODEX_DEFAULT_MODEL,
       reasoning: {
         kind: 'enum',
         label: 'Thinking',
         levels: effortLevels,
-        default: models[0]?.defaultEffort ?? effortLevels[0] ?? 'medium',
+        default: defaultEffort || effortLevels[0] || DEFAULT_CODEX_EFFORT,
       },
     }
     return cachedCodexCatalog

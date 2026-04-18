@@ -7,9 +7,9 @@ import { assetsRouter } from './controllers/http/assets'
 import { commandsRouter } from './controllers/http/commands'
 import { eventsRouter } from './controllers/http/events'
 import { projectsRouter } from './controllers/http/projects'
+import { questsRouter } from './controllers/http/quests'
 import { runsRouter } from './controllers/http/runs'
-import { sessionsRouter } from './controllers/http/sessions'
-import { tasksRouter } from './controllers/http/tasks'
+import { todosRouter } from './controllers/http/todos'
 import { runtimeRouter } from './controllers/http/runtime'
 import { getDb } from './db'
 import { requireAuth } from './middleware/auth'
@@ -28,9 +28,9 @@ app.get('/health', (c) => c.json({ ok: true, service: 'pluse', ts: Date.now() })
 app.route('/', authRouter)
 app.use('/api/*', requireAuth)
 app.route('/api', projectsRouter)
-app.route('/api', sessionsRouter)
+app.route('/api', questsRouter)
 app.route('/api', runsRouter)
-app.route('/api', tasksRouter)
+app.route('/api', todosRouter)
 app.route('/api', runtimeRouter)
 app.route('/api', eventsRouter)
 app.route('/api', commandsRouter)
@@ -89,7 +89,11 @@ function bootstrap(): void {
 
 export function startServer(port: number = DEFAULT_PORT): void {
   bootstrap()
-  const server = Bun.serve({ port, fetch: app.fetch })
+  const server = Bun.serve({
+    port,
+    fetch: app.fetch,
+    idleTimeout: 0,
+  })
   const listeningPort = server.port ?? port
   writeServerMetadata(listeningPort)
   console.log(`[pluse] listening on http://localhost:${listeningPort}`)

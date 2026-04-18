@@ -57,10 +57,26 @@ export function RailIcon(props: IconProps) {
   )
 }
 
-export function FolderIcon(props: IconProps) {
+export function SunIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H10l1.8 2H17.5A2.5 2.5 0 0 1 20 10.5v6A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2.75v2.5" />
+      <path d="M12 18.75v2.5" />
+      <path d="M21.25 12h-2.5" />
+      <path d="M5.25 12h-2.5" />
+      <path d="m18.54 5.46-1.77 1.77" />
+      <path d="m7.23 16.77-1.77 1.77" />
+      <path d="m18.54 18.54-1.77-1.77" />
+      <path d="m7.23 7.23-1.77-1.77" />
+    </BaseIcon>
+  )
+}
+
+export function MoonIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M18.5 14.5A6.5 6.5 0 0 1 9.5 5.5a7.5 7.5 0 1 0 9 9Z" />
     </BaseIcon>
   )
 }
@@ -78,6 +94,15 @@ export function SparkIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
       <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" />
+    </BaseIcon>
+  )
+}
+
+export function UserIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="8.5" r="3.25" />
+      <path d="M6.5 18.5c1.4-2.6 3.2-3.9 5.5-3.9s4.1 1.3 5.5 3.9" />
     </BaseIcon>
   )
 }
@@ -149,6 +174,17 @@ export function AttachIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </BaseIcon>
+  )
+}
+
+export function ConvertIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M16 3l4 4-4 4" />
+      <path d="M20 7H4" />
+      <path d="M8 21l-4-4 4-4" />
+      <path d="M4 17h16" />
     </BaseIcon>
   )
 }

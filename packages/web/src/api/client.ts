@@ -1,26 +1,24 @@
 import type {
   ApiResult,
   AuthMe,
-  CreateProjectInput,
-  CreateSessionInput,
-  CreateTaskInput,
+  CreateQuestInput,
+  CreateTodoInput,
   OpenProjectInput,
   PagedResult,
   Project,
   ProjectOverview,
+  Quest,
+  QuestEvent,
+  QuestOp,
   Run,
   RuntimeModelCatalog,
   RuntimeTool,
   SendMessageInput,
-  Session,
-  SessionEvent,
-  Task,
-  TaskLog,
-  TaskOp,
-  TaskRun,
+  Todo,
   UpdateProjectInput,
-  UpdateSessionInput,
-  UpdateTaskInput,
+  UpdateQuestInput,
+  UpdateTodoInput,
+  UploadedAsset,
 } from '@pluse/types'
 
 const BASE = '/api'
@@ -109,132 +107,108 @@ export function updateProject(id: string, input: UpdateProjectInput): Promise<Ap
   return request<Project>('PATCH', `/projects/${id}`, input)
 }
 
-export function archiveProject(id: string): Promise<ApiResult<Project>> {
-  return request<Project>('POST', `/projects/${id}/archive`)
-}
-
 export function deleteProject(id: string): Promise<ApiResult<{ deleted: boolean }>> {
   return request<{ deleted: boolean }>('DELETE', `/projects/${id}`)
 }
 
-export function getSessions(opts?: { projectId?: string; archived?: boolean }): Promise<ApiResult<Session[]>> {
-  const params = new URLSearchParams()
-  if (opts?.projectId) params.set('projectId', opts.projectId)
-  if (opts?.archived !== undefined) params.set('archived', String(opts.archived))
-  return request<Session[]>('GET', `/sessions${params.toString() ? `?${params.toString()}` : ''}`)
+export function getQuests(params: {
+  projectId?: string
+  kind?: Quest['kind']
+  status?: Quest['status']
+  search?: string
+  deleted?: boolean
+} = {}): Promise<ApiResult<Quest[]>> {
+  const search = new URLSearchParams()
+  if (params.projectId) search.set('projectId', params.projectId)
+  if (params.kind) search.set('kind', params.kind)
+  if (params.status) search.set('status', params.status)
+  if (params.search) search.set('search', params.search)
+  if (params.deleted !== undefined) search.set('deleted', String(params.deleted))
+  return request<Quest[]>('GET', `/quests${search.toString() ? `?${search.toString()}` : ''}`)
 }
 
-export function getSession(id: string): Promise<ApiResult<Session>> {
-  return request<Session>('GET', `/sessions/${id}`)
+export function getQuest(id: string): Promise<ApiResult<Quest>> {
+  return request<Quest>('GET', `/quests/${id}`)
 }
 
-export function createSession(input: CreateSessionInput): Promise<ApiResult<Session>> {
-  return request<Session>('POST', '/sessions', input)
+export function createQuest(input: CreateQuestInput): Promise<ApiResult<Quest>> {
+  return request<Quest>('POST', '/quests', input)
 }
 
-export function updateSession(id: string, input: UpdateSessionInput): Promise<ApiResult<Session>> {
-  return request<Session>('PATCH', `/sessions/${id}`, input)
+export function updateQuest(id: string, input: UpdateQuestInput): Promise<ApiResult<Quest>> {
+  return request<Quest>('PATCH', `/quests/${id}`, input)
 }
 
-export function deleteSession(id: string): Promise<ApiResult<{ deleted: boolean }>> {
-  return request<{ deleted: boolean }>('DELETE', `/sessions/${id}`)
+export function deleteQuest(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/quests/${id}`)
 }
 
-export function getSessionEvents(id: string): Promise<ApiResult<PagedResult<SessionEvent>>> {
-  return request<PagedResult<SessionEvent>>('GET', `/sessions/${id}/events`)
+export function getQuestEvents(id: string): Promise<ApiResult<PagedResult<QuestEvent>>> {
+  return request<PagedResult<QuestEvent>>('GET', `/quests/${id}/events`)
 }
 
-export function sendMessage(id: string, input: SendMessageInput): Promise<ApiResult<{ queued: boolean; run: Run | null; session: Session }>> {
-  return request('POST', `/sessions/${id}/messages`, input)
+export function getQuestOps(id: string): Promise<ApiResult<QuestOp[]>> {
+  return request<QuestOp[]>('GET', `/quests/${id}/ops`)
 }
 
-export function getSessionRuns(id: string): Promise<ApiResult<Run[]>> {
-  return request<Run[]>('GET', `/sessions/${id}/runs`)
+export function sendQuestMessage(id: string, input: SendMessageInput): Promise<ApiResult<{ queued: boolean; run: Run | null; quest: Quest | null }>> {
+  return request('POST', `/quests/${id}/messages`, input)
+}
+
+export function startQuestRun(id: string, input: { requestId?: string; trigger?: 'manual' | 'automation'; triggeredBy?: 'human' | 'scheduler' | 'api' | 'cli' } = {}): Promise<ApiResult<{ skipped: boolean; run: Run | null; quest: Quest | null }>> {
+  return request('POST', `/quests/${id}/run`, input)
+}
+
+export function clearQuestQueue(id: string): Promise<ApiResult<Quest>> {
+  return request<Quest>('DELETE', `/quests/${id}/queue`)
+}
+
+export function cancelQueuedRequest(id: string, requestId: string): Promise<ApiResult<Quest>> {
+  return request<Quest>('DELETE', `/quests/${id}/queue/${encodeURIComponent(requestId)}`)
+}
+
+export function getQuestRuns(id: string): Promise<ApiResult<Run[]>> {
+  return request<Run[]>('GET', `/quests/${id}/runs`)
+}
+
+export function getRun(id: string): Promise<ApiResult<Run>> {
+  return request<Run>('GET', `/runs/${id}`)
+}
+
+export function getRunSpool(id: string): Promise<ApiResult<Array<{ id: number; ts: string; line: string }>>> {
+  return request<Array<{ id: number; ts: string; line: string }>>('GET', `/runs/${id}/spool`)
 }
 
 export function cancelRun(id: string): Promise<ApiResult<Run>> {
   return request<Run>('POST', `/runs/${id}/cancel`)
 }
 
-export function getTasks(params: {
-  projectId?: string
-  sessionId?: string
-  assignee?: string
-  kind?: string
-  status?: string
-} = {}): Promise<ApiResult<Task[]>> {
+export function getTodos(params: { projectId?: string; status?: Todo['status'] } = {}): Promise<ApiResult<Todo[]>> {
   const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) search.set(key, String(value))
-  }
-  return request<Task[]>('GET', `/tasks${search.toString() ? `?${search.toString()}` : ''}`)
+  if (params.projectId) search.set('projectId', params.projectId)
+  if (params.status) search.set('status', params.status)
+  return request<Todo[]>('GET', `/todos${search.toString() ? `?${search.toString()}` : ''}`)
 }
 
-export function createTask(input: CreateTaskInput): Promise<ApiResult<Task>> {
-  return request<Task>('POST', '/tasks', input)
+export function getTodo(id: string): Promise<ApiResult<Todo>> {
+  return request<Todo>('GET', `/todos/${id}`)
 }
 
-export function updateTask(id: string, input: UpdateTaskInput): Promise<ApiResult<Task>> {
-  return request<Task>('PATCH', `/tasks/${id}`, input)
+export function createTodo(input: CreateTodoInput): Promise<ApiResult<Todo>> {
+  return request<Todo>('POST', '/todos', input)
 }
 
-export function runTask(id: string): Promise<ApiResult<{ ok: true }>> {
-  return request<{ ok: true }>('POST', `/tasks/${id}/run`)
+export function updateTodo(id: string, input: UpdateTodoInput): Promise<ApiResult<Todo>> {
+  return request<Todo>('PATCH', `/todos/${id}`, input)
 }
 
-export function completeTask(id: string, output?: string): Promise<ApiResult<Task>> {
-  return request<Task>('POST', `/tasks/${id}/done`, { output })
+export function deleteTodo(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/todos/${id}`)
 }
 
-export function cancelTask(id: string): Promise<ApiResult<Task>> {
-  return request<Task>('POST', `/tasks/${id}/cancel`)
-}
-
-export function deleteTask(id: string): Promise<ApiResult<{ deleted: boolean }>> {
-  return request<{ deleted: boolean }>('DELETE', `/tasks/${id}`)
-}
-
-export function getTaskRuns(id: string): Promise<ApiResult<TaskRun[]>> {
-  return request<TaskRun[]>('GET', `/tasks/${id}/runs`)
-}
-
-export function getTaskLogs(id: string): Promise<ApiResult<TaskLog[]>> {
-  return request<TaskLog[]>('GET', `/tasks/${id}/logs`)
-}
-
-export function getTaskOps(id: string): Promise<ApiResult<TaskOp[]>> {
-  return request<TaskOp[]>('GET', `/tasks/${id}/ops`)
-}
-
-export function blockTask(id: string, blockerId: string): Promise<ApiResult<Task>> {
-  return request<Task>('POST', `/tasks/${id}/block`, { blockerId })
-}
-
-export function unblockTask(id: string): Promise<ApiResult<Task>> {
-  return request<Task>('DELETE', `/tasks/${id}/block`)
-}
-
-export function createTaskFromSession(sessionId: string, input: { title: string; assignee: 'ai' | 'human'; description?: string; waitingInstructions?: string }): Promise<ApiResult<Task>> {
-  return request<Task>('POST', `/sessions/${sessionId}/create-task`, input)
-}
-
-export function createSessionFromTask(taskId: string, input?: { name?: string }): Promise<ApiResult<{ session: Session; task: Task }>> {
-  return request<{ session: Session; task: Task }>('POST', `/tasks/${taskId}/create-session`, input)
-}
-
-export interface UploadedAsset {
-  id: string
-  sessionId: string
-  filename: string
-  savedPath: string
-  mimeType: string
-  sizeBytes: number
-  createdAt: string
-}
-
-export async function uploadAsset(sessionId: string, file: File): Promise<ApiResult<UploadedAsset>> {
+export async function uploadAsset(questId: string, file: File): Promise<ApiResult<UploadedAsset>> {
   const form = new FormData()
-  form.append('sessionId', sessionId)
+  form.append('questId', questId)
   form.append('file', file)
   const csrfToken = getCookie('pulse_csrf')
   const headers = new Headers()

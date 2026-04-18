@@ -1,18 +1,18 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { SessionEvent } from '@pluse/types'
+import type { QuestEvent } from '@pluse/types'
 import { getHistoryRoot } from '../support/paths'
 
-function sessionDir(sessionId: string): string {
-  return resolve(getHistoryRoot(), sessionId)
+function questDir(questId: string): string {
+  return resolve(getHistoryRoot(), questId)
 }
 
-function eventsDir(sessionId: string): string {
-  return resolve(sessionDir(sessionId), 'events')
+function eventsDir(questId: string): string {
+  return resolve(questDir(questId), 'events')
 }
 
-function metaPath(sessionId: string): string {
-  return resolve(sessionDir(sessionId), 'meta.json')
+function metaPath(questId: string): string {
+  return resolve(questDir(questId), 'meta.json')
 }
 
 function seqFilename(seq: number): string {
@@ -32,21 +32,21 @@ interface HistoryMeta {
   lastEventAt: string
 }
 
-export function getHistoryMeta(sessionId: string): HistoryMeta | null {
+export function getHistoryMeta(questId: string): HistoryMeta | null {
   try {
-    return JSON.parse(readFileSync(metaPath(sessionId), 'utf8')) as HistoryMeta
+    return JSON.parse(readFileSync(metaPath(questId), 'utf8')) as HistoryMeta
   } catch {
     return null
   }
 }
 
 export function listEvents(
-  sessionId: string,
+  questId: string,
   opts: { limit?: number; offset?: number } = {},
-): SessionEvent[] {
+): QuestEvent[] {
   let files: string[]
   try {
-    files = readdirSync(eventsDir(sessionId))
+    files = readdirSync(eventsDir(questId))
       .filter((file) => file.endsWith('.json'))
       .sort()
   } catch {
@@ -57,26 +57,26 @@ export function listEvents(
   const limit = opts.limit ?? files.length
   return files.slice(offset, offset + limit).flatMap((file) => {
     try {
-      return [JSON.parse(readFileSync(resolve(eventsDir(sessionId), file), 'utf8')) as SessionEvent]
+      return [JSON.parse(readFileSync(resolve(eventsDir(questId), file), 'utf8')) as QuestEvent]
     } catch {
       return []
     }
   })
 }
 
-export function appendEvent(sessionId: string, event: Omit<SessionEvent, 'seq'>): SessionEvent {
-  const meta = getHistoryMeta(sessionId)
+export function appendEvent(questId: string, event: Omit<QuestEvent, 'seq'>): QuestEvent {
+  const meta = getHistoryMeta(questId)
   const nextSeq = (meta?.latestSeq ?? -1) + 1
-  const full: SessionEvent = { ...event, seq: nextSeq }
+  const full: QuestEvent = { ...event, seq: nextSeq }
 
-  atomicWrite(resolve(eventsDir(sessionId), seqFilename(nextSeq)), JSON.stringify(full))
+  atomicWrite(resolve(eventsDir(questId), seqFilename(nextSeq)), JSON.stringify(full))
 
   let size = meta?.size ?? 0
   try {
-    size = statSync(eventsDir(sessionId)).size
+    size = statSync(eventsDir(questId)).size
   } catch {}
 
-  atomicWrite(metaPath(sessionId), JSON.stringify({
+  atomicWrite(metaPath(questId), JSON.stringify({
     latestSeq: nextSeq,
     size,
     lastEventAt: new Date().toISOString(),
@@ -85,9 +85,9 @@ export function appendEvent(sessionId: string, event: Omit<SessionEvent, 'seq'>)
   return full
 }
 
-export function getEventBody(sessionId: string, seq: number): string | null {
+export function getEventBody(questId: string, seq: number): string | null {
   try {
-    return readFileSync(resolve(eventsDir(sessionId), seqFilename(seq)), 'utf8')
+    return readFileSync(resolve(eventsDir(questId), seqFilename(seq)), 'utf8')
   } catch {
     return null
   }

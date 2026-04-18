@@ -1,11 +1,12 @@
 import { Hono } from 'hono'
+import type { SseMessage } from '@pluse/types'
 import { subscribe } from '../../services/events'
 
 export const eventsRouter = new Hono()
 
 eventsRouter.get('/events', (c) => {
   const projectId = c.req.query('projectId')
-  const sessionId = c.req.query('sessionId')
+  const questId = c.req.query('questId')
 
   const stream = new ReadableStream({
     start(controller) {
@@ -18,9 +19,10 @@ eventsRouter.get('/events', (c) => {
 
       send(JSON.stringify({ type: 'connected', data: { ts: new Date().toISOString() } }))
 
-      const unsub = subscribe((event) => {
+      const unsub = subscribe((event: SseMessage) => {
         if (projectId && 'projectId' in event.data && event.data.projectId !== projectId) return
-        if (sessionId && 'sessionId' in event.data && event.data.sessionId !== sessionId) return
+        if (questId && 'questId' in event.data && event.data.questId !== questId) return
+        if (questId && 'originQuestId' in event.data && event.data.originQuestId !== questId) return
         send(JSON.stringify(event))
       })
 

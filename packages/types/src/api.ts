@@ -21,7 +21,11 @@ export interface PagedResult<T> {
   limit: number
 }
 
-// Session event (history)
+import type { Project } from './project'
+import type { Quest } from './quest'
+import type { Todo } from './todo'
+
+// Quest event (history)
 export type EventType =
   | 'message'
   | 'reasoning'
@@ -33,7 +37,7 @@ export type EventType =
 
 export type EventRole = 'user' | 'assistant'
 
-export interface SessionEvent {
+export interface QuestEvent {
   seq: number
   timestamp: number
   type: EventType
@@ -65,13 +69,22 @@ export interface MessageAttachment {
   mimeType: string
 }
 
+export interface UploadedAsset {
+  id: string
+  questId: string
+  filename: string
+  savedPath: string
+  mimeType: string
+  sizeBytes: number
+  createdAt: string
+}
+
 export interface ProjectOverview {
-  project: import('./project').Project
-  sessions: import('./session').Session[]
-  tasks: import('./task').Task[]
-  brainTask: import('./task').Task | null
-  waitingTasks: import('./task').Task[]
-  projectTasks: import('./task').Task[]
+  project: Project
+  sessions: Quest[]
+  tasks: Quest[]
+  todos: Todo[]
+  waitingTodos: Todo[]
   recentOutputs: ProjectRecentOutput[]
   schedule: {
     lastRunAt?: string
@@ -79,25 +92,25 @@ export interface ProjectOverview {
   } | null
   counts: {
     sessions: number
-    chatShortTasks: number
-    projectTasks: number
+    tasks: number
+    todos: number
   }
 }
 
 export interface ProjectRecentOutput {
   id: string
-  kind: 'session_run' | 'task_run'
+  kind: 'chat_run' | 'task_run'
   title: string
   status: string
   completedAt?: string
   summary?: string
-  sessionId?: string
-  taskId?: string
+  questId?: string
 }
 
-// WebSocket invalidation hint
-export type WsMessage =
-  | { type: 'session_invalidated'; sessionId: string }
-  | { type: 'sessions_invalidated'; projectId: string }
-  | { type: 'projects_invalidated' }
-  | { type: 'run_delta'; runId: string; sessionId: string; delta: unknown }
+export type SseMessage =
+  | { type: 'connected'; data: { ts: string } }
+  | { type: 'project_opened' | 'project_updated'; data: { projectId: string } }
+  | { type: 'quest_updated' | 'quest_deleted'; data: { questId: string; projectId: string } }
+  | { type: 'todo_updated' | 'todo_deleted'; data: { todoId: string; projectId: string; originQuestId?: string } }
+  | { type: 'run_updated'; data: { runId: string; questId: string; projectId: string } }
+  | { type: 'run_line'; data: { runId: string; questId: string; projectId: string; line: string; ts: string } }

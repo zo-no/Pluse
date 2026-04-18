@@ -12,9 +12,13 @@ function now(): string {
 
 type RunRow = {
   id: string
-  session_id: string
+  quest_id: string
+  project_id: string
   request_id: string
+  trigger: Run['trigger']
+  triggered_by: Run['triggeredBy']
   state: string
+  failure_reason: string | null
   tool: string
   model: string
   effort: string | null
@@ -22,8 +26,6 @@ type RunRow = {
   claude_session_id: string | null
   codex_thread_id: string | null
   cancel_requested: number
-  result: string | null
-  failure_reason: string | null
   runner_process_id: number | null
   context_input_tokens: number | null
   context_window_tokens: number | null
@@ -37,9 +39,13 @@ type RunRow = {
 function rowToRun(row: RunRow): Run {
   return {
     id: row.id,
-    sessionId: row.session_id,
+    questId: row.quest_id,
+    projectId: row.project_id,
     requestId: row.request_id,
+    trigger: row.trigger,
+    triggeredBy: row.triggered_by,
     state: row.state as Run['state'],
+    failureReason: row.failure_reason ?? undefined,
     tool: row.tool,
     model: row.model,
     effort: row.effort ?? undefined,
@@ -48,8 +54,6 @@ function rowToRun(row: RunRow): Run {
     codexThreadId: row.codex_thread_id ?? undefined,
     cancelRequested: row.cancel_requested === 1,
     runnerProcessId: row.runner_process_id ?? undefined,
-    result: (row.result as Run['result']) ?? undefined,
-    failureReason: row.failure_reason ?? undefined,
     contextInputTokens: row.context_input_tokens ?? undefined,
     contextWindowTokens: row.context_window_tokens ?? undefined,
     createdAt: row.created_at,
@@ -70,22 +74,29 @@ export function getRun(id: string): Run | null {
   return row ? rowToRun(row) : null
 }
 
-export function getRunsBySession(sessionId: string): Run[] {
+export function getRunByQuestRequestId(questId: string, requestId: string): Run | null {
+  const db = getDb()
+  const row = db.query<RunRow, [string, string]>(
+    'SELECT * FROM runs WHERE quest_id = ? AND request_id = ? ORDER BY created_at DESC LIMIT 1',
+  ).get(questId, requestId)
+  return row ? rowToRun(row) : null
+}
+
+export function getRunsByQuest(questId: string): Run[] {
   const db = getDb()
   const rows = db.query<RunRow, [string]>(
-    'SELECT * FROM runs WHERE session_id = ? ORDER BY created_at DESC'
-  ).all(sessionId)
+    'SELECT * FROM runs WHERE quest_id = ? ORDER BY created_at DESC'
+  ).all(questId)
   return rows.map(rowToRun)
 }
 
 export function getRunsByProject(projectId: string, limit = 20): Run[] {
   const db = getDb()
   const rows = db.query<RunRow, [string, number]>(
-    `SELECT runs.*
+    `SELECT *
        FROM runs
-       INNER JOIN sessions ON sessions.id = runs.session_id
-      WHERE sessions.project_id = ?
-      ORDER BY COALESCE(runs.completed_at, runs.started_at, runs.created_at) DESC
+      WHERE project_id = ?
+      ORDER BY COALESCE(completed_at, started_at, created_at) DESC
       LIMIT ?`,
   ).all(projectId, limit)
   return rows.map(rowToRun)
@@ -98,12 +109,13 @@ export function createRun(input: CreateRunInput): Run {
 
   db.run(
     `INSERT INTO runs (
-      id, session_id, request_id, state, tool, model, effort, thinking,
+      id, quest_id, project_id, request_id, trigger, triggered_by,
+      state, failure_reason, tool, model, effort, thinking,
       claude_session_id, codex_thread_id,
       cancel_requested, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,0,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
     [
-      id, input.sessionId, input.requestId, 'accepted',
+      id, input.questId, input.projectId, input.requestId, input.trigger, input.triggeredBy, 'accepted', null,
       input.tool, input.model, input.effort ?? null, input.thinking ? 1 : 0,
       input.claudeSessionId ?? null, input.codexThreadId ?? null,
       ts, ts,
@@ -120,10 +132,11 @@ export function updateRun(id: string, patch: Partial<Run>): Run {
   const db = getDb()
   const ts = now()
   const fieldMap: Array<[keyof Run, string]> = [
+    ['trigger', 'trigger'], ['triggeredBy', 'triggered_by'],
     ['state', 'state'], ['tool', 'tool'], ['model', 'model'], ['effort', 'effort'],
     ['thinking', 'thinking'], ['claudeSessionId', 'claude_session_id'], ['codexThreadId', 'codex_thread_id'],
     ['cancelRequested', 'cancel_requested'],
-    ['runnerProcessId', 'runner_process_id'], ['result', 'result'],
+    ['runnerProcessId', 'runner_process_id'],
     ['failureReason', 'failure_reason'],
     ['contextInputTokens', 'context_input_tokens'],
     ['contextWindowTokens', 'context_window_tokens'],
@@ -149,4 +162,19 @@ export function updateRun(id: string, patch: Partial<Run>): Run {
 
 export function cancelRun(id: string): Run {
   return updateRun(id, { cancelRequested: true })
+}
+
+export function appendRunSpoolLine(runId: string, line: string): void {
+  const db = getDb()
+  db.run(
+    `INSERT INTO run_spool (run_id, ts, line) VALUES (?, ?, ?)`,
+    [runId, new Date().toISOString(), line],
+  )
+}
+
+export function getRunSpool(runId: string): Array<{ id: number; ts: string; line: string }> {
+  const db = getDb()
+  return db.query<{ id: number; ts: string; line: string }, [string]>(
+    `SELECT id, ts, line FROM run_spool WHERE run_id = ? ORDER BY id ASC`,
+  ).all(runId)
 }

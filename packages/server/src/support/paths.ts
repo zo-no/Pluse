@@ -28,16 +28,16 @@ export function getDbPath(): string {
   return resolveHomePath(
     process.env['PLUSE_DB_PATH']?.trim()
     || process.env['PULSE_DB_PATH']?.trim()
-    || join(getPluseRoot(), 'db.sqlite'),
+    || join(getPluseRoot(), 'runtime', 'pluse.db'),
   )
 }
 
 export function getHistoryRoot(): string {
-  return ensureDir(join(dirname(getDbPath()), 'history'))
+  return ensureDir(join(dirname(getDbPath()), 'quests'))
 }
 
 export function getRunRoot(): string {
-  return ensureDir(join(getPluseRoot(), 'run'))
+  return ensureDir(join(getPluseRoot(), 'runtime'))
 }
 
 export function getServerMetadataPath(): string {
@@ -64,8 +64,8 @@ export function getProjectManifestPath(workDir: string): string {
   return join(getProjectManifestDir(workDir), 'project.json')
 }
 
-export function getAssetsDir(sessionId: string): string {
-  return ensureDir(join(getPluseRoot(), 'assets', sessionId))
+export function getAssetsDir(questId: string): string {
+  return ensureDir(join(getPluseRoot(), 'assets', questId))
 }
 
 export function getWebDistRoot(): string {

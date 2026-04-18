@@ -1,4 +1,4 @@
-# Pluse v2 数据库 Schema
+# Pluse 数据库 Schema
 
 数据库位置：`~/.pluse/runtime/pluse.db`（SQLite，WAL 模式）
 

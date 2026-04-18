@@ -1,4 +1,4 @@
-# AGENTS.md — Pluse v2 项目上下文
+# AGENTS.md — Pluse 项目上下文
 
 > 这是 AI 协作说明文件。开始任何工作前先读完这个文件。
 
@@ -6,82 +6,84 @@
 
 ## 这个项目是什么
 
-Pluse v2 是一个**远程 AI 会话工具**，核心职责：
-1. 管理与 AI 的对话会话（Session / Run）
-2. 提供会话执行与消息体验；需要编排任务时由 AI 在会话中直接调用 conductor CLI
+Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 
-**任务调度由 conductor 负责，本项目不实现任务系统，也不把 task/project 代理 API 作为长期边界。**
+核心职责：
+1. 管理 Project 下的 Session / Task 两类 Quest
+2. 执行 Quest Run（chat / manual / automation）
+3. 管理独立 Todo
+4. 持久化 Quest 附件、运行历史、活动日志
+
+**当前仓库按 big-bang Quest/Todo/Run 模型实现：不做向前兼容，不保留旧 `sessions/tasks/task_runs/task_ops` 作为长期边界。**
 
 核心对象：
-- **Session**（会话）— 持久对话容器，归属于某个 conductor Project
-- **Run**（执行）— 某次会话执行的快照
+- **Project**：项目容器，对应本地工作目录
+- **Quest**：统一工作容器；`kind='session'` 或 `kind='task'`
+- **Run**：Quest 的一次执行
+- **Todo**：独立人工待办，可选记录来源 Quest
+- **QuestOp**：Quest 状态 / kind 变更日志
+- **UploadedAsset**：Quest 级附件元数据
 
 ---
 
 ## 如何读这个项目
 
-### 第一步：读架构文档
+### 第一步：读当前架构文档
 
+优先阅读：
+
+```text
+docs/architecture/architecture.md
+docs/architecture/database-schema.md
+docs/architecture/ui-design.md
+docs/specs/core/0003-thread-unified-model.md
+docs/specs/core/0005-thread-execution-model.md
+docs/specs/features/0011-thread-centric-ia.md
 ```
-docs/architecture/README.md         ← 文档导航入口
-docs/architecture/architecture.md   ← 产品定位 + 系统边界（先读这个）
-```
 
-按需深入阅读：
-- [数据模型](docs/architecture/data-model.md) — Session / Run 数据结构
-- [执行模型](docs/architecture/execution-model.md) — Run 生命周期、会话内 conductor CLI、follow-up queue
-- [数据库 Schema](docs/architecture/database-schema.md) — SQLite 表定义
-- [CLI & HTTP API](docs/architecture/api.md) — 所有接口定义
-- [Web UI 设计](docs/architecture/ui-design.md) — 布局、交互、组件
-- [Conductor 集成](docs/architecture/conductor-integration.md) — 会话内 CLI 调用边界
-- [UI 线框图](docs/architecture/wireframes.md) — 页面布局与结构草图
-- [当前 Roadmap](docs/specs/ROADMAP.md) — 当前功能进展与优先级
+按需深入：
+- `docs/architecture/data-model.md`
+- `docs/architecture/execution-model.md`
+- `docs/specs/features/0007-file-attachments.md`
+- `docs/specs/features/0009-session-search.md`
+- `docs/specs/features/0005-project-delete.md`
+- `docs/specs/infra/0001-sse-realtime.md`
 
-### 第二步：了解目录结构
+### 第二步：看目录结构
 
-```
-pluse-v2/
+```text
+pluse/
 ├── packages/
-│   ├── server/          # 后端（Bun + Hono + TypeScript）
+│   ├── server/
 │   │   └── src/
-│   │       ├── db/           # SQLite 初始化
-│   │       ├── middleware/   # HTTP 认证中间件
-│   │       ├── models/       # Session / Run / Auth 数据操作层（含迁移期 project model）
+│   │       ├── db/
+│   │       ├── middleware/
+│   │       ├── models/        # Project / Quest / Todo / Run / Auth
 │   │       ├── controllers/
-│   │       │   ├── http/     # Hono 路由层
-│   │       │   └── cli/      # Commander CLI 层
-│   │       ├── server.ts     # HTTP server 入口（port 7761）
-│   │       └── cli.ts        # CLI 入口（bin: pluse）
-│   │
-│   ├── web/             # 前端（React 19 + Vite + Zustand + TailwindCSS）
-│   └── types/           # 共享类型
-│
+│   │       │   ├── http/
+│   │       │   └── cli/
+│   │       ├── runtime/       # Quest run 执行与 provider 进程管理
+│   │       ├── services/      # effects / scheduler / projects / prompts
+│   │       ├── server.ts
+│   │       └── cli.ts
+│   ├── web/
+│   └── types/
 └── docs/
 ```
 
-### 第三步：理解 MVC 架构
+### 第三步：理解主线
 
-```
-Model（packages/server/src/models/）
-  以 Session / Run 为主，直接操作 SQLite
-  当前仍保留一层 project model 作为迁移期兼容
-
-Controller — HTTP（packages/server/src/controllers/http/）
-  Hono 路由，解析请求 → 调用 model → 返回响应
-  当前仍有 projects 路由作为兼容层
-
-Controller — CLI（packages/server/src/controllers/cli/）
-  Commander 命令，直接调用 model
-
-View（packages/web/src/）
-  React 组件，通过 api/ 消费 HTTP API
+```text
+Project
+  ├── Quest(kind='session')
+  ├── Quest(kind='task')
+  ├── Todo
+  └── Run / QuestOp / UploadedAsset
 ```
 
-## 迁移期注意
-
-当前仓库仍保留一套本地 `Project` CRUD 和对应前端 controller（例如 `packages/server/src/models/project.ts`、`packages/server/src/controllers/http/projects.ts`、`packages/web/src/controllers/project.ts`）。这是早期实现沿下来的兼容层，不是 v2 的长期边界。
-
-继续开发时，优先按 **Session / Run 主线** 理解系统；涉及任务编排时，默认假设 AI 在会话里直接调用 `conductor` CLI。
+- Session 与 Task 不是两套主对象，而是 Quest 的两种形态。
+- 所有详情页统一使用 `/quests/:id`。
+- Todo 是独立对象，不挂在 Quest 子表里。
 
 ---
 
@@ -89,49 +91,51 @@ View（packages/web/src/）
 
 | 要改什么 | 先看文档 | 再看代码 |
 |---|---|---|
-| 会话数据结构 | `docs/architecture/data-model.md` | `packages/server/src/models/session.ts` |
-| Run 执行流程 | `docs/architecture/execution-model.md` | `packages/server/src/models/run.ts` |
-| conductor 集成 | `docs/architecture/conductor-integration.md` | 无专门封装；按会话内 CLI 调用理解 |
-| 迁移期 project 兼容层 | `docs/architecture/architecture.md` | `packages/server/src/models/project.ts` / `packages/server/src/controllers/http/projects.ts` |
-| WebSocket / SSE | `docs/specs/infra/0001-sse-realtime.md` | 以当前实现与 spec 为准 |
-| CLI 命令 | `docs/architecture/api.md` | `packages/server/src/controllers/cli/` |
-| HTTP 路由 | `docs/architecture/api.md` | `packages/server/src/controllers/http/` |
-| 前端布局 | `docs/architecture/ui-design.md` | `packages/web/src/views/` |
-| 当前功能范围 | `docs/specs/ROADMAP.md` | `docs/specs/core/` / `docs/specs/features/` / `docs/specs/infra/` |
+| Quest 数据结构 | `docs/architecture/data-model.md` | `packages/server/src/models/quest.ts` |
+| Run 执行流程 | `docs/architecture/execution-model.md` | `packages/server/src/runtime/session-runner.ts` / `packages/server/src/models/run.ts` |
+| 调度逻辑 | `docs/specs/core/0005-thread-execution-model.md` | `packages/server/src/services/scheduler.ts` |
+| Todo | `docs/architecture/architecture.md` | `packages/server/src/models/todo.ts` / `packages/server/src/services/todos.ts` |
+| 附件 | `docs/specs/features/0007-file-attachments.md` | `packages/server/src/controllers/http/assets.ts` / `packages/server/src/models/asset.ts` |
+| HTTP 路由 | `docs/architecture/architecture.md` | `packages/server/src/controllers/http/` |
+| CLI 命令 | `docs/architecture/architecture.md` | `packages/server/src/controllers/cli/` |
+| 前端信息架构 | `docs/architecture/ui-design.md` | `packages/web/src/views/` |
+| 实时更新 | `docs/specs/infra/0001-sse-realtime.md` | `packages/server/src/controllers/http/events.ts` |
 
 ---
 
-## 开发规范
+## 当前实现约束
 
-1. **Model 层无 HTTP 依赖**：model 函数只接受普通参数
-2. **CLI 和 HTTP 共用 Model**：不在 controller 里写业务逻辑
-3. **类型从 @pluse/types 引入**
-4. **所有 CLI 命令支持 --json**
-5. **SQLite 用 Bun 内置**
-6. **任务操作走 conductor CLI**：不在 Pluse 里直接操作任务数据库
+1. **Model 层不依赖 HTTP**
+2. **CLI / HTTP 共享 Model 与 Service**
+3. **类型统一从 `@pluse/types` 引入**
+4. **所有 CLI 命令支持 `--json`**
+5. **SQLite 使用 Bun 内置 `bun:sqlite`**
+6. **不新增旧 Session/Task 兼容接口**
+7. **附件一律按 `questId` 持久化到 `~/.pluse/assets/{questId}`**
 
 ---
 
-## 操作任务的正确方式
+## Quest 运行时规则
 
-AI 在会话中需要操作任务时，直接调用 conductor CLI：
+- Session chat 忙时，新消息进入 `followUpQueue`
+- Task manual run 冲突返回 `409`
+- Task automation run 忙时直接 skip
+- Quest `kind` 可切换，但同一时刻只有一个 `activeRunId`
+- `task -> session` 保留 task 配置并暂停调度
+- `session -> task` 时 `status` 重置为 `pending`
 
-```bash
-# 查看任务
-conductor task list --project <id> --json
+---
 
-# 创建任务
-conductor task create --title "..." --project <id> --assignee ai --kind recurring --cron "0 9 * * *" --json
+## 不要再按旧口径理解的内容
 
-# 标记完成
-conductor task done <id> --output "完成说明"
-```
-
-不要把 Pluse 的 HTTP API 当成任务系统边界；任务编排默认都走 `conductor` CLI。
+- 不再使用 `packages/server/src/models/session.ts`
+- 不再使用 `packages/server/src/models/task.ts`
+- 不再实现 `/api/sessions/*` 或 `/api/tasks/*`
+- 不再把 Todo 当作 Quest 子对象
+- 不再使用 “Task 执行自动创建 Session” 这套模型
 
 ---
 
 ## 参考项目
 
-- conductor：`/Users/kual/code/conductor`（任务调度引擎，本项目的依赖）
-- v1：历史仓库（可参考迁移实现）
+- 历史仓库：仅用于迁移思路参考

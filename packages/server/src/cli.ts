@@ -3,20 +3,22 @@ import { Command } from 'commander'
 import { authCommand } from './controllers/cli/auth'
 import { commandsCommand } from './controllers/cli/commands'
 import { projectCommand } from './controllers/cli/project'
-import { sessionCommand } from './controllers/cli/session'
-import { taskCommand } from './controllers/cli/task'
+import { questCommand } from './controllers/cli/quest'
+import { runCommand } from './controllers/cli/run'
+import { todoCommand } from './controllers/cli/todo'
 
 const program = new Command()
 
 program
   .name('pluse')
-  .description('Pluse CLI — manage projects, sessions, and tasks')
+  .description('Pluse CLI — manage projects, quests, todos, and runs')
   .version('0.1.0')
 
 program.addCommand(authCommand)
 program.addCommand(commandsCommand)
 program.addCommand(projectCommand)
-program.addCommand(sessionCommand)
-program.addCommand(taskCommand)
+program.addCommand(questCommand)
+program.addCommand(runCommand)
+program.addCommand(todoCommand)
 
 program.parse(process.argv)

@@ -1,4 +1,4 @@
-# Pluse v2 执行模型
+# Pluse 执行模型
 
 > 正式口径，由 0005-thread-execution-model.md 收敛而来。
 

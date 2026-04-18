@@ -1,86 +1,84 @@
 import { Command } from 'commander'
 import type { Run } from '@pluse/types'
-import { getRun, getRunsBySession, cancelRun } from '../../models/run'
-
-// ─── formatting helpers ───────────────────────────────────────────────────────
+import { getRun, getRunSpool, getRunsByQuest } from '../../models/run'
+import { cancelActiveRun } from '../../runtime/session-runner'
+import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2))
 }
 
-function printRun(r: Run): void {
-  console.log(`${r.id}  state: ${r.state}`)
-  console.log(`  session: ${r.sessionId}  request: ${r.requestId}`)
-  console.log(`  model: ${r.model}`)
-  if (r.result) console.log(`  result: ${r.result}`)
-  if (r.failureReason) console.log(`  failure: ${r.failureReason}`)
-  console.log(`  created: ${r.createdAt}  updated: ${r.updatedAt}`)
-  if (r.completedAt) console.log(`  completed: ${r.completedAt}`)
+function printRun(run: Run): void {
+  console.log(`${run.id}  ${run.state}`)
+  console.log(`  quest: ${run.questId}  request: ${run.requestId}`)
+  console.log(`  trigger: ${run.trigger}  by: ${run.triggeredBy}`)
+  console.log(`  tool: ${run.tool}  model: ${run.model}`)
+  if (run.failureReason) console.log(`  failure: ${run.failureReason}`)
+  console.log(`  created: ${run.createdAt}`)
+  if (run.startedAt) console.log(`  started: ${run.startedAt}`)
+  if (run.completedAt) console.log(`  completed: ${run.completedAt}`)
 }
-
-function printRuns(list: Run[]): void {
-  if (list.length === 0) {
-    console.log('(no runs)')
-    return
-  }
-  for (const r of list) {
-    const elapsed = r.completedAt
-      ? `${((new Date(r.completedAt).getTime() - new Date(r.createdAt).getTime()) / 1000).toFixed(1)}s`
-      : 'in progress'
-    console.log(`${r.id}  ${r.state.padEnd(12)}  ${r.model}  ${elapsed}`)
-  }
-}
-
-// ─── command ──────────────────────────────────────────────────────────────────
 
 export const runCommand = new Command('run')
-runCommand.description('Inspect and manage runs')
+runCommand.description('Inspect and manage quest runs')
 
-// run status
 runCommand
-  .command('status <id>')
-  .description('Get run status')
+  .command('get <id>')
   .option('--json', 'Output as JSON', false)
-  .action((id: string, opts: { json: boolean }) => {
-    try {
-      const run = getRun(id)
-      if (!run) {
-        console.error(`Run not found: ${id}`)
-        process.exit(1)
-      }
-      opts.json ? printJson(run) : printRun(run)
-    } catch (e) {
-      console.error('Error:', String(e))
-      process.exit(1)
+  .action(async (id: string, opts: { json: boolean }) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode)
+    const run: Run | null = baseUrl ? await daemonRequest<Run>(baseUrl, `/api/runs/${id}`) : getRun(id)
+    if (!run) throw new Error(`Run not found: ${id}`)
+    opts.json ? printJson(run) : printRun(run)
+  })
+
+runCommand
+  .command('list <questId>')
+  .option('--json', 'Output as JSON', false)
+  .action(async (questId: string, opts: { json: boolean }) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode)
+    const runs = baseUrl ? await daemonRequest<Run[]>(baseUrl, `/api/quests/${questId}/runs`) : getRunsByQuest(questId)
+    if (opts.json) {
+      printJson(runs)
+      return
+    }
+    if (runs.length === 0) {
+      console.log('(no runs)')
+      return
+    }
+    for (const run of runs) {
+      console.log(`${run.id}  ${run.state.padEnd(10)}  ${run.tool}/${run.model}`)
     }
   })
 
-// run list
 runCommand
-  .command('list <sessionId>')
-  .description('List all runs for a session')
+  .command('spool <id>')
   .option('--json', 'Output as JSON', false)
-  .action((sessionId: string, opts: { json: boolean }) => {
-    try {
-      const runs = getRunsBySession(sessionId)
-      opts.json ? printJson(runs) : printRuns(runs)
-    } catch (e) {
-      console.error('Error:', String(e))
-      process.exit(1)
+  .action(async (id: string, opts: { json: boolean }) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode)
+    const spool = baseUrl
+      ? await daemonRequest<Array<{ id: number; ts: string; line: string }>>(baseUrl, `/api/runs/${id}/spool`)
+      : getRunSpool(id)
+    if (opts.json) {
+      printJson(spool)
+      return
+    }
+    for (const line of spool) {
+      console.log(line.line)
     }
   })
 
-// run cancel
 runCommand
   .command('cancel <id>')
-  .description('Request cancellation of a run')
   .option('--json', 'Output as JSON', false)
-  .action((id: string, opts: { json: boolean }) => {
-    try {
-      const run = cancelRun(id)
-      opts.json ? printJson(run) : console.log(`Cancel requested for run: ${run.id}  (state: ${run.state})`)
-    } catch (e) {
-      console.error('Error:', String(e))
-      process.exit(1)
-    }
+  .action(async (id: string, opts: { json: boolean }) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
+    const run = baseUrl
+      ? await daemonRequest<Run>(baseUrl, `/api/runs/${id}/cancel`, { method: 'POST' })
+      : cancelActiveRun(id)
+    opts.json ? printJson(run) : console.log(`Cancel requested for ${run.id}`)
   })

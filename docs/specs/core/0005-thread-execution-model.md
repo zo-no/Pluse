@@ -83,7 +83,7 @@ POST /api/quests/:id/messages
   → quest.codexThreadId = run.codexThreadId（若有）
   → quest.claudeSessionId = run.claudeSessionId（若有）
   → quest.updatedAt = now
-  → 若 quest.autoRenamePending && 这是 Quest 的第一个 Run：
+  → 若 quest.autoRenamePending && 这是 Quest 的第一个 chat Run 进入终态：
       触发自动命名（见"自动命名"）
 ```
 
@@ -358,17 +358,22 @@ Quest 的 `autoRenamePending` 字段控制是否在首次 Run 完成后自动生
 ```
 Run 完成后：
   if quest.autoRenamePending && 这是 Quest 的第一个 chat Run：
-    调用 AI 生成名称（基于首轮对话内容）
+    用 fresh context 调用 AI 生成名称（基于首轮对话内容）
     成功：quest.name = 生成的名称
     失败：quest.name = 用户第一条消息的前 N 个字（截断）
     quest.autoRenamePending = false
 ```
 
 **触发条件：**
-- 只在 `chat` trigger 的 Run 完成后触发（不在 automation/manual run 后触发）
-- Quest 的第一个 chat Run 完成后触发，不管 Run 成败
+- 只在 `chat` trigger 的 Run 进入终态后触发（不在 automation/manual run 后触发）
+- Quest 的第一个 chat Run 进入终态后触发，不管 Run 成败
 - `autoRenamePending = true` 的 Quest 才触发
 - 命名失败降级为消息前 N 字，不重试，`autoRenamePending = false`
+
+**实现约束：**
+- 自动命名使用独立 fresh context，不复用 Quest 当前的 provider context
+- 自动命名不会回写新的 `codexThreadId` / `claudeSessionId`，避免污染主会话上下文
+- 命名长度是建议值而非硬限制：中文标题推荐 4 到 8 个字；其他语言推荐 2 到 6 个词
 
 **初始化：** 新建 session 态 Quest 时，`autoRenamePending` 默认为 `true`。
 

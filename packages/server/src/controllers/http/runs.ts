@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { ApiResult } from '@pluse/types'
-import { getRun, getRunsBySession } from '../../models/run'
+import { getRun, getRunSpool } from '../../models/run'
 import { cancelActiveRun } from '../../runtime/session-runner'
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -22,7 +22,6 @@ function sc(n: number): ContentfulStatusCode {
 
 export const runsRouter = new Hono()
 
-// GET /runs/:id
 runsRouter.get('/runs/:id', (c) => {
   const id = c.req.param('id')
   try {
@@ -34,17 +33,15 @@ runsRouter.get('/runs/:id', (c) => {
   }
 })
 
-// GET /sessions/:id/runs
-runsRouter.get('/sessions/:id/runs', (c) => {
-  const sessionId = c.req.param('id')
+runsRouter.get('/runs/:id/spool', (c) => {
+  const runId = c.req.param('id')
   try {
-    return c.json(ok(getRunsBySession(sessionId)))
+    return c.json(ok(getRunSpool(runId)))
   } catch (e) {
     return c.json(errBody(String(e)), sc(500))
   }
 })
 
-// POST /runs/:id/cancel
 runsRouter.post('/runs/:id/cancel', (c) => {
   const id = c.req.param('id')
   try {

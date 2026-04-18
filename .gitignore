@@ -10,3 +10,4 @@ dist/
 .runtime-check/
 .playwright-cli/
 output/
+.pluse/

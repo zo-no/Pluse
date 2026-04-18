@@ -1,204 +1,112 @@
 import { Cron } from 'croner'
-import type { RecurringConfig, Task } from '@pluse/types'
-import { createTaskOp } from '../models/task-op'
-import { createTaskLog, updateTaskLogCompleted } from '../models/task-log'
-import { createTask, getBlockedByTask, getTask, listTasks, reconcileRunningTasks, updateTask } from '../models/task'
-import { emit } from './events'
-import { executeTask, killTask } from './task-executor'
+import type { Quest } from '@pluse/types'
+import { getDb } from '../db'
+import { getQuest, listQuests, updateQuest } from '../models/quest'
+import { startQuestRun } from '../runtime/session-runner'
 
 const cronJobs = new Map<string, Cron>()
-const runningTasks = new Set<string>()
+
+function stopJob(id: string): void {
+  const job = cronJobs.get(id)
+  if (!job) return
+  job.stop()
+  cronJobs.delete(id)
+}
 
 export function reconcile(): void {
-  const stale = reconcileRunningTasks()
-  for (const task of stale) {
-    createTaskOp({
-      taskId: task.id,
-      op: 'status_changed',
-      fromStatus: 'running',
-      toStatus: 'pending',
-      actor: 'scheduler',
-      note: 'reconciled on startup',
+  const db = getDb()
+  const ts = new Date().toISOString()
+  db.run(
+    `UPDATE runs
+        SET state = 'failed',
+            failure_reason = COALESCE(failure_reason, 'reconciled on startup'),
+            updated_at = ?,
+            completed_at = COALESCE(completed_at, ?),
+            finalized_at = COALESCE(finalized_at, ?)
+      WHERE state IN ('accepted', 'running')`,
+    [ts, ts, ts],
+  )
+
+  for (const quest of listQuests({ deleted: false })) {
+    if (!quest.activeRunId) continue
+    updateQuest(quest.id, {
+      activeRunId: null,
+      status: quest.kind === 'task' ? 'pending' : 'idle',
     })
   }
 }
 
-async function unblockDependents(completedTaskId: string, output: string): Promise<void> {
-  const blocked = getBlockedByTask(completedTaskId)
-  for (const task of blocked) {
-    updateTask(task.id, {
-      status: 'pending',
-      blockedByTaskId: null,
-      completionOutput: output || null,
-    })
-    createTaskOp({
-      taskId: task.id,
-      op: 'unblocked',
-      fromStatus: 'blocked',
-      toStatus: 'pending',
-      actor: 'scheduler',
-      note: `unblocked by ${completedTaskId}`,
-    })
-    await runTask(task.id, 'scheduler')
-  }
-}
-
-export async function runTask(
-  taskId: string,
-  triggeredBy: 'manual' | 'scheduler' | 'api' | 'cli',
-): Promise<void> {
-  const task = getTask(taskId)
-  if (!task) return
-  if (!task.enabled || task.assignee !== 'ai') return
-  if (runningTasks.has(taskId) || task.status === 'running' || task.status === 'blocked') {
-    createTaskLog({
-      taskId,
-      status: 'skipped',
-      triggeredBy,
-      skipReason: task.status === 'blocked' ? 'blocked' : 'already running',
-      startedAt: new Date().toISOString(),
-    })
+export function refreshQuestSchedule(quest: Quest): void {
+  stopJob(quest.id)
+  if (
+    quest.kind !== 'task'
+    || quest.enabled === false
+    || !quest.scheduleKind
+    || quest.scheduleKind === 'once'
+  ) {
     return
   }
 
-  updateTask(taskId, { status: 'running' })
-  emit({ type: 'task_updated', data: { taskId, projectId: task.projectId, sessionId: task.sessionId } })
-  createTaskOp({
-    taskId,
-    op: 'triggered',
-    fromStatus: task.status,
-    toStatus: 'running',
-    actor: triggeredBy === 'scheduler' ? 'scheduler' : 'human',
-  })
-
-  const log = createTaskLog({
-    taskId,
-    status: 'success',
-    triggeredBy,
-    startedAt: new Date().toISOString(),
-  })
-
-  runningTasks.add(taskId)
-  try {
-    const result = await executeTask(task, triggeredBy)
-    const fresh = getTask(taskId)
-    if (!fresh) return
-
-    const finalStatus = result.success ? 'success' : 'failed'
-    updateTaskLogCompleted(log.id, finalStatus, result.output, result.error)
-
-    const nextStatus = fresh.kind === 'recurring' && result.success ? 'pending' : result.success ? 'done' : 'failed'
-    updateTask(taskId, {
-      status: nextStatus,
-      lastSessionId: result.sessionId ?? null,
-    })
-    emit({ type: 'task_updated', data: { taskId, projectId: fresh.projectId, sessionId: fresh.sessionId } })
-    createTaskOp({
-      taskId,
-      op: result.success ? 'done' : 'status_changed',
-      fromStatus: 'running',
-      toStatus: nextStatus,
-      actor: 'scheduler',
-    })
-
-    if (fresh.kind === 'recurring' && fresh.scheduleConfig?.kind === 'recurring') {
-      const cfg = fresh.scheduleConfig as RecurringConfig
-      const job = cronJobs.get(taskId)
-      updateTask(taskId, {
-        scheduleConfig: {
-          ...cfg,
-          lastRunAt: new Date().toISOString(),
-          nextRunAt: job?.nextRun()?.toISOString(),
-        },
-      })
-    }
-
-    if (result.success && fresh.reviewOnComplete) {
-      createTask({
-        projectId: fresh.projectId,
-        originSessionId: fresh.sessionId,
-        title: `Review: ${fresh.title}`,
-        assignee: 'human',
-        kind: 'once',
-        createdBy: 'system',
-        waitingInstructions: `Task "${fresh.title}" completed. Please review the output and mark done.`,
-      })
-    }
-
-    if (result.success) {
-      await unblockDependents(taskId, result.output)
-    }
-  } finally {
-    runningTasks.delete(taskId)
-  }
-}
-
-function scheduleSingleTask(task: Task): void {
-  if (task.assignee !== 'ai' || !task.enabled) return
-
-  const existing = cronJobs.get(task.id)
-  if (existing) {
-    existing.stop()
-    cronJobs.delete(task.id)
-  }
-
-  if (task.kind === 'scheduled') {
-    const cfg = task.scheduleConfig
-    if (!cfg || cfg.kind !== 'scheduled') return
-    const runAt = new Date(cfg.scheduledAt)
-    if (runAt <= new Date()) return
+  if (quest.scheduleKind === 'scheduled') {
+    const runAt = quest.scheduleConfig?.runAt ? new Date(quest.scheduleConfig.runAt) : null
+    if (!runAt || Number.isNaN(runAt.getTime()) || runAt.getTime() <= Date.now()) return
     const job = new Cron(runAt, { maxRuns: 1 }, async () => {
-      await runTask(task.id, 'scheduler')
-      cronJobs.delete(task.id)
+      await startQuestRun({
+        questId: quest.id,
+        trigger: 'automation',
+        triggeredBy: 'scheduler',
+      })
+      cronJobs.delete(quest.id)
     })
-    cronJobs.set(task.id, job)
-    return
-  }
-
-  if (task.kind === 'recurring') {
-    const cfg = task.scheduleConfig
-    if (!cfg || cfg.kind !== 'recurring') return
-    const job = new Cron(cfg.cron, { timezone: cfg.timezone }, async () => {
-      await runTask(task.id, 'scheduler')
-    })
-    cronJobs.set(task.id, job)
-    updateTask(task.id, {
+    cronJobs.set(quest.id, job)
+    updateQuest(quest.id, {
       scheduleConfig: {
-        ...cfg,
+        ...(quest.scheduleConfig ?? {}),
         nextRunAt: job.nextRun()?.toISOString(),
       },
     })
+    return
   }
+
+  const cronExpr = quest.scheduleConfig?.cron?.trim()
+  if (!cronExpr) return
+  const job = new Cron(cronExpr, { timezone: quest.scheduleConfig?.timezone }, async () => {
+    await startQuestRun({
+      questId: quest.id,
+      trigger: 'automation',
+      triggeredBy: 'scheduler',
+    })
+    const fresh = getQuest(quest.id)
+    if (!fresh) return
+    updateQuest(quest.id, {
+      scheduleConfig: {
+        ...(fresh.scheduleConfig ?? {}),
+        lastRunAt: new Date().toISOString(),
+        nextRunAt: job.nextRun()?.toISOString(),
+      },
+    })
+  })
+  cronJobs.set(quest.id, job)
+  updateQuest(quest.id, {
+    scheduleConfig: {
+      ...(quest.scheduleConfig ?? {}),
+      nextRunAt: job.nextRun()?.toISOString(),
+    },
+  })
 }
 
 export function startScheduler(): void {
-  const tasks = listTasks({ assignee: 'ai' })
-  for (const task of tasks) {
-    if (task.kind !== 'once') {
-      scheduleSingleTask(task)
-    }
+  for (const quest of listQuests({ kind: 'task', deleted: false })) {
+    refreshQuestSchedule(quest)
   }
 }
 
-export function registerTask(task: Task): void {
-  if (task.kind !== 'once') {
-    scheduleSingleTask(task)
-  }
-}
-
-export function unregisterTask(taskId: string): void {
-  const job = cronJobs.get(taskId)
-  if (job) {
-    job.stop()
-    cronJobs.delete(taskId)
-  }
+export function removeScheduledQuest(id: string): void {
+  stopJob(id)
 }
 
 export function stopScheduler(): void {
-  for (const job of cronJobs.values()) job.stop()
-  cronJobs.clear()
-}
-
-export function cancelTaskExecution(taskId: string): boolean {
-  return killTask(taskId)
+  for (const id of [...cronJobs.keys()]) {
+    stopJob(id)
+  }
 }

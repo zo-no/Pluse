@@ -83,4 +83,25 @@ export async function apiReq<T = unknown>(
 export const GET = <T = unknown>(path: string, options?: ApiRequestOptions) => apiReq<T>('GET', path, undefined, options)
 export const POST = <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) => apiReq<T>('POST', path, body, options)
 export const PATCH = <T = unknown>(path: string, body: unknown, options?: ApiRequestOptions) => apiReq<T>('PATCH', path, body, options)
-export const DEL = (path: string, options?: ApiRequestOptions) => apiReq('DELETE', path, undefined, options)
+export const DEL = <T = unknown>(path: string, options?: ApiRequestOptions) => apiReq<T>('DELETE', path, undefined, options)
+
+export async function waitFor<T>(
+  probe: () => T | Promise<T>,
+  options: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? 5_000
+  const intervalMs = options.intervalMs ?? 25
+  const deadline = Date.now() + timeoutMs
+  let lastError: unknown = null
+
+  while (Date.now() < deadline) {
+    try {
+      return await probe()
+    } catch (error) {
+      lastError = error
+      await Bun.sleep(intervalMs)
+    }
+  }
+
+  throw lastError ?? new Error(`Timed out after ${timeoutMs}ms`)
+}

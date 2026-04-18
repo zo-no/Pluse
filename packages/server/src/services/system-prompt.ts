@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import type { Project } from '@pluse/types'
+import type { Project, Quest } from '@pluse/types'
 import { getSetting } from '../models/settings'
 
 function getPluseCliCommand(): string {
@@ -13,15 +13,11 @@ function getPluseCliCommand(): string {
 const PLUSE_CONCEPT_BLOCK = `你在 Pluse 系统中运行。
 
 Pluse 的核心概念：
-- Project（项目）：工作容器，对应本地文件夹，包含若干会话和任务
-- Session（会话）：与 AI 的持续对话，消息历史保存在会话中
-- Task（任务）：独立工作单元，可由 AI 或人类执行
-- Session 和 Task 均归属于 Project，可互相关联和转换：
-    - 会话中可以创建任务（AI 或人类的 todo）
-    - AI Task 执行时关联一个 Session 作为上下文
-    - Task.originSessionId 记录任务在哪个会话里被创建
-    - Session.sourceTaskId 记录会话由哪个任务触发
-- 切换上下文时（会话↔任务），用 projectId 作为锚点查全局状态`
+- Project（项目）：工作容器，对应本地文件夹。
+- Quest（统一工作容器）：内部技术概念。UI 上按 kind 显示为 Session（会话）或 Task（任务）。
+- Todo（人工待办）：独立于 Quest 的人工事项，可选记录来源 Quest。
+- Run（执行）：Quest 的一次执行记录，可能来自 chat、manual 或 automation。
+- Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。`
 
 // ─── 第一层：系统级提示 ────────────────────────────────────────────────────
 
@@ -42,7 +38,7 @@ function buildLayer2(project: Project): string {
 
 export function buildSessionSystemPrompt(
   project: Project,
-  sessionId: string,
+  quest: Quest,
 ): string {
   const cli = getPluseCliCommand()
   const layer3 = [
@@ -51,12 +47,13 @@ export function buildSessionSystemPrompt(
     '当前上下文：会话',
     '',
     `项目: ${project.name} (${project.id})`,
-    `会话: ${sessionId}`,
+    `Quest: ${quest.id}`,
+    `会话: ${quest.name ?? quest.id}`,
     `工作目录: ${project.workDir ?? ''}`,
     '',
     '你正在与人类对话。',
-    '需要执行独立的自动化工作时，创建 AI Task 而不是在会话里直接完成。',
-    '需要人类处理某件事时，创建 Human Task 并填写 waitingInstructions。',
+    '需要执行独立自动化工作时，把当前 Quest 切换为 task 或创建新的 task 态 Quest。',
+    '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')
@@ -70,9 +67,7 @@ export function buildSessionSystemPrompt(
 
 export function buildTaskSystemPrompt(
   project: Project,
-  taskId: string,
-  taskTitle: string,
-  sessionId: string,
+  quest: Quest,
 ): string {
   const cli = getPluseCliCommand()
   const layer3 = [
@@ -81,14 +76,13 @@ export function buildTaskSystemPrompt(
     '当前上下文：任务执行',
     '',
     `项目: ${project.name} (${project.id})`,
-    `任务: ${taskTitle} (${taskId})`,
-    `会话: ${sessionId}`,
+    `Quest: ${quest.id}`,
+    `任务: ${quest.title ?? quest.id}`,
     `工作目录: ${project.workDir ?? ''}`,
     '',
     '你正在执行一个自动化任务。',
-    `完成后运行 \`${cli} task done ${taskId} --output "..."\` 标记结果。`,
-    '需要人类介入时，创建 Human Task 并说明原因。',
-    `查看任务来源：\`${cli} task get ${taskId}\`（originSessionId 字段）。`,
+    '执行配置来自当前 Quest 的 task 字段。',
+    '需要人类介入时，创建 Todo 并说明原因。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')
