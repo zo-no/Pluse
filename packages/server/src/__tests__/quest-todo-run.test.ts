@@ -199,16 +199,22 @@ describe('quest/todo/run APIs', () => {
       originQuestId: switchedBackToTaskData.id,
       title: 'Need PM confirmation',
       waitingInstructions: 'Ask PM whether the nightly sync can run against prod snapshots.',
+      dueAt: '2026-04-20T02:00:00.000Z',
+      repeat: 'daily',
     })
     expect(todo.status).toBe(201)
     const todoData = mustOk(todo)
     expect(todoData.status).toBe('pending')
+    expect(todoData.dueAt).toBe('2026-04-20T02:00:00.000Z')
+    expect(todoData.repeat).toBe('daily')
 
     const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
     expect(overview.status).toBe(200)
     const overviewData = mustOk(overview)
     expect(overviewData.counts).toEqual({ sessions: 1, tasks: 1, todos: 1 })
     expect(overviewData.waitingTodos.map((item) => item.id)).toEqual([todoData.id])
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'created' && item.subjectId === todoData.id)).toBe(true)
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'kind_changed' && item.subjectId === task.id)).toBe(true)
 
     const finishedTodo = await PATCH<Todo>(`/api/todos/${todoData.id}`, {
       status: 'done',
@@ -216,10 +222,18 @@ describe('quest/todo/run APIs', () => {
     })
     expect(finishedTodo.status).toBe(200)
     expect(mustOk(finishedTodo).status).toBe('done')
+    expect(mustOk(finishedTodo).repeat).toBe('daily')
 
     const doneTodos = await GET<Todo[]>(`/api/todos?projectId=${project.id}&status=done`)
     expect(doneTodos.status).toBe(200)
     expect(mustOk(doneTodos).map((item) => item.id)).toEqual([todoData.id])
+
+    const refreshedPendingTodos = await GET<Todo[]>(`/api/todos?projectId=${project.id}&status=pending`)
+    expect(refreshedPendingTodos.status).toBe(200)
+    const nextRecurringTodo = mustOk(refreshedPendingTodos).find((item) => item.id !== todoData.id)
+    expect(nextRecurringTodo?.title).toBe('Need PM confirmation')
+    expect(nextRecurringTodo?.repeat).toBe('daily')
+    expect(nextRecurringTodo?.dueAt).toBe('2026-04-21T02:00:00.000Z')
 
     const linkedQuest = await createQuest({
       projectId: project.id,
@@ -251,6 +265,13 @@ describe('quest/todo/run APIs', () => {
     const archivedTodosAfterArchive = await GET<Todo[]>(`/api/todos?projectId=${project.id}&deleted=true`)
     expect(archivedTodosAfterArchive.status).toBe(200)
     expect(mustOk(archivedTodosAfterArchive).some((item) => item.id === todoData.id)).toBe(true)
+
+    const refreshedOverview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
+    expect(refreshedOverview.status).toBe(200)
+    const refreshedOverviewData = mustOk(refreshedOverview)
+    expect(refreshedOverviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'done' && item.subjectId === todoData.id)).toBe(true)
+    expect(refreshedOverviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'deleted' && item.subjectId === todoData.id)).toBe(true)
+    expect(refreshedOverviewData.recentActivity.some((item) => item.subjectType === 'session' && item.op === 'deleted' && item.subjectId === linkedQuest.id)).toBe(true)
 
     const commands = await GET<{ modules: Array<{ name: string; description: string; commands: Array<{ name: string; api: string }> }> }>('/api/commands')
     expect(commands.status).toBe(200)
@@ -364,6 +385,8 @@ describe('quest/todo/run APIs', () => {
     const targetOverviewData = mustOk(targetOverview)
     expect(targetOverviewData.counts).toEqual({ sessions: 0, tasks: 1, todos: 0 })
     expect(targetOverviewData.recentOutputs.some((item) => item.questId === task.id)).toBe(true)
+    expect(mustOk(sourceOverview).recentActivity.some((item) => item.subjectId === task.id && item.op === 'project_changed_out')).toBe(true)
+    expect(targetOverviewData.recentActivity.some((item) => item.subjectId === task.id && item.op === 'project_changed_in')).toBe(true)
 
     expect(getRunsByQuest(task.id).every((run) => run.projectId === targetProject.id)).toBe(true)
     expect(listTodos({ projectId: sourceProject.id }).some((todo) => todo.originQuestId === task.id)).toBe(true)
@@ -504,7 +527,12 @@ describe('quest/todo/run APIs', () => {
 
     const events = await GET<PagedResult<QuestEvent>>(`/api/quests/${quest.id}/events`)
     expect(events.status).toBe(200)
-    expect(mustOk(events).items.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Queued reply')).toBe(true)
+    const eventItems = mustOk(events).items
+    expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Queued reply')).toBe(true)
+    expect(eventItems.filter((event) => event.type === 'message' && event.role === 'user').map((event) => event.content)).toEqual([
+      'Plan launch checklist',
+      'Summarize risks',
+    ])
 
     const runs = await GET<Run[]>(`/api/quests/${quest.id}/runs`)
     expect(runs.status).toBe(200)
@@ -674,6 +702,13 @@ describe('quest/todo/run APIs', () => {
       expect(todos.some((todo) => todo.originQuestId === task.id && todo.title.includes('Review: Nightly Build'))).toBe(true)
       return todos
     })
+
+    const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
+    expect(overview.status).toBe(200)
+    const overviewData = mustOk(overview)
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'triggered' && item.subjectId === task.id)).toBe(true)
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'done' && item.subjectId === task.id)).toBe(true)
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'created' && item.questId === task.id)).toBe(true)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

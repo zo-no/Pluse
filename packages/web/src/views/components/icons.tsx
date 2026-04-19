@@ -119,6 +119,16 @@ export function ClockIcon(props: IconProps) {
   )
 }
 
+export function RouteIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="7" cy="7" r="1.75" />
+      <circle cx="17" cy="17" r="1.75" />
+      <path d="M8.75 7H12a5 5 0 0 1 5 5v3.25" />
+    </BaseIcon>
+  )
+}
+
 export function SparkIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
@@ -172,7 +182,9 @@ export function SendIcon(props: IconProps) {
 export function PinIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
-      <path d="M12 2l2 6h5l-4 3 1.5 6L12 14l-4.5 3L9 11 5 8h5z" />
+      <path d="M9 4.5h6" />
+      <path d="M10 4.5v4.25L8 11h8l-2-2.25V4.5" />
+      <path d="M12 11v8.5" />
     </BaseIcon>
   )
 }

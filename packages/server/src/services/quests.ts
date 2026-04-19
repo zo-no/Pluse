@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDb } from '../db'
 import { listEvents } from '../models/history'
+import { createProjectActivity } from '../models/project-activity'
 import { createQuestOp, getQuestOps } from '../models/quest-op'
 import { createQuest, getQuest, listQuests, updateQuest } from '../models/quest'
 import { getProject } from '../models/project'
@@ -85,6 +86,12 @@ function deriveSessionListName(quest: Quest): string | undefined {
   return firstUserMessage ? compactSessionName(firstUserMessage) : quest.name
 }
 
+function questActivityTitle(quest: Quest): string {
+  return quest.title?.trim()
+    || quest.name?.trim()
+    || (quest.kind === 'task' ? '未命名任务' : '未命名会话')
+}
+
 export function listQuestViews(filter: Parameters<typeof listQuests>[0] = {}): Quest[] {
   return listQuests(filter).map((quest) => (
     quest.kind === 'session'
@@ -100,6 +107,17 @@ export function createQuestWithEffects(input: CreateQuestInput): Quest {
   const created = createQuest(input)
   createQuestOp({
     questId: created.id,
+    op: 'created',
+    actor: input.createdBy === 'ai' ? 'ai' : input.createdBy === 'system' ? 'system' : 'human',
+    toKind: created.kind,
+    toStatus: created.status,
+  })
+  createProjectActivity({
+    projectId: created.projectId,
+    subjectType: created.kind,
+    subjectId: created.id,
+    questId: created.id,
+    title: questActivityTitle(created),
     op: 'created',
     actor: input.createdBy === 'ai' ? 'ai' : input.createdBy === 'system' ? 'system' : 'human',
     toKind: created.kind,
@@ -135,11 +153,60 @@ export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Que
       fromStatus: before.status,
       toStatus: updated.status,
     })
+    createProjectActivity({
+      projectId: updated.projectId,
+      subjectType: updated.kind,
+      subjectId: updated.id,
+      questId: updated.id,
+      title: questActivityTitle(updated),
+      op: 'kind_changed',
+      actor: 'human',
+      fromKind: before.kind,
+      toKind: updated.kind,
+      fromStatus: before.status,
+      toStatus: updated.status,
+    })
   } else if (before.status !== updated.status && updated.kind === 'task') {
     createQuestOp({
       questId: updated.id,
       op: 'status_changed',
       actor: 'human',
+      fromStatus: before.status,
+      toStatus: updated.status,
+    })
+    createProjectActivity({
+      projectId: updated.projectId,
+      subjectType: updated.kind,
+      subjectId: updated.id,
+      questId: updated.id,
+      title: questActivityTitle(updated),
+      op: 'status_changed',
+      actor: 'human',
+      fromStatus: before.status,
+      toStatus: updated.status,
+    })
+  }
+
+  if (!before.deleted && updated.deleted) {
+    createQuestOp({
+      questId: updated.id,
+      op: 'deleted',
+      actor: 'human',
+      fromKind: before.kind,
+      toKind: updated.kind,
+      fromStatus: before.status,
+      toStatus: updated.status,
+    })
+    createProjectActivity({
+      projectId: updated.projectId,
+      subjectType: updated.kind,
+      subjectId: updated.id,
+      questId: updated.id,
+      title: questActivityTitle(updated),
+      op: 'deleted',
+      actor: 'human',
+      fromKind: before.kind,
+      toKind: updated.kind,
       fromStatus: before.status,
       toStatus: updated.status,
     })
@@ -198,6 +265,26 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
     op: 'project_changed',
     actor: 'human',
     note: `Moved from ${before.projectId} to ${moved.projectId}`,
+  })
+  createProjectActivity({
+    projectId: before.projectId,
+    subjectType: before.kind,
+    subjectId: moved.id,
+    questId: moved.id,
+    title: questActivityTitle(before),
+    op: 'project_changed_out',
+    actor: 'human',
+    note: `Moved to ${moved.projectId}`,
+  })
+  createProjectActivity({
+    projectId: moved.projectId,
+    subjectType: moved.kind,
+    subjectId: moved.id,
+    questId: moved.id,
+    title: questActivityTitle(moved),
+    op: 'project_changed_in',
+    actor: 'human',
+    note: `Moved from ${before.projectId}`,
   })
   emit({ type: 'quest_updated', data: { questId: moved.id, projectId: before.projectId } })
   emitQuestUpdated(moved)

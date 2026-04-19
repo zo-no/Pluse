@@ -24,16 +24,15 @@ function printProjectOverview(overview: ProjectOverview): void {
   } else {
     console.log('  schedule: n/a')
   }
-  if (overview.recentOutputs.length === 0) {
-    console.log('  recent outputs: (none)')
+  if (overview.recentActivity.length === 0) {
+    console.log('  recent activity: (none)')
     return
   }
-  console.log('  recent outputs:')
-  for (const item of overview.recentOutputs.slice(0, 5)) {
-    const kind = item.kind === 'task_run' ? 'task' : 'chat'
-    console.log(`    - ${item.completedAt ?? 'n/a'}  ${kind}  ${item.status}  ${item.title}`)
-    if (item.summary) {
-      console.log(`      ${item.summary}`)
+  console.log('  recent activity:')
+  for (const item of overview.recentActivity.slice(0, 8)) {
+    console.log(`    - ${item.createdAt}  ${item.subjectType}  ${item.op}  ${item.title}`)
+    if (item.note) {
+      console.log(`      ${item.note}`)
     }
   }
 }

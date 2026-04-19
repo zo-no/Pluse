@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
+import { listProjectActivity } from '../models/project-activity'
 import {
   createProjectRecord,
   deleteProjectRecord,
@@ -332,6 +333,7 @@ export function getProjectOverview(id: string): ProjectOverview | null {
     tasks,
     todos,
     waitingTodos,
+    recentActivity: listProjectActivity(id, 20),
     recentOutputs: getRecentOutputs(id, sessions, tasks),
     schedule,
     counts: {

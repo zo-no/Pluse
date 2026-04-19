@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link, useNavigate } from 'react-router-dom'
 import type { Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
+import { useI18n } from '@/i18n'
 import { displayQuestName } from '@/views/utils/display'
+import { parseSseMessage } from '@/views/utils/sse'
 import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SettingsIcon, SlidersIcon } from './icons'
 
 interface SessionListProps {
@@ -25,7 +27,7 @@ function shortPath(value?: string | null): string {
   return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
-function formatSidebarTime(value?: string): string {
+function formatSidebarTime(value?: string, t?: (key: string, values?: Record<string, string | number>) => string): string {
   if (!value) return ''
   const timestamp = new Date(value).getTime()
   const delta = Math.max(0, Date.now() - timestamp)
@@ -33,16 +35,16 @@ function formatSidebarTime(value?: string): string {
   const hour = 60 * minute
   const day = 24 * hour
   const week = 7 * day
-  if (delta < minute) return '刚刚'
-  if (delta < hour) return `${Math.max(1, Math.floor(delta / minute))} 分钟`
-  if (delta < day) return `${Math.max(1, Math.floor(delta / hour))} 小时`
-  if (delta < week) return `${Math.max(1, Math.floor(delta / day))} 天`
-  return `${Math.max(1, Math.floor(delta / week))} 周`
+  if (delta < minute) return t ? t('刚刚') : '刚刚'
+  if (delta < hour) return t ? t('{count} 分钟', { count: Math.max(1, Math.floor(delta / minute)) }) : `${Math.max(1, Math.floor(delta / minute))} 分钟`
+  if (delta < day) return t ? t('{count} 小时', { count: Math.max(1, Math.floor(delta / hour)) }) : `${Math.max(1, Math.floor(delta / hour))} 小时`
+  if (delta < week) return t ? t('{count} 天', { count: Math.max(1, Math.floor(delta / day)) }) : `${Math.max(1, Math.floor(delta / day))} 天`
+  return t ? t('{count} 周', { count: Math.max(1, Math.floor(delta / week)) }) : `${Math.max(1, Math.floor(delta / week))} 周`
 }
 
-function formatSidebarAbsoluteTime(value?: string): string {
+function formatSidebarAbsoluteTime(value?: string, locale = 'zh-CN'): string {
   if (!value) return ''
-  return new Intl.DateTimeFormat('zh-CN', {
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
@@ -51,17 +53,21 @@ function formatSidebarAbsoluteTime(value?: string): string {
   }).format(new Date(value))
 }
 
-function formatArchiveDateLabel(value?: string): string {
-  if (!value) return '未记录日期'
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatArchiveDateLabel(
+  value?: string,
+  locale = 'zh-CN',
+  t?: (key: string) => string,
+): string {
+  if (!value) return t ? t('未记录日期') : '未记录日期'
+  return new Intl.DateTimeFormat(locale, {
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
   }).format(new Date(value))
 }
 
-function questLabel(quest: Quest): string {
-  return displayQuestName(quest)
+function questLabel(quest: Quest, t?: (key: string) => string): string {
+  return displayQuestName(quest, t)
 }
 
 function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'running' | 'complete' | null {
@@ -80,6 +86,7 @@ export function SessionList({
   onNavigate,
   onRequestClose,
 }: SessionListProps) {
+  const { locale, t } = useI18n()
   const navigate = useNavigate()
   const [sessions, setSessions] = useState<Quest[]>([])
   const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
@@ -135,11 +142,21 @@ export function SessionList({
   useEffect(() => {
     if (!activeProjectId) return
     const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
-    source.onmessage = () => {
-      void loadQuests()
+    let reloadTimer: number | null = null
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+      if (event.type !== 'quest_updated' && event.type !== 'quest_deleted') return
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => {
+        void loadQuests()
+      }, 120)
     }
     source.onerror = () => source.close()
-    return () => source.close()
+    return () => {
+      source.close()
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+    }
   }, [activeProjectId, loadQuests])
 
   useEffect(() => {
@@ -188,6 +205,7 @@ export function SessionList({
     setProjectPickerOpen(false)
     setNewProjectOpen(false)
     onNavigate?.()
+    navigate(`/projects/${projectId}`)
   }
 
   async function handleCreateQuest(kind: Quest['kind']) {
@@ -199,7 +217,7 @@ export function SessionList({
             kind,
             createdBy: 'human',
             tool: 'codex',
-            name: '新会话',
+            name: t('新会话'),
             autoRenamePending: true,
           }
         : {
@@ -207,7 +225,7 @@ export function SessionList({
             kind,
             createdBy: 'human',
             tool: 'codex',
-            title: '新任务',
+            title: t('新任务'),
             status: 'pending',
             enabled: true,
             scheduleKind: 'once',
@@ -254,7 +272,7 @@ export function SessionList({
   async function handleArchive(questId: string, deleted: boolean) {
     const quest = knownQuests.find((item) => item.id === questId)
     if (deleted && quest?.activeRunId) {
-      const confirmed = window.confirm('正在执行中，归档会先取消当前执行。继续吗？')
+      const confirmed = window.confirm(t('正在执行中，归档会先取消当前执行。继续吗？'))
       if (!confirmed) return
       const cancelled = await api.cancelRun(quest.activeRunId)
       if (!cancelled.ok) {
@@ -271,7 +289,7 @@ export function SessionList({
         await new Promise((resolve) => window.setTimeout(resolve, 150))
       }
       if (!cleared) {
-        setError('当前执行尚未完全停止，请稍后再试')
+        setError(t('当前执行尚未完全停止，请稍后再试'))
         return
       }
     }
@@ -295,9 +313,9 @@ export function SessionList({
   const filteredSessions = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase()
     return normalized
-      ? sessions.filter((quest) => questLabel(quest).toLowerCase().includes(normalized))
+      ? sessions.filter((quest) => questLabel(quest, t).toLowerCase().includes(normalized))
       : sessions
-  }, [sessions, searchQuery])
+  }, [sessions, searchQuery, t])
 
   const pinnedSessions = filteredSessions.filter((quest) => quest.pinned)
   const unpinnedSessions = filteredSessions.filter((quest) => !quest.pinned)
@@ -344,7 +362,7 @@ export function SessionList({
           onDoubleClick={(event) => {
             event.preventDefault()
             setRenamingId(quest.id)
-            setRenameValue(questLabel(quest))
+            setRenameValue(questLabel(quest, t))
           }}
         >
           <div className="pluse-sidebar-item-title">
@@ -354,12 +372,12 @@ export function SessionList({
                 aria-hidden="true"
               />
             ) : null}
-            <strong>{questLabel(quest)}</strong>
+            <strong>{questLabel(quest, t)}</strong>
           </div>
-          <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt)}>
+          <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
             <span className="pluse-meta-inline">
               <ClockIcon className="pluse-icon pluse-inline-icon" />
-              {formatSidebarTime(quest.updatedAt)}
+              {formatSidebarTime(quest.updatedAt, t)}
             </span>
           </div>
         </Link>
@@ -372,8 +390,8 @@ export function SessionList({
                 event.preventDefault()
                 void handlePin(quest.id, !quest.pinned)
               }}
-              aria-label={quest.pinned ? '取消固定' : '固定'}
-              title={quest.pinned ? '取消固定' : '固定'}
+              aria-label={quest.pinned ? t('取消固定') : t('固定')}
+              title={quest.pinned ? t('取消固定') : t('固定')}
             >
               <PinIcon className="pluse-icon" />
             </button>
@@ -385,8 +403,8 @@ export function SessionList({
               event.preventDefault()
               void handleArchive(quest.id, !archived)
             }}
-            aria-label={archived ? '恢复' : '归档'}
-            title={archived ? '恢复' : '归档'}
+            aria-label={archived ? t('恢复') : t('归档')}
+            title={archived ? t('恢复') : t('归档')}
           >
             <ArchiveIcon className="pluse-icon" />
           </button>
@@ -398,14 +416,14 @@ export function SessionList({
   return (
     <aside className="pluse-sidebar" ref={sidebarRef}>
       <div className="pluse-mobile-panel-header">
-        <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label="关闭侧栏">
+        <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭侧栏')} title={t('关闭侧栏')}>
           <CloseIcon className="pluse-icon" />
         </button>
       </div>
 
       <div className="pluse-sidebar-body">
         <section className="pluse-sidebar-section pluse-sidebar-section-context">
-          <div className="pluse-sidebar-context-label">项目</div>
+          <div className="pluse-sidebar-context-label">{t('项目')}</div>
           <div className="pluse-project-context-row">
             <div className="pluse-project-switcher" ref={pickerRef}>
               <button
@@ -417,8 +435,8 @@ export function SessionList({
                 }}
               >
                 <div className="pluse-project-switcher-label">
-                  <strong>{activeProject?.name ?? '选择项目'}</strong>
-                  <span>{activeProject ? shortPath(activeProject.workDir) : '无项目'}</span>
+                  <strong>{activeProject?.name ?? t('选择项目')}</strong>
+                  <span>{activeProject ? shortPath(activeProject.workDir) : t('无项目')}</span>
                 </div>
                 <span className="pluse-project-switcher-chevron" aria-hidden="true">⌄</span>
               </button>
@@ -447,33 +465,33 @@ export function SessionList({
                         <input
                           value={projectName}
                           onChange={(event) => setProjectName(event.target.value)}
-                          placeholder="项目名称（可选）"
+                          placeholder={t('项目名称（可选）')}
                         />
                         <input
                           value={projectDir}
                           onChange={(event) => setProjectDir(event.target.value)}
-                          placeholder="工作目录，如 ~/projects/xxx"
+                          placeholder={t('工作目录，如 ~/projects/xxx')}
                           required
                         />
                         <textarea
                           value={projectGoal}
                           onChange={(event) => setProjectGoal(event.target.value)}
-                          placeholder="项目目标（可选）"
+                          placeholder={t('项目目标（可选）')}
                           rows={2}
                         />
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>
-                            取消
+                            {t('取消')}
                           </button>
                           <button type="submit" className="pluse-button" style={{ flex: 1 }}>
-                            打开
+                            {t('打开')}
                           </button>
                         </div>
                       </form>
                     ) : (
                       <button type="button" className="pluse-project-picker-add" onClick={() => setNewProjectOpen(true)}>
                         <PlusIcon className="pluse-icon" />
-                        添加项目
+                        {t('添加项目')}
                       </button>
                     )}
                   </div>
@@ -491,8 +509,8 @@ export function SessionList({
                 onNavigate?.()
                 navigate(`/projects/${activeProjectId}`)
               }}
-              aria-label="打开项目面板"
-              title="项目面板"
+              aria-label={t('打开项目面板')}
+              title={t('项目面板')}
               disabled={!activeProjectId}
             >
               <SlidersIcon className="pluse-icon" />
@@ -506,7 +524,7 @@ export function SessionList({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="搜索"
+              placeholder={t('搜索')}
               className="pluse-sidebar-search-input"
             />
           </div>
@@ -518,9 +536,9 @@ export function SessionList({
               {pinnedSessions.map((quest) => renderQuest(quest))}
               {unpinnedSessions.map((quest) => renderQuest(quest))}
               {sessions.length === 0 ? (
-                <div className="pluse-empty-state pluse-sidebar-empty">还没有内容</div>
+                <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
               ) : filteredSessions.length === 0 ? (
-                <div className="pluse-empty-state pluse-sidebar-empty">无搜索结果</div>
+                <div className="pluse-empty-state pluse-sidebar-empty">{t('无搜索结果')}</div>
               ) : null}
               {archivedSessions.length > 0 ? (
                 <div className="pluse-sidebar-archive-group">
@@ -529,13 +547,13 @@ export function SessionList({
                     className="pluse-sidebar-archive-toggle"
                     onClick={() => setArchivedSessionsExpanded((value) => !value)}
                   >
-                    <span>{archivedSessionsExpanded ? '▾' : '▸'} 归档 ({archivedSessions.length})</span>
+                    <span>{archivedSessionsExpanded ? '▾' : '▸'} {t('归档')} ({archivedSessions.length})</span>
                   </button>
                   {archivedSessionsExpanded ? (
                     <div className="pluse-sidebar-archive-list">
                       {archivedSessionsByDate.map(({ date, quests }) => (
                         <div key={date} className="pluse-sidebar-archive-date-group">
-                          <div className="pluse-sidebar-archive-date-label">{formatArchiveDateLabel(date === 'unknown' ? undefined : date)}</div>
+                          <div className="pluse-sidebar-archive-date-label">{formatArchiveDateLabel(date === 'unknown' ? undefined : date, locale, t)}</div>
                           {quests.map((quest) => renderQuest(quest, true))}
                         </div>
                       ))}
@@ -551,12 +569,12 @@ export function SessionList({
           <button
             type="button"
             className="pluse-sidebar-chip-link pluse-sidebar-new-session-card"
-            aria-label="新建会话"
+            aria-label={t('新建会话')}
             onClick={() => void handleCreateQuest('session')}
             disabled={!activeProjectId}
           >
             <PlusIcon className="pluse-icon" />
-            <span>新建会话</span>
+            <span>{t('新建会话')}</span>
           </button>
         </section>
 

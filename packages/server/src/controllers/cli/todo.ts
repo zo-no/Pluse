@@ -12,6 +12,8 @@ function printTodo(todo: Todo): void {
   console.log(`${todo.id}  ${todo.status}  ${todo.title}`)
   console.log(`  project: ${todo.projectId}`)
   if (todo.waitingInstructions) console.log(`  waiting: ${todo.waitingInstructions}`)
+  if (todo.dueAt) console.log(`  due: ${todo.dueAt}`)
+  if (todo.repeat !== 'none') console.log(`  repeat: ${todo.repeat}`)
 }
 
 export const todoCommand = new Command('todo')
@@ -55,14 +57,18 @@ todoCommand
   .requiredOption('--title <title>', 'Todo title')
   .option('--description <description>', 'Description')
   .option('--waiting <instructions>', 'Waiting instructions')
+  .option('--due-at <time>', 'Due time (ISO 8601)')
+  .option('--repeat <repeat>', 'none, daily, weekly, or monthly')
   .option('--origin-quest-id <id>', 'Origin quest')
   .option('--json', 'Output as JSON', false)
-  .action(async (opts: { projectId: string; title: string; description?: string; waiting?: string; originQuestId?: string; json: boolean }) => {
+  .action(async (opts: { projectId: string; title: string; description?: string; waiting?: string; dueAt?: string; repeat?: Todo['repeat']; originQuestId?: string; json: boolean }) => {
     const input: CreateTodoInput = {
       projectId: opts.projectId,
       title: opts.title,
       description: opts.description,
       waitingInstructions: opts.waiting,
+      dueAt: opts.dueAt,
+      repeat: opts.repeat,
       originQuestId: opts.originQuestId,
       createdBy: 'human',
     }
@@ -79,15 +85,21 @@ todoCommand
   .option('--title <title>', 'Todo title')
   .option('--description <description>', 'Description')
   .option('--waiting <instructions>', 'Waiting instructions')
+  .option('--due-at <time>', 'Due time (ISO 8601)')
+  .option('--repeat <repeat>', 'none, daily, weekly, or monthly')
+  .option('--clear-due', 'Clear due time', false)
   .option('--status <status>', 'pending or done')
   .option('--json', 'Output as JSON', false)
-  .action(async (id: string, opts: { title?: string; description?: string; waiting?: string; status?: Todo['status']; json: boolean }) => {
+  .action(async (id: string, opts: { title?: string; description?: string; waiting?: string; dueAt?: string; repeat?: Todo['repeat']; clearDue: boolean; status?: Todo['status']; json: boolean }) => {
     const patch: UpdateTodoInput = {
       title: opts.title,
       description: opts.description,
       waitingInstructions: opts.waiting,
+      repeat: opts.repeat,
       status: opts.status,
     }
+    if (opts.clearDue) patch.dueAt = null
+    else if (opts.dueAt) patch.dueAt = opts.dueAt
     const mode = getCliMode()
     const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
     const todo = baseUrl

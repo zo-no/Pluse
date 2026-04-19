@@ -24,6 +24,8 @@ const TodoSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
   waitingInstructions: z.string().optional(),
+  dueAt: z.string().optional(),
+  repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
   status: z.enum(['pending', 'done']).optional(),
   deleted: z.boolean().optional(),
 })
@@ -33,6 +35,8 @@ const TodoPatchSchema = z.object({
   title: z.string().optional(),
   description: z.string().nullable().optional(),
   waitingInstructions: z.string().nullable().optional(),
+  dueAt: z.string().nullable().optional(),
+  repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
   status: z.enum(['pending', 'done']).optional(),
   deleted: z.boolean().optional(),
 })

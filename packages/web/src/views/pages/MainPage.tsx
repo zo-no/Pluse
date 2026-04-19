@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
-import type { AuthMe, Project, ProjectOverview, ProjectRecentOutput, Quest } from '@pluse/types'
+import type { AuthMe, Project, ProjectActivityItem, ProjectOverview, Quest, Todo } from '@pluse/types'
 import * as api from '@/api/client'
-import { ChatView } from '@/views/components/ChatView'
-import { ClockIcon, MenuIcon, MoonIcon, RailIcon, SettingsIcon, SidebarIcon, SunIcon } from '@/views/components/icons'
+import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
-import { TaskDetail } from '@/views/components/TaskDetail'
 import { TodoPanel } from '@/views/components/TodoPanel'
-import { SettingsPage } from './SettingsPage'
 import { displayQuestName } from '@/views/utils/display'
+import { parseSseMessage } from '@/views/utils/sse'
+import { formatTodoScheduleSummary } from '@/views/utils/todo'
 import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
+import { localeLabel, nextLocale, useI18n } from '@/i18n'
+
+const ChatView = lazy(async () => import('@/views/components/ChatView').then((module) => ({ default: module.ChatView })))
+const TaskDetail = lazy(async () => import('@/views/components/TaskDetail').then((module) => ({ default: module.TaskDetail })))
+const SettingsPage = lazy(async () => import('./SettingsPage').then((module) => ({ default: module.SettingsPage })))
 
 function shortPath(value?: string | null): string {
   if (!value) return ''
@@ -21,9 +25,9 @@ function shortPath(value?: string | null): string {
   return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
-function formatDateTime(value?: string): string {
-  if (!value) return '未记录'
-  return new Intl.DateTimeFormat('zh-CN', {
+function formatDateTime(value?: string, t?: ((key: string) => string), locale = 'zh-CN'): string {
+  if (!value) return t ? t('未记录') : '未记录'
+  return new Intl.DateTimeFormat(locale, {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -31,29 +35,48 @@ function formatDateTime(value?: string): string {
   }).format(new Date(value))
 }
 
-function formatOutputStatus(status: string): string {
+function formatRelativeTime(value?: string, t?: (key: string, values?: Record<string, string>) => string): string {
+  if (!value) return ''
+  const timestamp = new Date(value).getTime()
+  const delta = Math.max(0, Date.now() - timestamp)
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+  if (delta < minute) return t ? t('刚刚') : '刚刚'
+  if (delta < hour) return t ? t('{count} 分钟', { count: String(Math.max(1, Math.floor(delta / minute))) }) : `${Math.max(1, Math.floor(delta / minute))} 分钟`
+  if (delta < day) return t ? t('{count} 小时', { count: String(Math.max(1, Math.floor(delta / hour))) }) : `${Math.max(1, Math.floor(delta / hour))} 小时`
+  if (delta < week) return t ? t('{count} 天', { count: String(Math.max(1, Math.floor(delta / day))) }) : `${Math.max(1, Math.floor(delta / day))} 天`
+  return t ? t('{count} 周', { count: String(Math.max(1, Math.floor(delta / week))) }) : `${Math.max(1, Math.floor(delta / week))} 周`
+}
+
+function formatOutputStatus(status: string, t?: (key: string) => string): string {
   const normalized = status.toLowerCase()
-  if (normalized === 'completed' || normalized === 'done') return '已完成'
-  if (normalized === 'running') return '执行中'
-  if (normalized === 'failed') return '失败'
-  if (normalized === 'cancelled') return '已取消'
-  if (normalized === 'pending') return '待处理'
-  if (normalized === 'idle') return '空闲'
+  if (normalized === 'completed' || normalized === 'done') return t ? t('已完成') : '已完成'
+  if (normalized === 'running') return t ? t('执行中') : '执行中'
+  if (normalized === 'failed') return t ? t('失败') : '失败'
+  if (normalized === 'cancelled') return t ? t('已取消') : '已取消'
+  if (normalized === 'pending') return t ? t('待处理') : '待处理'
+  if (normalized === 'idle') return t ? t('空闲') : '空闲'
   return status
 }
 
-function scheduleSummary(schedule: ProjectOverview['schedule']): string {
-  if (!schedule) return '暂无周期触发'
+function scheduleSummary(schedule: ProjectOverview['schedule'], locale?: string, t?: (key: string, value?: Record<string, string>) => string): string {
+  if (!schedule) return t ? t('暂无周期触发') : '暂无周期触发'
   if (schedule.lastRunAt && schedule.nextRunAt) {
-    return `${formatDateTime(schedule.lastRunAt)} → ${formatDateTime(schedule.nextRunAt)}`
+    return `${formatDateTime(schedule.lastRunAt, t, locale)} → ${formatDateTime(schedule.nextRunAt, t, locale)}`
   }
-  if (schedule.nextRunAt) return `下次 ${formatDateTime(schedule.nextRunAt)}`
-  if (schedule.lastRunAt) return `最近 ${formatDateTime(schedule.lastRunAt)}`
-  return '已配置，未触发'
+  if (schedule.nextRunAt) return t
+    ? t('下次 {{time}}', { time: formatDateTime(schedule.nextRunAt, t, locale) })
+    : `下次 ${formatDateTime(schedule.nextRunAt)}`
+  if (schedule.lastRunAt) return t
+    ? t('最近 {{time}}', { time: formatDateTime(schedule.lastRunAt, t, locale) })
+    : `最近 ${formatDateTime(schedule.lastRunAt)}`
+  return t ? t('已配置，未触发') : '已配置，未触发'
 }
 
-function questLabel(quest: Quest): string {
-  return displayQuestName(quest)
+function questLabel(quest: Quest, t?: (key: string) => string): string {
+  return displayQuestName(quest, t)
 }
 
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
@@ -78,6 +101,10 @@ function WorkspaceSection(props: {
       {props.children}
     </section>
   )
+}
+
+function RouteLoading({ message }: { message: string }) {
+  return <div className="pluse-page pluse-page-loading">{message}</div>
 }
 
 function ProjectCompactSection(props: {
@@ -120,26 +147,218 @@ function ProjectCompactSection(props: {
   )
 }
 
-function OutputRow({ output }: { output: ProjectRecentOutput }) {
+function ProjectOverviewHero({
+  overview,
+  locale,
+  t,
+}: {
+  overview: ProjectOverview
+  locale: string
+  t: (key: string, values?: Record<string, string>) => string
+}) {
+  const activeCount = [...overview.sessions, ...overview.tasks].filter((quest) => Boolean(quest.activeRunId)).length
+  const waitingCount = overview.waitingTodos.length
+  const pendingTodoCount = overview.todos.filter((todo) => todo.status === 'pending').length
+  const queuedCount = overview.sessions.reduce((sum, session) => sum + session.followUpQueue.length, 0)
+  const actionablePendingCount = Math.max(pendingTodoCount - waitingCount, 0)
+  const completedRecentCount = overview.recentActivity.filter((item) => item.op === 'done').length
+  const metrics = [
+    { label: t('运行中'), value: activeCount, color: 'var(--accent-strong)' },
+    { label: t('待处理'), value: actionablePendingCount, color: 'color-mix(in srgb, var(--warning) 78%, var(--accent-strong))' },
+    { label: t('等待中'), value: waitingCount, color: 'color-mix(in srgb, var(--success) 82%, var(--accent-strong))' },
+    { label: t('排队消息'), value: queuedCount, color: 'color-mix(in srgb, var(--text-muted) 82%, white)' },
+  ]
+  const total = metrics.reduce((sum, metric) => sum + metric.value, 0)
+  const number = new Intl.NumberFormat(locale)
+  const latestActivityAt = overview.recentActivity[0]?.createdAt
+  const topSummary = latestActivityAt
+    ? `${t('最近活动')} ${formatDateTime(latestActivityAt, t, locale)}`
+    : scheduleSummary(overview.schedule, locale, t)
+  const recentActivityCount = overview.recentActivity.length
+  const activityPreview = overview.recentActivity.slice(0, 6)
+
+  const radius = 44
+  const circumference = 2 * Math.PI * radius
+  const gap = total > 0 ? 5 : 0
+  let offset = 0
+
+  const segments = metrics
+    .filter((metric) => metric.value > 0)
+    .map((metric) => {
+      const rawLength = (metric.value / total) * circumference
+      const visibleLength = Math.max(rawLength - gap, 0)
+      const segment = (
+        <circle
+          key={metric.label}
+          className="pluse-overview-ring-segment"
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke={metric.color}
+          strokeWidth="11"
+          strokeLinecap="round"
+          strokeDasharray={`${visibleLength} ${Math.max(circumference - visibleLength, 0)}`}
+          strokeDashoffset={-offset}
+        />
+      )
+      offset += rawLength
+      return segment
+    })
+
+  return (
+    <section className="pluse-overview-hero">
+      <div className="pluse-overview-lead">
+        <div className="pluse-overview-lead-top">
+          <span className="pluse-overview-kicker">{t('待推进')}</span>
+          <span className="pluse-overview-schedule-text">{topSummary}</span>
+        </div>
+
+        <div className="pluse-overview-total">
+          <strong>{number.format(total)}</strong>
+          <div className="pluse-overview-total-copy">
+            <span>{overview.project.name}</span>
+            <p>
+              {total > 0
+                ? t('当前需要继续推进 {count} 项工作', { count: number.format(total) })
+                : t('当前没有待推进的工作')}
+            </p>
+            <div className="pluse-overview-total-stats">
+              <span>{t('最近活动')} {number.format(recentActivityCount)}</span>
+              <span>{t('已完成')} {number.format(completedRecentCount)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="pluse-overview-metrics">
+          {metrics.map((metric) => {
+            const ratio = total > 0 ? Math.round((metric.value / total) * 100) : 0
+            return (
+              <div key={metric.label} className="pluse-overview-metric">
+                <span className="pluse-overview-metric-label">
+                  <i className="pluse-overview-metric-dot" aria-hidden="true" style={{ background: metric.color }} />
+                  {metric.label}
+                </span>
+                <strong>{number.format(metric.value)}</strong>
+                <small>{ratio}%</small>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="pluse-overview-visual" aria-label={t('概览')}>
+        <div className="pluse-overview-visual-top">
+          <div className="pluse-overview-ring">
+            <svg viewBox="0 0 120 120" role="img" aria-label={t('概览')}>
+              <circle className="pluse-overview-ring-track" cx="60" cy="60" r={radius} fill="none" strokeWidth="11" />
+              <g transform="rotate(-90 60 60)">{segments}</g>
+            </svg>
+            <div className="pluse-overview-ring-center">
+              <strong>{number.format(total)}</strong>
+              <span>{t('待推进')}</span>
+            </div>
+          </div>
+
+          <div className="pluse-overview-aside">
+            <div className="pluse-overview-aside-item">
+              <span>{t('最近活动')}</span>
+              <strong>{number.format(recentActivityCount)}</strong>
+            </div>
+            <div className="pluse-overview-aside-item">
+              <span>{t('已完成')}</span>
+              <strong>{number.format(completedRecentCount)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="pluse-overview-log">
+          <div className="pluse-overview-log-head">
+            <span>{t('操作日志')}</span>
+            <strong>{number.format(recentActivityCount)}</strong>
+          </div>
+          {activityPreview.length > 0 ? (
+            <div className="pluse-output-list pluse-overview-log-list">
+              {activityPreview.map((item) => (
+                <ActivityRow key={item.id} item={item} t={t} locale={locale} compact />
+              ))}
+            </div>
+          ) : (
+            <p className="pluse-empty-inline">{t('暂无操作记录')}</p>
+          )}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function formatActivitySubjectType(type: ProjectActivityItem['subjectType'], t: (key: string, values?: Record<string, string>) => string): string {
+  if (type === 'session') return t('会话')
+  if (type === 'task') return t('任务')
+  return t('待办')
+}
+
+function formatActivityOp(item: ProjectActivityItem, t: (key: string, values?: Record<string, string>) => string): string {
+  if (item.op === 'created') return item.subjectType === 'session' ? t('创建会话') : item.subjectType === 'task' ? t('创建任务') : t('创建待办')
+  if (item.op === 'kind_changed') return item.toKind === 'task' ? t('转为任务') : t('转为会话')
+  if (item.op === 'project_changed_in') return t('移入项目')
+  if (item.op === 'project_changed_out') return t('移出项目')
+  if (item.op === 'triggered') return t('开始执行')
+  if (item.op === 'done') return item.subjectType === 'todo' ? t('待办完成') : t('任务完成')
+  if (item.op === 'failed') return t('执行失败')
+  if (item.op === 'cancelled') return item.subjectType === 'todo' ? t('待办取消') : t('执行取消')
+  if (item.op === 'deleted') return t('已归档')
+  return t('状态变更')
+}
+
+function formatActivityDetail(item: ProjectActivityItem, t: (key: string, values?: Record<string, string>) => string): string | null {
+  if (item.note?.trim()) return item.note.trim()
+  if (item.op === 'kind_changed' && item.fromKind && item.toKind) {
+    return `${item.fromKind === 'task' ? t('任务') : t('会话')} → ${item.toKind === 'task' ? t('任务') : t('会话')}`
+  }
+  if (item.fromStatus && item.toStatus && item.fromStatus !== item.toStatus) {
+    return `${formatOutputStatus(item.fromStatus, t)} → ${formatOutputStatus(item.toStatus, t)}`
+  }
+  return null
+}
+
+function activityTone(item: ProjectActivityItem): string {
+  if (item.op === 'done') return 'completed'
+  if (item.op === 'failed') return 'failed'
+  if (item.op === 'cancelled' || item.op === 'deleted') return 'cancelled'
+  if (item.op === 'triggered') return 'running'
+  return 'pending'
+}
+
+function ActivityRow({
+  item,
+  t,
+  locale,
+  compact = false,
+}: {
+  item: ProjectActivityItem
+  t: (key: string, values?: Record<string, string>) => string
+  locale: string
+  compact?: boolean
+}) {
   const location = useLocation()
-  const target = output.questId ? `/quests/${output.questId}` : undefined
-  const summary = output.summary?.trim()
-  const isGenericSummary = Boolean(summary && summary.includes('运行已完成'))
-  const visibleSummary = summary && !isGenericSummary ? summary : null
+  const target = item.subjectType === 'todo' ? undefined : `/quests/${item.subjectId}`
+  const detail = formatActivityDetail(item, t)
+  const className = `pluse-output-row pluse-activity-row${compact ? ' is-compact' : ''}`
   const content = (
     <>
       <div className="pluse-output-row-main">
         <div className="pluse-output-row-top">
-          <strong>{output.title}</strong>
-          <span className={`pluse-task-status is-${String(output.status).toLowerCase()}`}>{formatOutputStatus(output.status)}</span>
+          <strong>{item.title}</strong>
+          <span className={`pluse-activity-op is-${activityTone(item)}`}>{formatActivityOp(item, t)}</span>
         </div>
-        {visibleSummary ? <p>{visibleSummary}</p> : null}
+        {detail ? <p>{detail}</p> : null}
       </div>
       <div className="pluse-output-row-meta">
-        <span>{output.kind === 'chat_run' ? '会话' : '任务'}</span>
+        <span>{formatActivitySubjectType(item.subjectType, t)}</span>
         <span className="pluse-meta-inline">
           <ClockIcon className="pluse-icon pluse-inline-icon" />
-          {formatDateTime(output.completedAt)}
+          {formatDateTime(item.createdAt, t, locale)}
         </span>
       </div>
     </>
@@ -147,13 +366,76 @@ function OutputRow({ output }: { output: ProjectRecentOutput }) {
 
   return target ? (
     <Link
-      className="pluse-output-row"
+      className={className}
       to={target}
-      state={output.kind === 'chat_run' ? undefined : taskOverlayState(location)}
+      state={item.subjectType === 'task' ? taskOverlayState(location) : undefined}
     >
       {content}
     </Link>
-  ) : <div className="pluse-output-row">{content}</div>
+  ) : <div className={className}>{content}</div>
+}
+
+function WaitingTodoRow({
+  todo,
+  locale,
+  t,
+  disabled = false,
+  onToggle,
+}: {
+  todo: Todo
+  locale: string
+  t: (key: string, values?: Record<string, string>) => string
+  disabled?: boolean
+  onToggle: (todo: Todo) => Promise<void> | void
+}) {
+  const location = useLocation()
+  const note = todo.waitingInstructions || todo.description || t('等待新的输入后再继续。')
+  const scheduleSummary = formatTodoScheduleSummary(todo, locale, t)
+  const completeLabel = todo.repeat !== 'none' ? t('完成本次') : t('完成任务')
+
+  return (
+    <article className="pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-todo pluse-overview-waiting-item">
+      <button
+        type="button"
+        className="pluse-todo-toggle"
+        onClick={() => void onToggle(todo)}
+        aria-label={completeLabel}
+        title={completeLabel}
+        disabled={disabled}
+      >
+      </button>
+      <div className="pluse-task-list-main pluse-overview-waiting-main">
+        <div className="pluse-task-list-copy">
+          <div className="pluse-sidebar-item-title">
+            <strong>{todo.title}</strong>
+          </div>
+          <p className="pluse-task-list-note">{note}</p>
+          {scheduleSummary ? <p className="pluse-task-list-note is-secondary">{scheduleSummary}</p> : null}
+          <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, t, locale)}>
+            <span className={`pluse-task-list-state is-${todo.status}`}>{formatOutputStatus(todo.status, t)}</span>
+            <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+            <span className="pluse-meta-inline">
+              <ClockIcon className="pluse-icon pluse-inline-icon" />
+              {formatRelativeTime(todo.updatedAt, t)}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="pluse-sidebar-item-actions">
+        {todo.originQuestId ? (
+          <Link
+            className="pluse-sidebar-action-btn pluse-task-source-link"
+            to={`/quests/${todo.originQuestId}`}
+            state={taskOverlayState(location)}
+            aria-label={t('来源会话')}
+            title={t('来源会话')}
+          >
+            <RouteIcon className="pluse-icon" />
+          </Link>
+        ) : null}
+      </div>
+    </article>
+  )
 }
 
 function ProjectPage({
@@ -165,6 +447,7 @@ function ProjectPage({
   onProjectLoaded: (overview: ProjectOverview) => void
   onProjectDeleted: () => Promise<void>
 }) {
+  const { locale, t } = useI18n()
   const navigate = useNavigate()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
   const [tab, setTab] = useState<'overview' | 'settings'>('overview')
@@ -172,6 +455,7 @@ function ProjectPage({
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
+  const [updatingWaitingTodoId, setUpdatingWaitingTodoId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [goal, setGoal] = useState('')
@@ -206,6 +490,17 @@ function ProjectPage({
     await loadOverview()
   }
 
+  async function handleWaitingTodoToggle(todo: Todo) {
+    setUpdatingWaitingTodoId(todo.id)
+    const result = await api.updateTodo(todo.id, { status: todo.status === 'done' ? 'pending' : 'done' })
+    setUpdatingWaitingTodoId(null)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await loadOverview()
+  }
+
   async function handleDeleteProject() {
     if (!overview || deleteConfirmName !== overview.project.name) return
     setDeleting(true)
@@ -220,7 +515,7 @@ function ProjectPage({
   }
 
   if (!overview) {
-    return <div className="pluse-page pluse-page-loading">正在加载项目…</div>
+    return <div className="pluse-page pluse-page-loading">{t('正在加载项目…')}</div>
   }
 
   return (
@@ -233,123 +528,93 @@ function ProjectPage({
               className={`pluse-project-tab${tab === 'overview' ? ' is-active' : ''}`}
               onClick={() => setTab('overview')}
             >
-              概览
+              {t('概览')}
             </button>
             <button
               type="button"
               className={`pluse-project-tab${tab === 'settings' ? ' is-active' : ''}`}
               onClick={() => setTab('settings')}
             >
-              设置
+              {t('设置')}
             </button>
           </div>
           <div className="pluse-project-tab-meta">
             <span className="pluse-info-path-sm">{shortPath(overview.project.workDir)}</span>
-            {overview.project.pinned ? <span className="pluse-inline-pill">固定</span> : null}
+            {overview.project.pinned ? <span className="pluse-inline-pill">{t('固定')}</span> : null}
           </div>
         </div>
 
         {tab === 'overview' ? (
           <div className="pluse-detail-grid">
-            <div className="pluse-overview-row pluse-overview-strip">
-              <div className="pluse-overview-stat">
-                <span>会话</span>
-                <strong>{overview.counts.sessions}</strong>
-              </div>
-              <div className="pluse-overview-stat">
-                <span>AI 任务</span>
-                <strong>{overview.counts.tasks}</strong>
-              </div>
-              <div className="pluse-overview-stat">
-                <span>人类任务</span>
-                <strong>{overview.counts.todos}</strong>
-              </div>
-              <div className="pluse-overview-stat">
-                <span>等待中</span>
-                <strong>{overview.waitingTodos.length}</strong>
-              </div>
-              <div className="pluse-overview-stat">
-                <span>调度</span>
-                <strong className="pluse-overview-stat-sm">{scheduleSummary(overview.schedule)}</strong>
-              </div>
-            </div>
+            <ProjectOverviewHero overview={overview} locale={locale} t={t} />
 
             {overview.waitingTodos.length > 0 ? (
               <ProjectCompactSection
                 key={`waiting-${overview.project.id}`}
-                title="等待中"
+                title={t('等待中')}
                 count={overview.waitingTodos.length}
                 defaultOpen
-                note="人类待办"
+                note={t('人类待办')}
                 scrollable={overview.waitingTodos.length > 3}
               >
-                <div className="pluse-note-list pluse-overview-scroll-list">
+                <div className="pluse-task-list pluse-overview-scroll-list">
                   {overview.waitingTodos.map((todo) => (
-                    <div key={todo.id} className="pluse-note-item">
-                      <div>
-                        <strong>{todo.title}</strong>
-                        <p>{todo.waitingInstructions || todo.description || '等待新的输入后再继续。'}</p>
-                      </div>
-                      <span className={`pluse-task-status is-${todo.status}`}>{todo.status}</span>
-                    </div>
+                    <WaitingTodoRow
+                      key={todo.id}
+                      todo={todo}
+                      locale={locale}
+                      t={t}
+                      disabled={updatingWaitingTodoId === todo.id}
+                      onToggle={handleWaitingTodoToggle}
+                    />
                   ))}
                 </div>
               </ProjectCompactSection>
             ) : null}
 
-            {overview.recentOutputs.length > 0 ? (
-              <ProjectCompactSection
-                key={`outputs-${overview.project.id}`}
-                title="最近输出"
-                count={overview.recentOutputs.length}
-                defaultOpen={overview.recentOutputs.length <= 2}
-                note="可折叠"
-                scrollable={overview.recentOutputs.length > 2}
-              >
-                <div className="pluse-output-list pluse-output-list-scroll">
-                  {overview.recentOutputs.map((output) => (
-                    <OutputRow key={`${output.kind}:${output.id}`} output={output} />
-                  ))}
-                </div>
-              </ProjectCompactSection>
-            ) : null}
           </div>
         ) : (
           <div className="pluse-detail-grid">
             <div className="pluse-form-grid">
               <label>
-                <span>项目名称</span>
+                <span>{t('项目名称')}</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
               </label>
               <label className="pluse-form-span">
-                <span>项目目标</span>
+                <span>{t('项目目标')}</span>
                 <textarea value={goal} onChange={(event) => setGoal(event.target.value)} rows={2} />
               </label>
               <label className="pluse-form-span">
-                <span>项目 Prompt</span>
+                <span>{t('项目 Prompt')}</span>
                 <textarea
                   value={systemPrompt}
                   onChange={(event) => setSystemPrompt(event.target.value)}
                   rows={5}
-                  placeholder="输入项目 Prompt"
+                  placeholder={t('输入项目 Prompt')}
                 />
-                <p className="pluse-info-copy">仅当前项目生效。全局系统 Prompt 在右上角设置里。</p>
+                <p className="pluse-info-copy">{t('仅当前项目生效。全局系统 Prompt 在右上角设置里。')}</p>
               </label>
             </div>
             <div className="pluse-settings-actions">
               <button type="button" className="pluse-button" onClick={() => void saveProject()} disabled={saving}>
-                {saving ? '保存中…' : '保存'}
+                {saving ? t('保存中…') : t('保存')}
               </button>
             </div>
             <div className="pluse-settings-danger-zone">
-              <h3>危险操作</h3>
+              <h3>{t('危险操作')}</h3>
               {!confirmDelete ? (
                 <button type="button" className="pluse-button pluse-button-danger" onClick={() => setConfirmDelete(true)}>
-                  归档项目
+                  {t('归档项目')}
                 </button>
               ) : (
                 <div className="pluse-delete-confirm">
-                  <p>此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
+                  <p>
+                    {t('此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称')}
+                    {' '}
+                    <strong>{overview.project.name}</strong>
+                    {' '}
+                    {t('确认：')}
+                  </p>
                   <input
                     type="text"
                     value={deleteConfirmName}
@@ -364,10 +629,10 @@ function ProjectPage({
                       onClick={() => void handleDeleteProject()}
                       disabled={deleting || deleteConfirmName !== overview.project.name}
                     >
-                      {deleting ? '归档中…' : '确认归档'}
+                      {deleting ? t('归档中…') : t('确认归档')}
                     </button>
                     <button type="button" className="pluse-button pluse-button-ghost" onClick={() => { setConfirmDelete(false); setDeleteConfirmName('') }}>
-                      取消
+                      {t('取消')}
                     </button>
                   </div>
                 </div>
@@ -387,8 +652,9 @@ function QuestRoute({
   onDataChanged,
 }: {
   onQuestResolved: (quest: Quest) => void
-  onDataChanged: () => Promise<void>
+  onDataChanged?: () => Promise<void>
 }) {
+  const { t } = useI18n()
   const location = useLocation()
   const { questId } = useParams()
   const [quest, setQuest] = useState<Quest | null>(null)
@@ -415,22 +681,22 @@ function QuestRoute({
       <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
         <section className="pluse-modal-panel pluse-task-detail-modal">
           <div className="pluse-task-detail-loading">
-            <p className="pluse-empty-inline">加载失败：{error}</p>
+            <p className="pluse-empty-inline">{t('加载失败：{error}', { error })}</p>
           </div>
         </section>
       </div>
-    ) : <div className="pluse-page pluse-page-loading">加载失败：{error}</div>
+    ) : <div className="pluse-page pluse-page-loading">{t('加载失败：{error}', { error })}</div>
   }
   if (!quest) {
     return isOverlay ? (
       <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
         <section className="pluse-modal-panel pluse-task-detail-modal">
           <div className="pluse-task-detail-loading">
-            <p className="pluse-empty-inline">正在加载任务…</p>
+            <p className="pluse-empty-inline">{t('正在加载任务…')}</p>
           </div>
         </section>
       </div>
-    ) : <div className="pluse-page pluse-page-loading">正在加载内容…</div>
+    ) : <div className="pluse-page pluse-page-loading">{t('正在加载内容…')}</div>
   }
 
   const handleQuestLoaded = (nextQuest: Quest) => {
@@ -438,9 +704,23 @@ function QuestRoute({
     onQuestResolved(nextQuest)
   }
 
-  return quest.kind === 'task'
-    ? <TaskDetail questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
-    : <ChatView questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
+  const fallback = isOverlay ? (
+    <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
+      <section className="pluse-modal-panel pluse-task-detail-modal">
+        <div className="pluse-task-detail-loading">
+          <p className="pluse-empty-inline">{t('正在加载内容…')}</p>
+        </div>
+      </section>
+    </div>
+  ) : <RouteLoading message={t('正在加载内容…')} />
+
+  return (
+    <Suspense fallback={fallback}>
+      {quest.kind === 'task'
+        ? <TaskDetail questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
+        : <ChatView questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />}
+    </Suspense>
+  )
 }
 
 function WorkspaceHeader(props: {
@@ -451,6 +731,7 @@ function WorkspaceHeader(props: {
   subtitle?: string | null
   floating?: boolean
   overlayOpen?: boolean
+  hideContext?: boolean
   sidebarVisible: boolean
   railVisible: boolean
   showSidebarToggle: boolean
@@ -462,17 +743,17 @@ function WorkspaceHeader(props: {
   onOpenSettings: () => void
   onOpenWorkspace: () => void
 }) {
+  const { locale, setLocale, t } = useI18n()
   const title = props.title ?? (props.activeQuest
-    ? questLabel(props.activeQuest)
+    ? questLabel(props.activeQuest, t)
     : props.activeProject?.name || 'Pluse')
   const subtitle = props.subtitle ?? (props.activeQuest
     ? props.activeQuest.kind === 'task'
-      ? formatOutputStatus(props.activeQuest.status ?? 'idle')
-      : props.activeQuest.activeRunId
-        ? '运行中'
-        : props.activeQuest.followUpQueue.length > 0
-          ? `排队 ${props.activeQuest.followUpQueue.length}`
-          : null
+      ? formatOutputStatus(props.activeQuest.status ?? 'idle', t)
+      : [
+          props.activeQuest.activeRunId ? t('运行中') : null,
+          props.activeQuest.followUpQueue.length > 0 ? t('待发送 {count}', { count: props.activeQuest.followUpQueue.length }) : null,
+        ].filter(Boolean).join(' · ') || null
     : props.activeProject?.workDir
       ? shortPath(props.activeProject.workDir)
       : null)
@@ -480,7 +761,13 @@ function WorkspaceHeader(props: {
   return (
     <header className={`pluse-header${props.floating ? ' is-floating' : ''}${props.overlayOpen ? ' has-panel-overlay' : ''}`}>
       <div className="pluse-header-primary">
-        <button type="button" className="pluse-icon-button pluse-mobile-only" onClick={props.onToggleSidebar} aria-label="打开侧栏">
+        <button
+          type="button"
+          className="pluse-icon-button pluse-mobile-only"
+          onClick={props.onToggleSidebar}
+          aria-label={t('打开侧栏')}
+          title={t('打开侧栏')}
+        >
           <MenuIcon className="pluse-icon" />
         </button>
         <button type="button" className="pluse-wordmark" onClick={props.onOpenWorkspace}>
@@ -489,20 +776,31 @@ function WorkspaceHeader(props: {
       </div>
 
       <div className="pluse-header-center">
-        <div className="pluse-header-context">
-          <strong>{title}</strong>
-          {subtitle ? <span>{subtitle}</span> : null}
-        </div>
+        {!props.hideContext ? (
+          <div className="pluse-header-context">
+            <strong>{title}</strong>
+            {subtitle ? <span>{subtitle}</span> : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="pluse-header-actions">
         <span className="pluse-header-presence" aria-hidden="true" />
         <button
           type="button"
+          className="pluse-button pluse-button-ghost pluse-button-compact"
+          onClick={() => setLocale(nextLocale(locale))}
+          aria-label={t('切换语言')}
+          title={t('切换语言')}
+        >
+          {localeLabel(nextLocale(locale))}
+        </button>
+        <button
+          type="button"
           className="pluse-icon-button pluse-header-action-icon pluse-theme-toggle"
           onClick={props.onToggleTheme}
-          aria-label={props.theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
-          title={props.theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'}
+          aria-label={props.theme === 'dark' ? t('切换到浅色模式') : t('切换到深色模式')}
+          title={props.theme === 'dark' ? t('切换到浅色模式') : t('切换到深色模式')}
         >
           {props.theme === 'dark' ? <SunIcon className="pluse-icon" /> : <MoonIcon className="pluse-icon" />}
         </button>
@@ -511,10 +809,10 @@ function WorkspaceHeader(props: {
             type="button"
             className="pluse-icon-button pluse-header-action-icon"
             onClick={props.onOpenSettings}
-            aria-label="打开设置"
-            title="设置"
+            aria-label={t('打开设置')}
+            title={t('设置')}
           >
-            <SettingsIcon className="pluse-icon" />
+            <SlidersIcon className="pluse-icon" />
           </button>
         ) : null}
         {props.showSidebarToggle ? (
@@ -522,8 +820,8 @@ function WorkspaceHeader(props: {
             type="button"
             className={`pluse-icon-button pluse-header-action-icon${props.sidebarVisible ? ' is-active' : ''}`}
             onClick={props.onToggleSidebar}
-            aria-label="切换侧栏"
-            title="切换侧栏"
+            aria-label={t('切换侧栏')}
+            title={t('切换侧栏')}
           >
             <SidebarIcon className="pluse-icon" />
           </button>
@@ -533,8 +831,8 @@ function WorkspaceHeader(props: {
             type="button"
             className={`pluse-icon-button pluse-header-action-icon pluse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
-            aria-label="切换任务面板"
-            title="切换任务面板"
+            aria-label={t('切换任务面板')}
+            title={t('切换任务面板')}
           >
             <RailIcon className="pluse-icon" />
           </button>
@@ -553,6 +851,7 @@ function Shell({
   theme: ThemeMode
   onToggleTheme: () => void
 }) {
+  const { t } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
   const locationPathRef = useRef(location.pathname)
@@ -609,8 +908,8 @@ function Shell({
   }, [navigate])
 
   const handleOverviewChanged = useCallback(async () => {
-    await loadProjects()
-  }, [loadProjects])
+    return
+  }, [])
 
   const handleProjectOverviewLoaded = useCallback((overview: ProjectOverview) => {
     setActiveProjectId(overview.project.id)
@@ -657,22 +956,32 @@ function Shell({
   useEffect(() => {
     if (!activeProjectId) return
     const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
-    source.onmessage = () => {
-      void loadProjects()
+    let reloadTimer: number | null = null
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+      if (event.type !== 'project_opened' && event.type !== 'project_updated') return
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => {
+        void loadProjects()
+      }, 120)
     }
     source.onerror = () => source.close()
-    return () => source.close()
+    return () => {
+      source.close()
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+    }
   }, [activeProjectId, loadProjects])
 
   if (!auth.setupRequired && !auth.authenticated) {
     return <Navigate to="/login" replace />
   }
 
-  if (loading) return <div className="pluse-loading">正在加载 Pluse…</div>
+  if (loading) return <div className="pluse-loading">{t('正在加载 Pluse…')}</div>
   if (loadError) return (
     <div className="pluse-loading">
-      <p>加载失败：{loadError}</p>
-      <button type="button" className="pluse-button" onClick={() => { void loadProjects() }}>重试</button>
+      <p>{t('加载失败：{error}', { error: loadError })}</p>
+      <button type="button" className="pluse-button" onClick={() => { void loadProjects() }}>{t('重试')}</button>
     </div>
   )
 
@@ -682,10 +991,11 @@ function Shell({
         activeProject={activeProject}
         activeQuest={activeQuest}
         theme={theme}
-        title={isSettingsRoute ? '设置' : undefined}
-        subtitle={isSettingsRoute ? '全局系统 Prompt' : undefined}
+        title={isSettingsRoute ? t('设置') : undefined}
+        subtitle={isSettingsRoute ? t('全局系统 Prompt') : undefined}
         floating={!isDesktop && isQuestRoute && isSessionRoute}
         overlayOpen={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
+        hideContext={!isDesktop && mobileSidebarOpen}
         sidebarVisible={sidebarVisible}
         railVisible={railVisible}
         showSidebarToggle={isDesktop}
@@ -724,7 +1034,8 @@ function Shell({
             setMobileSidebarOpen(false)
             setMobileRailOpen(false)
           }}
-          aria-label="关闭面板"
+          aria-label={t('关闭面板')}
+          title={t('关闭面板')}
         />
 
         <div className={`pluse-sidebar-shell${sidebarVisible ? ' is-open' : ''}${isDesktop && !desktopSidebarVisible ? ' is-hidden' : ''}`}>
@@ -753,13 +1064,19 @@ function Shell({
                   />
                 }
               />
-              <Route path="/settings" element={<SettingsPage />} />
+              <Route
+                path="/settings"
+                element={(
+                  <Suspense fallback={<RouteLoading message={t('正在加载设置…')} />}>
+                    <SettingsPage />
+                  </Suspense>
+                )}
+              />
               <Route
                 path="/quests/:questId"
                 element={
                   <QuestRoute
                     onQuestResolved={handleQuestResolved}
-                    onDataChanged={loadProjects}
                   />
                 }
               />
@@ -772,7 +1089,6 @@ function Shell({
                   element={
                     <QuestRoute
                       onQuestResolved={handleQuestResolved}
-                      onDataChanged={loadProjects}
                     />
                   }
                 />
@@ -787,8 +1103,8 @@ function Shell({
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
               activeQuestId={activeQuestId}
+              activeQuest={activeQuest}
               onRequestClose={() => setMobileRailOpen(false)}
-              onDataChanged={loadProjects}
             />
           </div>
         ) : null}
@@ -810,6 +1126,7 @@ function ProjectRoute({
 }
 
 export function MainPage() {
+  const { t } = useI18n()
   const [auth, setAuth] = useState<AuthMe | null>(null)
   const [theme, setTheme] = useState<ThemeMode>(resolveInitialTheme)
 
@@ -825,7 +1142,7 @@ export function MainPage() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme)
   }, [theme])
 
-  if (!auth) return <div className="pluse-loading">正在加载 Pluse…</div>
+  if (!auth) return <div className="pluse-loading">{t('正在加载 Pluse…')}</div>
 
   return (
     <Routes>

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
-import type { AiPromptConfig, RuntimeModelCatalog, RuntimeTool, ScriptConfig } from '@pluse/types'
+import type { AiPromptConfig, RuntimeModelCatalog, RuntimeTool, ScriptConfig, TodoRepeat } from '@pluse/types'
 import * as api from '@/api/client'
+import { useI18n } from '@/i18n'
+import { formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import {
   buildFallbackRuntimeModelCatalog,
   defaultRuntimeEffortId,
@@ -35,12 +37,146 @@ const FALLBACK_RUNTIME_TOOLS: RuntimeTool[] = [
   { id: 'claude', name: 'Claude Code', command: 'claude', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
 ]
 
-function defaultTitle(kind: TaskComposerKind): string {
-  return kind === 'ai' ? '新 AI 任务' : '新任务'
+type SegmentedOption<T extends string> = {
+  value: T
+  label: string
+}
+
+type TaskRecurringPreset = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'custom'
+
+type ParsedRecurringSchedule = {
+  preset: TaskRecurringPreset
+  time: string
+  weekday: string
+  monthDay: string
+  customCron: string
+}
+
+type TranslateFn = (key: string, values?: Record<string, string | number>) => string
+
+function defaultTitle(kind: TaskComposerKind, t?: (key: string) => string): string {
+  if (kind === 'ai') return t ? t('新 AI 任务') : '新 AI 任务'
+  return t ? t('新任务') : '新任务'
 }
 
 function defaultTaskTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+}
+
+function padNumber(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function formatEffortLabel(value: string, t: TranslateFn): string {
+  if (value === 'low') return t('低')
+  if (value === 'medium') return t('标准')
+  if (value === 'high') return t('高')
+  if (value === 'xhigh') return t('超高')
+  return value
+}
+
+function formatLocalTime(hour: number, minute: number): string {
+  return `${padNumber(hour)}:${padNumber(minute)}`
+}
+
+function parseTimeInput(value: string): { hour: number; minute: number } {
+  const match = value.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return { hour: 9, minute: 0 }
+  const hour = Math.min(23, Math.max(0, Number.parseInt(match[1] ?? '9', 10)))
+  const minute = Math.min(59, Math.max(0, Number.parseInt(match[2] ?? '0', 10)))
+  return { hour, minute }
+}
+
+function normalizeCronWeekdayToken(value: string): string {
+  return value === '7' ? '0' : value
+}
+
+function nextWeekdayAt(base: Date, weekday: number, hour: number, minute: number): Date {
+  const next = new Date(base)
+  next.setHours(hour, minute, 0, 0)
+  let offset = (weekday - next.getDay() + 7) % 7
+  if (offset === 0 && next.getTime() <= base.getTime()) offset = 7
+  next.setDate(next.getDate() + offset)
+  return next
+}
+
+function buildRecurringCron(input: ParsedRecurringSchedule): string | null {
+  if (input.preset === 'custom') return input.customCron.trim() || null
+
+  const { hour, minute } = parseTimeInput(input.time)
+  const cronPrefix = `${minute} ${hour}`
+  if (input.preset === 'daily') return `${cronPrefix} * * *`
+  if (input.preset === 'weekdays') return `${cronPrefix} * * 1-5`
+  if (input.preset === 'weekly') return `${cronPrefix} * * ${normalizeCronWeekdayToken(input.weekday || '1')}`
+  const monthDay = Math.min(31, Math.max(1, Number.parseInt(input.monthDay || '1', 10) || 1))
+  return `${cronPrefix} ${monthDay} * *`
+}
+
+function formatRecurringSummary(input: ParsedRecurringSchedule, t: TranslateFn): string {
+  const weekdayLabel = input.weekday === '1' ? t('每周一')
+    : input.weekday === '2' ? t('每周二')
+      : input.weekday === '3' ? t('每周三')
+        : input.weekday === '4' ? t('每周四')
+          : input.weekday === '5' ? t('每周五')
+            : input.weekday === '6' ? t('每周六')
+              : t('每周日')
+
+  if (input.preset === 'daily') return t('每天 {{time}}', { time: input.time })
+  if (input.preset === 'weekdays') return t('工作日 {{time}}', { time: input.time })
+  if (input.preset === 'weekly') return t('{{day}} {{time}}', { day: weekdayLabel, time: input.time })
+  if (input.preset === 'monthly') return t('每月 {{day}} 日 {{time}}', { day: input.monthDay || '1', time: input.time })
+  return input.customCron.trim() ? t('自定义 Cron · {{cron}}', { cron: input.customCron.trim() }) : t('自定义周期')
+}
+
+function SegmentedControl<T extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: T
+  options: Array<SegmentedOption<T>>
+  onChange: (value: T) => void
+  ariaLabel: string
+}) {
+  return (
+    <div className="pluse-task-segmented" role="tablist" aria-label={ariaLabel}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          role="tab"
+          aria-selected={value === option.value}
+          className={`pluse-task-segmented-option${value === option.value ? ' is-active' : ''}`}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function TaskSettingSwitch({
+  label,
+  note,
+  checked,
+  onChange,
+}: {
+  label: string
+  note: string
+  checked: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <button type="button" className={`pluse-task-setting-switch${checked ? ' is-on' : ''}`} onClick={() => onChange(!checked)}>
+      <span className="pluse-task-setting-switch-copy">
+        <strong>{label}</strong>
+        <span>{note}</span>
+      </span>
+      <span className={`pluse-toggle${checked ? ' is-on' : ''}`} aria-hidden="true" />
+    </button>
+  )
 }
 
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
@@ -151,6 +287,7 @@ export function TaskComposerModal({
   onClose,
   onCreated,
 }: TaskComposerModalProps) {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const isConversionMode = Boolean(conversionQuestId)
@@ -158,6 +295,8 @@ export function TaskComposerModal({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [waitingInstructions, setWaitingInstructions] = useState('')
+  const [dueAt, setDueAt] = useState('')
+  const [repeat, setRepeat] = useState<TodoRepeat>('none')
   const [tool, setTool] = useState<'claude' | 'codex'>('codex')
   const [model, setModel] = useState(defaultRuntimeModelId('codex'))
   const [effort, setEffort] = useState(defaultRuntimeEffortId('codex'))
@@ -172,6 +311,10 @@ export function TaskComposerModal({
   const [timeout, setTimeoutValue] = useState('')
   const [scheduleKind, setScheduleKind] = useState<'once' | 'scheduled' | 'recurring'>('once')
   const [runAt, setRunAt] = useState('')
+  const [recurringPreset, setRecurringPreset] = useState<TaskRecurringPreset>('daily')
+  const [recurringTime, setRecurringTime] = useState('09:00')
+  const [recurringWeekday, setRecurringWeekday] = useState('1')
+  const [recurringMonthDay, setRecurringMonthDay] = useState(String(new Date().getDate()))
   const [cron, setCron] = useState('')
   const [runtimeTools, setRuntimeTools] = useState<RuntimeTool[]>(FALLBACK_RUNTIME_TOOLS)
   const [catalog, setCatalog] = useState<RuntimeModelCatalog | null>(buildFallbackRuntimeModelCatalog('codex'))
@@ -184,6 +327,8 @@ export function TaskComposerModal({
     setTitle(conversionQuestName ?? '')
     setDescription(conversionQuestDescription ?? '')
     setWaitingInstructions('')
+    setDueAt('')
+    setRepeat('none')
     setTool('codex')
     setModel(defaultRuntimeModelId('codex'))
     setEffort(defaultRuntimeEffortId('codex'))
@@ -198,6 +343,10 @@ export function TaskComposerModal({
     setTimeoutValue('')
     setScheduleKind('once')
     setRunAt('')
+    setRecurringPreset('daily')
+    setRecurringTime('09:00')
+    setRecurringWeekday('1')
+    setRecurringMonthDay(String(new Date().getDate()))
     setCron('')
     setRuntimeTools(FALLBACK_RUNTIME_TOOLS)
     setCatalog(buildFallbackRuntimeModelCatalog('codex'))
@@ -269,9 +418,110 @@ export function TaskComposerModal({
     [catalog, resolvedModel],
   )
   const effortLabel = useMemo(
-    () => resolveRuntimeEffortSelection(tool, effort, catalog) || '默认',
-    [tool, effort, catalog],
+    () => formatEffortLabel(resolveRuntimeEffortSelection(tool, effort, catalog) || t('默认'), t),
+    [tool, effort, catalog, t],
   )
+  const toolOptions = useMemo<Array<SegmentedOption<'claude' | 'codex'>>>(
+    () => runtimeTools
+      .filter((item): item is RuntimeTool & { id: 'claude' | 'codex' } => item.id === 'claude' || item.id === 'codex')
+      .map((item) => ({ value: item.id, label: item.name })),
+    [runtimeTools],
+  )
+  const effortChoiceOptions = useMemo<Array<SegmentedOption<string>>>(
+    () => effortOptions.map((item) => ({ value: item, label: formatEffortLabel(item, t) })),
+    [effortOptions, t],
+  )
+  const executorKindOptions = useMemo<Array<SegmentedOption<'ai_prompt' | 'script'>>>(
+    () => [
+      { value: 'ai_prompt', label: t('AI 提示词') },
+      { value: 'script', label: t('脚本') },
+    ],
+    [t],
+  )
+  const scheduleKindOptions = useMemo<Array<SegmentedOption<'once' | 'scheduled' | 'recurring'>>>(
+    () => [
+      { value: 'once', label: t('手动') },
+      { value: 'scheduled', label: t('定时') },
+      { value: 'recurring', label: t('周期') },
+    ],
+    [t],
+  )
+  const recurringPresetOptions = useMemo<Array<SegmentedOption<TaskRecurringPreset>>>(
+    () => [
+      { value: 'daily', label: t('每天') },
+      { value: 'weekdays', label: t('工作日') },
+      { value: 'weekly', label: t('每周') },
+      { value: 'monthly', label: t('每月') },
+      { value: 'custom', label: t('自定义') },
+    ],
+    [t],
+  )
+  const recurringWeekdayOptions = useMemo<Array<SegmentedOption<string>>>(
+    () => [
+      { value: '1', label: t('周一') },
+      { value: '2', label: t('周二') },
+      { value: '3', label: t('周三') },
+      { value: '4', label: t('周四') },
+      { value: '5', label: t('周五') },
+      { value: '6', label: t('周六') },
+      { value: '0', label: t('周日') },
+    ],
+    [t],
+  )
+  const todoRepeatOptions = useMemo<Array<SegmentedOption<TodoRepeat>>>(
+    () => [
+      { value: 'none', label: formatTodoRepeat('none', t) },
+      { value: 'daily', label: formatTodoRepeat('daily', t) },
+      { value: 'weekly', label: formatTodoRepeat('weekly', t) },
+      { value: 'monthly', label: formatTodoRepeat('monthly', t) },
+    ],
+    [t],
+  )
+  const scheduledQuickOptions = useMemo(() => {
+    const now = new Date()
+    const tonight = new Date(now)
+    tonight.setHours(18, 0, 0, 0)
+    const tonightLabel = tonight.getTime() > now.getTime() ? t('今晚 18:00') : t('明晚 18:00')
+    if (tonight.getTime() <= now.getTime()) tonight.setDate(tonight.getDate() + 1)
+
+    const tomorrowMorning = new Date(now)
+    tomorrowMorning.setDate(now.getDate() + 1)
+    tomorrowMorning.setHours(9, 0, 0, 0)
+
+    const tomorrowAfternoon = new Date(now)
+    tomorrowAfternoon.setDate(now.getDate() + 1)
+    tomorrowAfternoon.setHours(15, 0, 0, 0)
+
+    const nextMondayMorning = nextWeekdayAt(now, 1, 9, 0)
+
+    return [
+      { id: 'tonight', label: tonightLabel, value: toDateTimeLocalValue(tonight.toISOString()) },
+      { id: 'tomorrow-morning', label: t('明早 09:00'), value: toDateTimeLocalValue(tomorrowMorning.toISOString()) },
+      { id: 'tomorrow-afternoon', label: t('明天下午 15:00'), value: toDateTimeLocalValue(tomorrowAfternoon.toISOString()) },
+      { id: 'next-monday', label: t('下周一 09:00'), value: toDateTimeLocalValue(nextMondayMorning.toISOString()) },
+    ]
+  }, [t])
+  const recurringSummary = useMemo(
+    () => formatRecurringSummary({
+      preset: recurringPreset,
+      time: recurringTime,
+      weekday: recurringWeekday,
+      monthDay: recurringMonthDay,
+      customCron: cron,
+    }, t),
+    [recurringMonthDay, recurringPreset, recurringTime, recurringWeekday, cron, t],
+  )
+  const scheduledSummary = useMemo(() => {
+    const iso = fromDateTimeLocalValue(runAt)
+    return iso
+      ? new Intl.DateTimeFormat('zh-CN', {
+          month: 'numeric',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(new Date(iso))
+      : t('尚未设置时间')
+  }, [runAt, t])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -280,8 +530,31 @@ export function TaskComposerModal({
     setError(null)
 
     if (kind === 'ai') {
+      const scheduledRunAt = scheduleKind === 'scheduled' ? fromDateTimeLocalValue(runAt) : undefined
+      const recurringCron = scheduleKind === 'recurring'
+        ? buildRecurringCron({
+            preset: recurringPreset,
+            time: recurringTime,
+            weekday: recurringWeekday,
+            monthDay: recurringMonthDay,
+            customCron: cron,
+          })
+        : null
+
+      if (scheduleKind === 'scheduled' && !scheduledRunAt) {
+        setSaving(false)
+        setError(t('请选择运行时间'))
+        return
+      }
+
+      if (scheduleKind === 'recurring' && !recurringCron) {
+        setSaving(false)
+        setError(recurringPreset === 'custom' ? t('请输入 Cron 表达式') : t('请完善周期设置'))
+        return
+      }
+
       const payload = buildAiPayload({
-        title: title.trim() || defaultTitle(kind),
+        title: title.trim() || defaultTitle(kind, t),
         description: description.trim(),
         tool,
         model: resolvedModel,
@@ -296,8 +569,8 @@ export function TaskComposerModal({
         envText,
         timeout,
         scheduleKind,
-        runAt,
-        cron,
+        runAt: scheduledRunAt ?? '',
+        cron: recurringCron ?? '',
       })
 
       const result = conversionQuestId
@@ -325,9 +598,11 @@ export function TaskComposerModal({
       projectId,
       originQuestId: originQuestId || undefined,
       createdBy: 'human',
-      title: title.trim() || defaultTitle(kind),
+      title: title.trim() || defaultTitle(kind, t),
       description: description.trim() || undefined,
       waitingInstructions: waitingInstructions.trim() || undefined,
+      dueAt: fromDateTimeLocalValue(dueAt),
+      repeat,
     })
     setSaving(false)
     if (!result.ok) {
@@ -351,23 +626,23 @@ export function TaskComposerModal({
         className="pluse-modal-panel pluse-task-modal-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="创建任务"
+        aria-label={t('创建任务')}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="pluse-task-modal-head">
           <div className="pluse-task-modal-title">
-            <span className="pluse-task-modal-kicker">{projectName || '当前项目'}</span>
-            <h2>{isConversionMode ? '转换为任务' : '创建任务'}</h2>
+            <span className="pluse-task-modal-kicker">{projectName || t('当前项目')}</span>
+            <h2>{isConversionMode ? t('转换为任务') : t('创建任务')}</h2>
           </div>
-          <button type="button" className="pluse-icon-button" onClick={onClose} aria-label="关闭" disabled={saving}>
+          <button type="button" className="pluse-icon-button" onClick={onClose} aria-label={t('关闭')} title={t('关闭')} disabled={saving}>
             <CloseIcon className="pluse-icon" />
           </button>
         </header>
 
         <form className="pluse-task-modal-body" onSubmit={handleSubmit}>
           <div className="pluse-task-modal-summary">
-            <span className="pluse-sidebar-badge">{projectName || '当前项目'}</span>
-            <span className="pluse-inline-pill">{kind === 'ai' ? 'AI 任务' : '人类任务'}</span>
+            <span className="pluse-sidebar-badge">{projectName || t('当前项目')}</span>
+            <span className="pluse-inline-pill">{kind === 'ai' ? t('AI 任务') : t('人类任务')}</span>
             {kind === 'ai' ? (
               <>
                 <span className="pluse-sidebar-badge">{toolLabel}</span>
@@ -375,11 +650,11 @@ export function TaskComposerModal({
                 <span className="pluse-sidebar-badge">{effortLabel}</span>
               </>
             ) : null}
-            {originQuestId ? <span className="pluse-sidebar-badge">{originQuestLabel || '来源会话'}</span> : null}
+            {originQuestId ? <span className="pluse-sidebar-badge">{originQuestLabel || t('来源会话')}</span> : null}
           </div>
 
           {isConversionMode ? null : (
-            <div className="pluse-task-modal-modes" role="tablist" aria-label="任务类型">
+            <div className="pluse-task-modal-modes" role="tablist" aria-label={t('任务类型')}>
               <button
                 type="button"
                 className={`pluse-task-modal-mode${kind === 'human' ? ' is-active' : ''}`}
@@ -388,7 +663,7 @@ export function TaskComposerModal({
                 <span className="pluse-task-modal-mode-icon">
                   <UserIcon className="pluse-icon" />
                 </span>
-                <strong>人类</strong>
+                <strong>{t('人类')}</strong>
               </button>
               <button
                 type="button"
@@ -398,33 +673,33 @@ export function TaskComposerModal({
                 <span className="pluse-task-modal-mode-icon">
                   <SparkIcon className="pluse-icon" />
                 </span>
-                <strong>AI</strong>
+                <strong>{t('AI')}</strong>
               </button>
             </div>
           )}
 
           <section className="pluse-task-modal-section">
             <header className="pluse-task-modal-section-head">
-              <h3>基础</h3>
+              <h3>{t('基础')}</h3>
             </header>
             <div className="pluse-task-modal-grid">
               <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                <span>标题</span>
+                <span>{t('标题')}</span>
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder={defaultTitle(kind)}
+                  placeholder={defaultTitle(kind, t)}
                   autoFocus
                 />
               </label>
 
               <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                <span>说明</span>
+                <span>{t('说明')}</span>
                 <textarea
                   rows={3}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="上下文、约束、验收标准。"
+                  placeholder={t('上下文、约束、验收标准。')}
                 />
               </label>
             </div>
@@ -433,16 +708,38 @@ export function TaskComposerModal({
           {kind === 'human' ? (
             <section className="pluse-task-modal-section">
               <header className="pluse-task-modal-section-head">
-                <h3>等待</h3>
+                <h3>{t('计划')}</h3>
+              </header>
+              <div className="pluse-task-modal-grid">
+                <label className="pluse-task-modal-field">
+                  <span>{t('时间')}</span>
+                  <input
+                    type="datetime-local"
+                    value={dueAt}
+                    onChange={(event) => setDueAt(event.target.value)}
+                  />
+                </label>
+                <div className="pluse-task-modal-field">
+                  <span>{t('重复')}</span>
+                  <SegmentedControl value={repeat} options={todoRepeatOptions} onChange={setRepeat} ariaLabel={t('重复')} />
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {kind === 'human' ? (
+            <section className="pluse-task-modal-section">
+              <header className="pluse-task-modal-section-head">
+                <h3>{t('等待')}</h3>
               </header>
               <div className="pluse-task-modal-grid">
                 <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                  <span>等待说明</span>
+                  <span>{t('等待说明')}</span>
                   <textarea
                     rows={4}
                     value={waitingInstructions}
                     onChange={(event) => setWaitingInstructions(event.target.value)}
-                    placeholder="例如：等设计确认后再继续。"
+                    placeholder={t('例如：等设计确认后再继续。')}
                   />
                 </label>
               </div>
@@ -451,29 +748,26 @@ export function TaskComposerModal({
             <>
               <section className="pluse-task-modal-section">
                 <header className="pluse-task-modal-section-head">
-                  <h3>执行</h3>
+                  <h3>{t('执行')}</h3>
                 </header>
-                <div className="pluse-task-modal-grid">
-                  <label className="pluse-task-modal-field">
-                    <span>工具</span>
-                    <select
+                <div className="pluse-task-modal-grid pluse-task-detail-config-grid">
+                  <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                    <span>{t('工具')}</span>
+                    <SegmentedControl
                       value={tool}
-                      onChange={(event) => {
-                        const nextTool = event.target.value === 'claude' ? 'claude' : 'codex'
+                      options={toolOptions}
+                      ariaLabel={t('工具')}
+                      onChange={(nextTool) => {
                         setTool(nextTool)
                         setCatalog(buildFallbackRuntimeModelCatalog(nextTool))
                         setModel(defaultRuntimeModelId(nextTool))
                         setEffort(defaultRuntimeEffortId(nextTool))
                       }}
-                    >
-                      {runtimeTools.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  </div>
 
                   <label className="pluse-task-modal-field">
-                    <span>模型</span>
+                    <span>{t('模型')}</span>
                     <select value={resolvedModel} onChange={(event) => setModel(event.target.value)}>
                       {catalog?.models.map((item) => (
                         <option key={item.id} value={item.id}>{item.label}</option>
@@ -482,71 +776,66 @@ export function TaskComposerModal({
                   </label>
 
                   {effortOptions.length > 0 ? (
-                    <label className="pluse-task-modal-field">
-                      <span>推理强度</span>
-                      <select value={resolveRuntimeEffortSelection(tool, effort, catalog)} onChange={(event) => setEffort(event.target.value)}>
-                        {effortOptions.map((item) => (
-                          <option key={item} value={item}>{item}</option>
-                        ))}
-                      </select>
-                    </label>
+                    <div className="pluse-task-modal-field">
+                      <span>{t('推理强度')}</span>
+                      <SegmentedControl
+                        value={resolveRuntimeEffortSelection(tool, effort, catalog)}
+                        options={effortChoiceOptions}
+                        ariaLabel={t('推理强度')}
+                        onChange={setEffort}
+                      />
+                    </div>
                   ) : null}
 
-                  <label className="pluse-task-modal-field">
-                    <span>深度思考</span>
-                    <select value={thinking ? 'true' : 'false'} onChange={(event) => setThinking(event.target.value === 'true')}>
-                      <option value="false">关闭</option>
-                      <option value="true">开启</option>
-                    </select>
-                  </label>
-
-                  <label className="pluse-task-modal-field">
-                    <span>完成后复盘</span>
-                    <select value={reviewOnComplete ? 'true' : 'false'} onChange={(event) => setReviewOnComplete(event.target.value === 'true')}>
-                      <option value="false">关闭</option>
-                      <option value="true">开启</option>
-                    </select>
-                  </label>
-
-                  <label className="pluse-task-modal-field">
-                    <span>沿用上下文</span>
-                    <select value={continueQuest ? 'true' : 'false'} onChange={(event) => setContinueQuest(event.target.value === 'true')}>
-                      <option value="true">继续上下文</option>
-                      <option value="false">独立运行</option>
-                    </select>
-                  </label>
+                  <div className="pluse-task-toggle-grid pluse-task-modal-field-span">
+                    <TaskSettingSwitch
+                      label={t('继续上下文')}
+                      note={t('保留当前 Quest 的上下文继续跑')}
+                      checked={continueQuest}
+                      onChange={setContinueQuest}
+                    />
+                    <TaskSettingSwitch
+                      label={t('深度思考')}
+                      note={t('需要时让模型展开更长推理')}
+                      checked={thinking}
+                      onChange={setThinking}
+                    />
+                    <TaskSettingSwitch
+                      label={t('完成后复盘')}
+                      note={t('任务结束后补一条 review todo')}
+                      checked={reviewOnComplete}
+                      onChange={setReviewOnComplete}
+                    />
+                  </div>
                 </div>
               </section>
 
               <section className="pluse-task-modal-section">
                 <header className="pluse-task-modal-section-head">
-                  <h3>执行器</h3>
+                  <h3>{t('执行器')}</h3>
                 </header>
-                <div className="pluse-task-modal-grid">
-                  <label className="pluse-task-modal-field">
-                    <span>执行类型</span>
-                    <select value={executorKind} onChange={(event) => setExecutorKind(event.target.value as 'ai_prompt' | 'script')}>
-                      <option value="ai_prompt">AI 提示词</option>
-                      <option value="script">脚本</option>
-                    </select>
-                  </label>
+                <div className="pluse-task-modal-grid pluse-task-detail-config-grid">
+                  <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                    <span>{t('执行类型')}</span>
+                    <SegmentedControl value={executorKind} options={executorKindOptions} onChange={setExecutorKind} ariaLabel={t('执行类型')} />
+                  </div>
 
                   {executorKind === 'ai_prompt' ? (
                     <>
                       <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                        <span>提示词</span>
+                        <span>{t('提示词')}</span>
                         <textarea
                           rows={7}
                           value={prompt}
                           onChange={(event) => setPrompt(event.target.value)}
-                          placeholder="输入提示词"
+                          placeholder={t('输入提示词')}
                         />
                       </label>
                     </>
                   ) : (
                     <>
                       <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                        <span>命令</span>
+                        <span>{t('命令')}</span>
                         <textarea
                           rows={4}
                           value={command}
@@ -556,7 +845,7 @@ export function TaskComposerModal({
                       </label>
 
                       <label className="pluse-task-modal-field">
-                        <span>工作目录</span>
+                        <span>{t('工作目录')}</span>
                         <input
                           value={workDir}
                           onChange={(event) => setWorkDir(event.target.value)}
@@ -565,7 +854,7 @@ export function TaskComposerModal({
                       </label>
 
                       <label className="pluse-task-modal-field">
-                        <span>超时（秒）</span>
+                        <span>{t('超时（秒）')}</span>
                         <input
                           value={timeout}
                           onChange={(event) => setTimeoutValue(event.target.value)}
@@ -574,7 +863,7 @@ export function TaskComposerModal({
                       </label>
 
                       <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                        <span>环境变量</span>
+                        <span>{t('环境变量')}</span>
                         <textarea
                           rows={4}
                           value={envText}
@@ -589,38 +878,80 @@ export function TaskComposerModal({
 
               <section className="pluse-task-modal-section">
                 <header className="pluse-task-modal-section-head">
-                  <h3>调度</h3>
+                  <h3>{t('调度')}</h3>
                 </header>
-                <div className="pluse-task-modal-grid">
-                  <label className="pluse-task-modal-field">
-                    <span>调度方式</span>
-                    <select value={scheduleKind} onChange={(event) => setScheduleKind(event.target.value as 'once' | 'scheduled' | 'recurring')}>
-                      <option value="once">手动</option>
-                      <option value="scheduled">定时</option>
-                      <option value="recurring">周期</option>
-                    </select>
-                  </label>
+                <div className="pluse-task-modal-grid pluse-task-detail-config-grid">
+                  <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                    <span>{t('调度方式')}</span>
+                    <SegmentedControl value={scheduleKind} options={scheduleKindOptions} onChange={setScheduleKind} ariaLabel={t('调度方式')} />
+                  </div>
+
+                  {scheduleKind === 'once' ? (
+                    <p className="pluse-task-detail-inline-note pluse-task-modal-field-span">{t('仅在你手动点击运行时执行。')}</p>
+                  ) : null}
 
                   {scheduleKind === 'scheduled' ? (
-                    <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                      <span>运行时间</span>
-                      <input
-                        value={runAt}
-                        onChange={(event) => setRunAt(event.target.value)}
-                        placeholder="2026-04-18T10:00:00+08:00"
-                      />
-                    </label>
+                    <>
+                      <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                        <span>{t('快捷设置')}</span>
+                        <div className="pluse-task-quick-presets">
+                          {scheduledQuickOptions.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              className={`pluse-task-quick-preset${runAt === option.value ? ' is-active' : ''}`}
+                              onClick={() => setRunAt(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="pluse-task-modal-field">
+                        <span>{t('运行时间')}</span>
+                        <input type="datetime-local" value={runAt} onChange={(event) => setRunAt(event.target.value)} />
+                      </label>
+                      <p className="pluse-task-detail-inline-note pluse-task-modal-field-span">
+                        {t('计划时间：{{time}}', { time: scheduledSummary })} · {t('自动按本机时区执行')}
+                      </p>
+                    </>
                   ) : null}
 
                   {scheduleKind === 'recurring' ? (
-                    <label className="pluse-task-modal-field pluse-task-modal-field-span">
-                      <span>Cron</span>
-                      <input
-                        value={cron}
-                        onChange={(event) => setCron(event.target.value)}
-                        placeholder="0 9 * * *"
-                      />
-                    </label>
+                    <>
+                      <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                        <span>{t('重复频率')}</span>
+                        <SegmentedControl value={recurringPreset} options={recurringPresetOptions} onChange={setRecurringPreset} ariaLabel={t('重复频率')} />
+                      </div>
+                      {recurringPreset === 'custom' ? (
+                        <label className="pluse-task-modal-field pluse-task-modal-field-span">
+                          <span>Cron</span>
+                          <input value={cron} onChange={(event) => setCron(event.target.value)} placeholder="0 9 * * 1-5" />
+                        </label>
+                      ) : (
+                        <>
+                          <label className="pluse-task-modal-field">
+                            <span>{t('执行时间')}</span>
+                            <input type="time" value={recurringTime} onChange={(event) => setRecurringTime(event.target.value)} />
+                          </label>
+                          {recurringPreset === 'weekly' ? (
+                            <div className="pluse-task-modal-field pluse-task-modal-field-span">
+                              <span>{t('星期')}</span>
+                              <SegmentedControl value={recurringWeekday} options={recurringWeekdayOptions} onChange={setRecurringWeekday} ariaLabel={t('星期')} />
+                            </div>
+                          ) : null}
+                          {recurringPreset === 'monthly' ? (
+                            <label className="pluse-task-modal-field">
+                              <span>{t('日期')}</span>
+                              <input type="number" min="1" max="31" value={recurringMonthDay} onChange={(event) => setRecurringMonthDay(event.target.value)} />
+                            </label>
+                          ) : null}
+                        </>
+                      )}
+                      <p className="pluse-task-detail-inline-note pluse-task-modal-field-span">
+                        {recurringSummary} · {t('自动按本机时区执行')}
+                      </p>
+                    </>
                   ) : null}
                 </div>
               </section>
@@ -631,10 +962,10 @@ export function TaskComposerModal({
 
           <footer className="pluse-task-modal-actions">
             <button type="button" className="pluse-button pluse-button-ghost" onClick={onClose} disabled={saving}>
-              取消
+              {t('取消')}
             </button>
             <button type="submit" className="pluse-button" disabled={!projectId || !title.trim() || saving}>
-              {saving ? '保存中…' : isConversionMode ? '保存并转换' : kind === 'ai' ? '创建 AI 任务' : '创建人类任务'}
+              {saving ? t('保存中…') : isConversionMode ? t('保存并转换') : kind === 'ai' ? t('创建 AI 任务') : t('创建人类任务')}
             </button>
           </footer>
         </form>
