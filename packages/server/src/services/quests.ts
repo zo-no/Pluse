@@ -1,18 +1,46 @@
-import type { CreateQuestInput, Quest, QuestOp, Run, UpdateQuestInput } from '@pluse/types'
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import type { CreateQuestInput, MoveQuestInput, Quest, QuestOp, Run, UpdateQuestInput } from '@pluse/types'
+import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDb } from '../db'
 import { listEvents } from '../models/history'
 import { createQuestOp, getQuestOps } from '../models/quest-op'
-import { createQuest, deleteQuest, getQuest, listQuests, updateQuest } from '../models/quest'
-import { getRunsByQuest } from '../models/run'
-import { listTodos, updateTodo } from '../models/todo'
+import { createQuest, getQuest, listQuests, updateQuest } from '../models/quest'
+import { getProject } from '../models/project'
+import { getLatestRunForQuest, getRun, getRunsByQuest } from '../models/run'
 import { emit } from './events'
-import { refreshQuestSchedule, removeScheduledQuest } from './scheduler'
+import { refreshQuestSchedule } from './scheduler'
 import { getAssetsDir, getHistoryRoot, getPluseRoot } from '../support/paths'
 
 function emitQuestUpdated(quest: Quest): void {
   emit({ type: 'quest_updated', data: { questId: quest.id, projectId: quest.projectId } })
+}
+
+function emitProjectUpdated(projectId: string): void {
+  emit({ type: 'project_updated', data: { projectId } })
+}
+
+function isInFlightRun(run: Run | null | undefined): boolean {
+  return run?.state === 'accepted' || run?.state === 'running'
+}
+
+function questHasActiveRun(quest: Quest): boolean {
+  if (quest.activeRunId && isInFlightRun(getRun(quest.activeRunId))) {
+    return true
+  }
+  return isInFlightRun(getLatestRunForQuest(quest.id))
+}
+
+function assertProjectContextAvailable(quest: Quest, targetProjectId: string): void {
+  const targetQuests = listQuests({ projectId: targetProjectId })
+    .filter((item) => item.id !== quest.id)
+
+  if (quest.codexThreadId && targetQuests.some((item) => item.codexThreadId === quest.codexThreadId)) {
+    throw new Error(`Target project already has a quest using codexThreadId ${quest.codexThreadId}`)
+  }
+
+  if (quest.claudeSessionId && targetQuests.some((item) => item.claudeSessionId === quest.claudeSessionId)) {
+    throw new Error(`Target project already has a quest using claudeSessionId ${quest.claudeSessionId}`)
+  }
 }
 
 function getSessionArchiveRoot(archivedAt: string): string {
@@ -69,15 +97,16 @@ export function listQuestViews(filter: Parameters<typeof listQuests>[0] = {}): Q
 }
 
 export function createQuestWithEffects(input: CreateQuestInput): Quest {
-  const quest = createQuest(input)
+  const created = createQuest(input)
   createQuestOp({
-    questId: quest.id,
+    questId: created.id,
     op: 'created',
     actor: input.createdBy === 'ai' ? 'ai' : input.createdBy === 'system' ? 'system' : 'human',
-    toKind: quest.kind,
-    toStatus: quest.status,
+    toKind: created.kind,
+    toStatus: created.status,
   })
-  refreshQuestSchedule(quest)
+  refreshQuestSchedule(created)
+  const quest = getQuest(created.id) ?? created
   emitQuestUpdated(quest)
   return quest
 }
@@ -85,61 +114,102 @@ export function createQuestWithEffects(input: CreateQuestInput): Quest {
 export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Quest {
   const before = getQuest(id)
   if (!before) throw new Error(`Quest not found: ${id}`)
-  const quest = updateQuest(id, input)
+  const updated = updateQuest(id, input)
   if (
     before.kind === 'session'
     && !before.deleted
     && input.deleted === true
-    && quest.deleted === true
-    && quest.deletedAt
+    && updated.deleted === true
+    && updated.deletedAt
   ) {
-    archiveSessionStorage(quest.id, quest.deletedAt)
+    archiveSessionStorage(updated.id, updated.deletedAt)
   }
 
-  if (before.kind !== quest.kind) {
+  if (before.kind !== updated.kind) {
     createQuestOp({
-      questId: quest.id,
+      questId: updated.id,
       op: 'kind_changed',
       actor: 'human',
       fromKind: before.kind,
-      toKind: quest.kind,
+      toKind: updated.kind,
       fromStatus: before.status,
-      toStatus: quest.status,
+      toStatus: updated.status,
     })
-  } else if (before.status !== quest.status && quest.kind === 'task') {
+  } else if (before.status !== updated.status && updated.kind === 'task') {
     createQuestOp({
-      questId: quest.id,
+      questId: updated.id,
       op: 'status_changed',
       actor: 'human',
       fromStatus: before.status,
-      toStatus: quest.status,
+      toStatus: updated.status,
     })
   }
 
-  refreshQuestSchedule(quest)
+  refreshQuestSchedule(updated)
+  const quest = getQuest(updated.id) ?? updated
   emitQuestUpdated(quest)
   return quest
+}
+
+export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
+  const before = getQuest(id)
+  if (!before) throw new Error(`Quest not found: ${id}`)
+  if (questHasActiveRun(before)) throw new Error('Cannot move quest while a run is active')
+  if (before.projectId === input.targetProjectId) {
+    throw new Error(`Quest already belongs to project: ${before.projectId}`)
+  }
+
+  const targetProject = getProject(input.targetProjectId)
+  if (!targetProject || targetProject.visibility === 'system') {
+    throw new Error(`Target project not found: ${input.targetProjectId}`)
+  }
+  if (targetProject.archived) {
+    throw new Error(`Target project is archived: ${input.targetProjectId}`)
+  }
+
+  assertProjectContextAvailable(before, input.targetProjectId)
+
+  const db = getDb()
+  const movedAt = new Date().toISOString()
+  const tx = db.transaction(() => {
+    db.run(
+      'UPDATE quests SET project_id = ?, updated_at = ? WHERE id = ?',
+      [input.targetProjectId, movedAt, id],
+    )
+    db.run(
+      'UPDATE runs SET project_id = ? WHERE quest_id = ?',
+      [input.targetProjectId, id],
+    )
+  })
+
+  try {
+    tx()
+  } catch (error) {
+    const message = String(error)
+    if (message.includes('UNIQUE constraint failed')) {
+      throw new Error(`Target project cannot accept quest ${id} because provider context already exists there`)
+    }
+    throw error
+  }
+
+  const moved = getQuest(id)!
+  createQuestOp({
+    questId: moved.id,
+    op: 'project_changed',
+    actor: 'human',
+    note: `Moved from ${before.projectId} to ${moved.projectId}`,
+  })
+  emit({ type: 'quest_updated', data: { questId: moved.id, projectId: before.projectId } })
+  emitQuestUpdated(moved)
+  emitProjectUpdated(before.projectId)
+  emitProjectUpdated(moved.projectId)
+  return moved
 }
 
 export function deleteQuestWithEffects(id: string): void {
   const quest = getQuest(id)
   if (!quest) throw new Error(`Quest not found: ${id}`)
-
-  removeScheduledQuest(id)
-  for (const todo of listTodos({ projectId: quest.projectId })) {
-    if (todo.originQuestId === id) {
-      updateTodo(todo.id, { originQuestId: null })
-    }
-  }
-  const db = getDb()
-  db.run(`DELETE FROM run_spool WHERE run_id IN (SELECT id FROM runs WHERE quest_id = ?)`, [id])
-  db.run(`DELETE FROM runs WHERE quest_id = ?`, [id])
-  db.run(`DELETE FROM assets WHERE quest_id = ?`, [id])
-  db.run(`DELETE FROM quest_ops WHERE quest_id = ?`, [id])
-  deleteQuest(id)
-
-  rmSync(join(getHistoryRoot(), id), { recursive: true, force: true })
-  rmSync(getAssetsDir(id), { recursive: true, force: true })
+  updateQuestWithEffects(id, { deleted: true })
   emit({ type: 'quest_deleted', data: { questId: id, projectId: quest.projectId } })
 }
 

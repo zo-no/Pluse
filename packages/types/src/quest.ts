@@ -142,6 +142,10 @@ export interface UpdateQuestInput {
   claudeSessionId?: string | null
 }
 
+export interface MoveQuestInput {
+  targetProjectId: string
+}
+
 export interface ListQuestsFilter {
   projectId?: string
   kind?: QuestKind
@@ -152,6 +156,7 @@ export interface ListQuestsFilter {
 export type QuestOpKind =
   | 'created'
   | 'kind_changed'
+  | 'project_changed'
   | 'triggered'
   | 'done'
   | 'failed'

@@ -1,5 +1,5 @@
 import type { CreateTodoInput, Todo, UpdateTodoInput } from '@pluse/types'
-import { createTodo, deleteTodo, getTodo, listTodos, updateTodo } from '../models/todo'
+import { createTodo, getTodo, listTodos, updateTodo } from '../models/todo'
 import { emit } from './events'
 
 function emitTodoUpdated(todo: Todo): void {
@@ -32,7 +32,8 @@ export function updateTodoWithEffects(id: string, input: UpdateTodoInput): Todo 
 export function deleteTodoWithEffects(id: string): void {
   const todo = getTodo(id)
   if (!todo) throw new Error(`Todo not found: ${id}`)
-  deleteTodo(id)
+  updateTodo(id, { deleted: true })
+  emitTodoUpdated(getTodo(id)!)
   emit({
     type: 'todo_deleted',
     data: {

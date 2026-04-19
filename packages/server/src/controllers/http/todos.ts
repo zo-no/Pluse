@@ -25,6 +25,7 @@ const TodoSchema = z.object({
   description: z.string().optional(),
   waitingInstructions: z.string().optional(),
   status: z.enum(['pending', 'done']).optional(),
+  deleted: z.boolean().optional(),
 })
 
 const TodoPatchSchema = z.object({
@@ -33,14 +34,18 @@ const TodoPatchSchema = z.object({
   description: z.string().nullable().optional(),
   waitingInstructions: z.string().nullable().optional(),
   status: z.enum(['pending', 'done']).optional(),
+  deleted: z.boolean().optional(),
 })
 
 export const todosRouter = new Hono()
 
 todosRouter.get('/todos', (c) => {
+  const deletedQuery = c.req.query('deleted')
+  const deleted = deletedQuery === 'true'
   return c.json(ok<Todo[]>(listTodoViews({
     projectId: c.req.query('projectId') || undefined,
     status: (c.req.query('status') as Todo['status'] | undefined) || undefined,
+    deleted,
   })))
 })
 

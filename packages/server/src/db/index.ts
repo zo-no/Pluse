@@ -2,6 +2,17 @@ import { Database } from 'bun:sqlite'
 import { dirname } from 'node:path'
 import { ensureDir, getDbPath } from '../support/paths'
 
+function getTableColumns(db: Database, table: string): Set<string> {
+  const rows = db.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all()
+  return new Set(rows.map((row) => row.name))
+}
+
+function ensureColumn(db: Database, table: string, column: string, ddl: string): void {
+  if (!getTableColumns(db, table).has(column)) {
+    db.run(ddl)
+  }
+}
+
 function initSchema(db: Database): void {
   db.run('PRAGMA journal_mode = WAL')
   db.run('PRAGMA foreign_keys = ON')
@@ -82,11 +93,16 @@ function initSchema(db: Database): void {
     description          TEXT,
     waiting_instructions TEXT,
     status               TEXT NOT NULL DEFAULT 'pending',
+    deleted              INTEGER NOT NULL DEFAULT 0,
+    deleted_at           TEXT,
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
   ) STRICT`)
+  ensureColumn(db, 'todos', 'deleted', 'ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
+  db.run('DROP INDEX IF EXISTS idx_todos_project')
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project
-    ON todos (project_id, status, updated_at DESC)`)
+    ON todos (project_id, deleted, status, updated_at DESC)`)
 
   db.run(`CREATE TABLE IF NOT EXISTS runs (
     id                    TEXT PRIMARY KEY NOT NULL,

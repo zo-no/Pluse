@@ -10,6 +10,8 @@ export interface Todo {
   description?: string
   waitingInstructions?: string
   status: TodoStatus
+  deleted?: boolean
+  deletedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -22,6 +24,7 @@ export interface CreateTodoInput {
   description?: string
   waitingInstructions?: string
   status?: TodoStatus
+  deleted?: boolean
 }
 
 export interface UpdateTodoInput {
@@ -30,4 +33,5 @@ export interface UpdateTodoInput {
   description?: string | null
   waitingInstructions?: string | null
   status?: TodoStatus
+  deleted?: boolean
 }

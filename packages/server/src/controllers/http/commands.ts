@@ -23,7 +23,7 @@ export function getCommandCatalog(): CommandCatalog {
     modules: [
       {
         name: 'quest',
-        description: 'Quest / Todo / Project 管理',
+        description: 'Quest 管理（Session / Task 统一入口）',
         commands: [
           {
             name: 'quest list',
@@ -39,9 +39,21 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'quest create',
-            cli: 'pluse quest create --project-id <id> --kind session|task [--json]',
+            cli: 'pluse quest create --project-id <id> --kind session|task [task flags: --schedule-kind/--executor-kind/--prompt/--command/--review-on-complete/--order] [--json]',
             api: 'POST /api/quests',
-            description: '创建新的 Quest',
+            description: '创建新的 Quest；task 可一次设置 schedule、executor 和 review 选项',
+          },
+          {
+            name: 'quest update',
+            cli: 'pluse quest update <id> [--kind session|task] [task flags: --schedule-kind/--executor-kind/--prompt/--command/--review-on-complete/--order] [--json]',
+            api: 'PATCH /api/quests/<id>',
+            description: '更新 Quest；task 复用与 create 相同的调度和执行器参数',
+          },
+          {
+            name: 'quest move',
+            cli: 'pluse quest move <id> --to-project-id <id> [--json]',
+            api: 'POST /api/quests/:id/move',
+            description: '把 Quest 移动到其他项目',
           },
           {
             name: 'quest message',

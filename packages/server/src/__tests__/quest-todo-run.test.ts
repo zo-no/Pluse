@@ -235,23 +235,35 @@ describe('quest/todo/run APIs', () => {
     expect((await DEL<{ deleted: true }>(`/api/quests/${linkedQuest.id}`)).status).toBe(200)
     const refreshedLinkedTodo = await GET<Todo>(`/api/todos/${mustOk(linkedTodo).id}`)
     expect(refreshedLinkedTodo.status).toBe(200)
-    expect(mustOk(refreshedLinkedTodo).originQuestId).toBeUndefined()
+    expect(mustOk(refreshedLinkedTodo).originQuestId).toBe(linkedQuest.id)
 
     const ops = await GET<QuestOp[]>(`/api/quests/${task.id}/ops`)
     expect(ops.status).toBe(200)
     expect(mustOk(ops).filter((entry) => entry.op === 'kind_changed')).toHaveLength(2)
 
-    const deletedTodo = await DEL<{ deleted: true }>(`/api/todos/${todoData.id}`)
-    expect(deletedTodo.status).toBe(200)
-    expect((await GET(`/api/todos/${todoData.id}`)).status).toBe(404)
+    const archivedTodo = await DEL<{ deleted: true }>(`/api/todos/${todoData.id}`)
+    expect(archivedTodo.status).toBe(200)
+    expect(mustOk(archivedTodo).deleted).toBe(true)
+    expect((await GET(`/api/todos/${todoData.id}`)).status).toBe(200)
+    const activeTodosAfterArchive = await GET<Todo[]>(`/api/todos?projectId=${project.id}&deleted=false`)
+    expect(activeTodosAfterArchive.status).toBe(200)
+    expect(mustOk(activeTodosAfterArchive).some((item) => item.id === todoData.id)).toBe(false)
+    const archivedTodosAfterArchive = await GET<Todo[]>(`/api/todos?projectId=${project.id}&deleted=true`)
+    expect(archivedTodosAfterArchive.status).toBe(200)
+    expect(mustOk(archivedTodosAfterArchive).some((item) => item.id === todoData.id)).toBe(true)
 
-    const commands = await GET<{ modules: Array<{ name: string; commands: Array<{ name: string; api: string }> }> }>('/api/commands')
+    const commands = await GET<{ modules: Array<{ name: string; description: string; commands: Array<{ name: string; api: string }> }> }>('/api/commands')
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
     expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
+    const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
+    expect(questModule?.description).toContain('统一入口')
+    expect(questModule?.commands.some((command) => command.name === 'quest update')).toBe(true)
+    expect(questModule?.commands.some((command) => command.name === 'quest move')).toBe(true)
+    expect(questModule?.commands.find((command) => command.name === 'quest create')?.api).toBe('POST /api/quests')
     const todoModule = commandCatalog.modules.find((module) => module.name === 'todo')
     expect(todoModule?.commands.map((command) => command.name)).toEqual(['todo list', 'todo get', 'todo create', 'todo done', 'todo update', 'todo delete'])
     expect(todoModule?.commands.some((command) => command.api.includes('/cancel'))).toBe(false)
@@ -291,7 +303,78 @@ describe('quest/todo/run APIs', () => {
     expect(archivedTaskIds).toEqual([archivedTask.id])
   })
 
-  it('persists assets under quest storage and removes quest data when deleting a project', async () => {
+  it('moves a quest to another project and reassigns its run history', async () => {
+    const sourceProject = await openProject('quest-move-source')
+    const targetProject = await openProject('quest-move-target')
+
+    const task = await createQuest({
+      projectId: sourceProject.id,
+      kind: 'task',
+      title: 'Move Me',
+      tool: 'codex',
+      executorKind: 'script',
+      executorConfig: {
+        command: "printf 'moved\\n'",
+      },
+    })
+
+    const linkedTodo = await POST<Todo>('/api/todos', {
+      projectId: sourceProject.id,
+      originQuestId: task.id,
+      title: 'Human follow-up',
+    })
+    expect(linkedTodo.status).toBe(201)
+
+    const started = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
+      requestId: 'move-task-1',
+      trigger: 'manual',
+      triggeredBy: 'api',
+    })
+    expect(started.status).toBe(200)
+    const startedData = mustOk(started)
+    expect(startedData.run?.id).toBeTruthy()
+
+    await waitFor(() => {
+      const run = getRun(startedData.run!.id)
+      expect(run?.state).toBe('completed')
+      return run
+    }, { timeoutMs: 6_000 })
+
+    const moved = await POST<Quest>(`/api/quests/${task.id}/move`, {
+      targetProjectId: targetProject.id,
+    })
+    expect(moved.status).toBe(200)
+    const movedData = mustOk(moved)
+    expect(movedData.projectId).toBe(targetProject.id)
+
+    const sourceTasks = await GET<Quest[]>(`/api/quests?projectId=${sourceProject.id}&kind=task`)
+    expect(sourceTasks.status).toBe(200)
+    expect(mustOk(sourceTasks)).toHaveLength(0)
+
+    const targetTasks = await GET<Quest[]>(`/api/quests?projectId=${targetProject.id}&kind=task`)
+    expect(targetTasks.status).toBe(200)
+    expect(mustOk(targetTasks).map((quest) => quest.id)).toEqual([task.id])
+
+    const sourceOverview = await GET<ProjectOverview>(`/api/projects/${sourceProject.id}/overview`)
+    expect(sourceOverview.status).toBe(200)
+    expect(mustOk(sourceOverview).counts).toEqual({ sessions: 0, tasks: 0, todos: 1 })
+
+    const targetOverview = await GET<ProjectOverview>(`/api/projects/${targetProject.id}/overview`)
+    expect(targetOverview.status).toBe(200)
+    const targetOverviewData = mustOk(targetOverview)
+    expect(targetOverviewData.counts).toEqual({ sessions: 0, tasks: 1, todos: 0 })
+    expect(targetOverviewData.recentOutputs.some((item) => item.questId === task.id)).toBe(true)
+
+    expect(getRunsByQuest(task.id).every((run) => run.projectId === targetProject.id)).toBe(true)
+    expect(listTodos({ projectId: sourceProject.id }).some((todo) => todo.originQuestId === task.id)).toBe(true)
+    expect(listTodos({ projectId: targetProject.id }).some((todo) => todo.originQuestId === task.id)).toBe(false)
+
+    const ops = await GET<QuestOp[]>(`/api/quests/${task.id}/ops`)
+    expect(ops.status).toBe(200)
+    expect(mustOk(ops).some((entry) => entry.op === 'project_changed' && entry.note?.includes(targetProject.id))).toBe(true)
+  })
+
+  it('persists assets under quest storage and archives the project without removing data', async () => {
     const project = await openProject('assets')
     const quest = await createQuest({
       projectId: project.id,
@@ -324,13 +407,26 @@ describe('quest/todo/run APIs', () => {
     const historyDir = join(getHistoryRoot(), quest.id)
     expect(existsSync(historyDir)).toBe(true)
 
-    const deleted = await DEL<{ deleted: true }>(`/api/projects/${project.id}`)
-    expect(deleted.status).toBe(200)
-    expect((await GET(`/api/projects/${project.id}`)).status).toBe(404)
-    expect((await GET(`/api/quests/${quest.id}`)).status).toBe(404)
-    expect((await GET(`/api/assets/${uploadedData.id}`)).status).toBe(404)
-    expect(existsSync(uploadedData.savedPath)).toBe(false)
-    expect(existsSync(historyDir)).toBe(false)
+    const archived = await DEL<{ deleted: true }>(`/api/projects/${project.id}`)
+    expect(archived.status).toBe(200)
+    expect(mustOk(archived).deleted).toBe(true)
+
+    const projectRecord = await GET<Project>(`/api/projects/${project.id}`)
+    expect(projectRecord.status).toBe(200)
+    expect(mustOk(projectRecord).archived).toBe(true)
+
+    const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
+    expect(overview.status).toBe(200)
+    expect(mustOk(overview).project.archived).toBe(true)
+
+    expect((await GET(`/api/quests/${quest.id}`)).status).toBe(200)
+    expect((await GET(`/api/assets/${uploadedData.id}`)).status).toBe(200)
+    expect(existsSync(uploadedData.savedPath)).toBe(true)
+    expect(existsSync(historyDir)).toBe(true)
+
+    const visibleProjects = await GET<Project[]>('/api/projects')
+    expect(visibleProjects.status).toBe(200)
+    expect(mustOk(visibleProjects).some((item) => item.id === project.id)).toBe(false)
   })
 
   it('queues session chat messages, supports queue cancellation, and auto-runs the next follow-up', async () => {

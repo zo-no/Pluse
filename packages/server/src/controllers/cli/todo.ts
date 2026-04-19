@@ -30,7 +30,7 @@ todoCommand
     if (opts.status) params.set('status', opts.status)
     const todos = baseUrl
       ? await daemonRequest<Todo[]>(baseUrl, `/api/todos${params.toString() ? `?${params.toString()}` : ''}`)
-      : listTodos({ projectId: opts.projectId, status: opts.status })
+      : listTodos({ projectId: opts.projectId, status: opts.status, deleted: false })
     if (opts.json) {
       printJson(todos)
       return
@@ -113,7 +113,7 @@ todoCommand
   .option('--confirm', 'Skip confirmation prompt', false)
   .action(async (id: string, opts: { confirm: boolean }) => {
     if (!opts.confirm) {
-      console.error('Add --confirm to permanently delete this todo.')
+      console.error('Add --confirm to archive this todo.')
       process.exit(1)
     }
     const mode = getCliMode()
@@ -123,5 +123,5 @@ todoCommand
     } else {
       deleteTodoWithEffects(id)
     }
-    console.log(`Todo ${id} deleted.`)
+    console.log(`Todo ${id} archived.`)
   })

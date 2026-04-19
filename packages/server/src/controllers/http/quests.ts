@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type {
   ApiResult,
   CreateQuestInput,
+  MoveQuestInput,
   PagedResult,
   Quest,
   QuestEvent,
@@ -15,7 +16,15 @@ import type {
 import { listEvents } from '../../models/history'
 import { getQuest } from '../../models/quest'
 import { cancelQueuedRequest, clearQueuedRequests, startQuestRun, submitQuestMessage } from '../../runtime/session-runner'
-import { createQuestWithEffects, deleteQuestWithEffects, getQuestOpsView, getQuestRunsView, listQuestViews, updateQuestWithEffects } from '../../services/quests'
+import {
+  createQuestWithEffects,
+  deleteQuestWithEffects,
+  getQuestOpsView,
+  getQuestRunsView,
+  listQuestViews,
+  moveQuestWithEffects,
+  updateQuestWithEffects,
+} from '../../services/quests'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -104,6 +113,10 @@ const RunSchema = z.object({
   triggeredBy: z.enum(['human', 'scheduler', 'api', 'cli']).optional(),
 })
 
+const MoveQuestSchema = z.object({
+  targetProjectId: z.string().min(1),
+})
+
 export const questsRouter = new Hono()
 
 questsRouter.get('/quests', (c) => {
@@ -155,6 +168,27 @@ questsRouter.delete('/quests/:id', (c) => {
     return c.json(ok({ deleted: true }))
   } catch (error) {
     const message = String(error)
+    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+  }
+})
+
+questsRouter.post('/quests/:id/move', async (c) => {
+  const body = await c.req.json().catch(() => undefined)
+  const parsed = MoveQuestSchema.safeParse(body)
+  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
+  try {
+    return c.json(ok(moveQuestWithEffects(c.req.param('id'), parsed.data as MoveQuestInput)))
+  } catch (error) {
+    const message = String(error)
+    if (message.includes('Target project not found')) return c.json(errBody(message), sc(404))
+    if (
+      message.includes('active run')
+      || message.includes('already belongs to project')
+      || message.includes('already has a quest using')
+      || message.includes('cannot accept quest')
+    ) {
+      return c.json(errBody(message), sc(409))
+    }
     return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
   }
 })

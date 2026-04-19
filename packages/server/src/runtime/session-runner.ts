@@ -1144,6 +1144,7 @@ async function executeQuestRun(runId: string, questId: string, promptText?: stri
 export async function startQuestRun(input: StartQuestRunInput): Promise<StartQuestRunResult> {
   const quest = getQuest(input.questId)
   if (!quest) throw new Error(`Quest not found: ${input.questId}`)
+  if (quest.deleted) throw new Error('Quest is archived')
   const existingRun = input.requestId ? getRunByQuestRequestId(quest.id, input.requestId) : null
   if (existingRun) {
     return { skipped: false, run: existingRun, quest: getQuest(quest.id) }
@@ -1180,6 +1181,7 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
   const initialQuest = getQuest(input.questId)
   if (!initialQuest) throw new Error(`Quest not found: ${input.questId}`)
   if (initialQuest.kind !== 'session') throw new Error('Only session quests accept chat messages')
+  if (initialQuest.deleted) throw new Error('Quest is archived')
 
   const requestId = input.requestId?.trim() || genRequestId()
   const existingRun = getRunByQuestRequestId(initialQuest.id, requestId)

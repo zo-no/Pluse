@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import {
@@ -13,14 +13,11 @@ import {
 } from '../models/project'
 import { getRunsByProject } from '../models/run'
 import { listQuests } from '../models/quest'
-import { listTodos, updateTodo } from '../models/todo'
+import { listTodos } from '../models/todo'
 import { emit } from './events'
 import {
   ensureDir,
-  getAssetsDir,
-  getHistoryRoot,
   getInboxDir,
-  getPluseRoot,
   getProjectManifestDir,
   getProjectManifestPath,
   getSystemRuntimeDir,
@@ -32,26 +29,6 @@ export const SYSTEM_PROJECT_ID = 'proj_system'
 
 function now(): string {
   return new Date().toISOString()
-}
-
-function getSessionArchiveRoot(archivedAt: string): string {
-  const date = archivedAt.slice(0, 10)
-  return join(getPluseRoot(), 'archive', 'sessions', date)
-}
-
-function archiveSessionStorage(questId: string, archivedAt: string): void {
-  const sourceHistory = join(getHistoryRoot(), questId)
-  const sourceAssets = getAssetsDir(questId)
-  if (!existsSync(sourceHistory) && !existsSync(sourceAssets)) return
-
-  const destinationRoot = join(getSessionArchiveRoot(archivedAt), questId)
-  mkdirSync(destinationRoot, { recursive: true })
-  if (existsSync(sourceHistory)) {
-    cpSync(sourceHistory, join(destinationRoot, 'history'), { recursive: true })
-  }
-  if (existsSync(sourceAssets)) {
-    cpSync(sourceAssets, join(destinationRoot, 'assets'), { recursive: true })
-  }
 }
 
 function readManifest(workDir: string): ProjectManifest | null {
@@ -345,7 +322,7 @@ export function getProjectOverview(id: string): ProjectOverview | null {
   if (!project) return null
   const sessions = listQuests({ projectId: id, kind: 'session', deleted: false })
   const tasks = listQuests({ projectId: id, kind: 'task', deleted: false })
-  const todos = listTodos({ projectId: id })
+  const todos = listTodos({ projectId: id, deleted: false })
   const waitingTodos = todos.filter((todo) => todo.status === 'pending' && Boolean(todo.waitingInstructions || todo.description))
   const runs = getRunsByProject(id, 24)
   const schedule = deriveSchedule(getMostRelevantScheduleQuest(tasks), runs)
@@ -366,29 +343,7 @@ export function getProjectOverview(id: string): ProjectOverview | null {
 }
 
 export function deleteProjectWithCascade(id: string): void {
-  const db = getDb()
-  const quests = listQuests({ projectId: id })
-  const archivedAt = now()
-  for (const todo of listTodos({ projectId: id })) {
-    if (todo.originQuestId) {
-      updateTodo(todo.id, { originQuestId: null })
-    }
-  }
-  db.run(`DELETE FROM run_spool WHERE run_id IN (SELECT id FROM runs WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM runs WHERE project_id = ?`, [id])
-  db.run(`DELETE FROM assets WHERE quest_id IN (SELECT id FROM quests WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM quest_ops WHERE quest_id IN (SELECT id FROM quests WHERE project_id = ?)`, [id])
-  db.run(`DELETE FROM todos WHERE project_id = ?`, [id])
-  db.run(`DELETE FROM quests WHERE project_id = ?`, [id])
-  deleteProjectRecord(id)
-  for (const quest of quests) {
-    if (quest.kind === 'session') {
-      archiveSessionStorage(quest.id, archivedAt)
-    }
-    rmSync(join(getHistoryRoot(), quest.id), { recursive: true, force: true })
-    rmSync(getAssetsDir(quest.id), { recursive: true, force: true })
-  }
-  emit({ type: 'project_updated', data: { projectId: id } })
+  archiveProject(id)
 }
 
 export function removeProjectRecord(id: string): void {

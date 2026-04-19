@@ -5,6 +5,7 @@ import { getQuest, listQuests, updateQuest } from '../models/quest'
 import { startQuestRun } from '../runtime/session-runner'
 
 const cronJobs = new Map<string, Cron>()
+let schedulerStarted = false
 
 function stopJob(id: string): void {
   const job = cronJobs.get(id)
@@ -41,6 +42,7 @@ export function refreshQuestSchedule(quest: Quest): void {
   if (
     quest.kind !== 'task'
     || quest.enabled === false
+    || quest.deleted
     || !quest.scheduleKind
     || quest.scheduleKind === 'once'
   ) {
@@ -58,11 +60,16 @@ export function refreshQuestSchedule(quest: Quest): void {
       })
       cronJobs.delete(quest.id)
     })
-    cronJobs.set(quest.id, job)
+    const nextRunAt = job.nextRun()?.toISOString() ?? runAt.toISOString()
+    if (schedulerStarted) {
+      cronJobs.set(quest.id, job)
+    } else {
+      job.stop()
+    }
     updateQuest(quest.id, {
       scheduleConfig: {
         ...(quest.scheduleConfig ?? {}),
-        nextRunAt: job.nextRun()?.toISOString(),
+        nextRunAt,
       },
     })
     return
@@ -86,16 +93,22 @@ export function refreshQuestSchedule(quest: Quest): void {
       },
     })
   })
-  cronJobs.set(quest.id, job)
+  const nextRunAt = job.nextRun()?.toISOString()
+  if (schedulerStarted) {
+    cronJobs.set(quest.id, job)
+  } else {
+    job.stop()
+  }
   updateQuest(quest.id, {
     scheduleConfig: {
       ...(quest.scheduleConfig ?? {}),
-      nextRunAt: job.nextRun()?.toISOString(),
+      nextRunAt,
     },
   })
 }
 
 export function startScheduler(): void {
+  schedulerStarted = true
   for (const quest of listQuests({ kind: 'task', deleted: false })) {
     refreshQuestSchedule(quest)
   }
@@ -109,4 +122,5 @@ export function stopScheduler(): void {
   for (const id of [...cronJobs.keys()]) {
     stopJob(id)
   }
+  schedulerStarted = false
 }
