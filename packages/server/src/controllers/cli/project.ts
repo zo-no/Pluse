@@ -1,7 +1,7 @@
 import { Command } from 'commander'
-import type { OpenProjectInput, Project, UpdateProjectInput } from '@pluse/types'
+import type { OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@pluse/types'
 import { getProject } from '../../models/project'
-import { archiveProject, deleteProjectWithCascade, listVisibleProjects, openProject, updateProject } from '../../services/projects'
+import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
 
 function printJson(value: unknown): void {
@@ -13,6 +13,29 @@ function printProject(project: { id: string; name: string; workDir: string; goal
   console.log(`  workDir: ${project.workDir}`)
   if (project.goal) console.log(`  goal: ${project.goal}`)
   console.log(`  pinned: ${project.pinned ? 'yes' : 'no'}  archived: ${project.archived ? 'yes' : 'no'}`)
+}
+
+function printProjectOverview(overview: ProjectOverview): void {
+  printProject(overview.project)
+  console.log(`  counts: sessions=${overview.counts.sessions} tasks=${overview.counts.tasks} todos=${overview.counts.todos}`)
+  console.log(`  waiting todos: ${overview.waitingTodos.length}`)
+  if (overview.schedule) {
+    console.log(`  schedule: last=${overview.schedule.lastRunAt ?? 'n/a'} next=${overview.schedule.nextRunAt ?? 'n/a'}`)
+  } else {
+    console.log('  schedule: n/a')
+  }
+  if (overview.recentOutputs.length === 0) {
+    console.log('  recent outputs: (none)')
+    return
+  }
+  console.log('  recent outputs:')
+  for (const item of overview.recentOutputs.slice(0, 5)) {
+    const kind = item.kind === 'task_run' ? 'task' : 'chat'
+    console.log(`    - ${item.completedAt ?? 'n/a'}  ${kind}  ${item.status}  ${item.title}`)
+    if (item.summary) {
+      console.log(`      ${item.summary}`)
+    }
+  }
 }
 
 export const projectCommand = new Command('project')
@@ -41,6 +64,19 @@ projectCommand
       : getProject(id)
     if (!project) throw new Error(`Project not found: ${id}`)
     opts.json ? printJson(project) : printProject(project)
+  })
+
+projectCommand
+  .command('overview <id>')
+  .option('--json', 'Output as JSON', false)
+  .action(async (id: string, opts: { json: boolean }) => {
+    const mode = getCliMode()
+    const baseUrl = await resolveDaemonBaseUrl(mode)
+    const overview: ProjectOverview | null = baseUrl
+      ? await daemonRequest<ProjectOverview>(baseUrl, `/api/projects/${id}/overview`)
+      : getProjectOverview(id)
+    if (!overview) throw new Error(`Project not found: ${id}`)
+    opts.json ? printJson(overview) : printProjectOverview(overview)
   })
 
 projectCommand
@@ -110,7 +146,7 @@ projectCommand
   .option('--json', 'Output as JSON', false)
   .action(async (id: string, opts: { confirm: boolean; json: boolean }) => {
     if (!opts.confirm) {
-      console.error('Add --confirm to permanently delete this project and all its data.')
+      console.error('Add --confirm to archive this project and all its data.')
       process.exit(1)
     }
     const mode = getCliMode()
@@ -120,5 +156,5 @@ projectCommand
     } else {
       deleteProjectWithCascade(id)
     }
-    opts.json ? console.log(JSON.stringify({ deleted: true })) : console.log(`Project ${id} deleted.`)
+    opts.json ? console.log(JSON.stringify({ archived: true })) : console.log(`Project ${id} archived.`)
   })

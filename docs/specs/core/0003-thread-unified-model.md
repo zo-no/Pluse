@@ -489,6 +489,15 @@ POST   /api/todos/:id/done
 POST   /api/todos/:id/cancel
 DELETE /api/todos/:id
 
+# Project
+GET    /api/projects
+POST   /api/projects/open
+GET    /api/projects/:id
+GET    /api/projects/:id/overview
+PATCH  /api/projects/:id
+POST   /api/projects/:id/archive
+DELETE /api/projects/:id
+
 # Commands（供 AI 查询所有可用命令）
 GET    /api/commands
 ```
@@ -520,6 +529,11 @@ pluse todo delete <id>
 # Project
 pluse project list [--json]
 pluse project get <id> [--json]
+pluse project overview <id> [--json]
+pluse project open --work-dir <path> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--pin] [--json]
+pluse project update <id> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--pin] [--unpin] [--archive] [--json]
+pluse project archive <id> [--json]
+pluse project delete <id> --confirm [--json]
 ```
 
 ---
