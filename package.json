@@ -3,10 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "pnpm --filter @pluse/web build:watch & pnpm --filter @pluse/server dev",
+    "dev": "pnpm --filter @pluse/web build:watch && pnpm --filter @pluse/server dev",
     "dev:server": "pnpm --filter @pluse/server dev",
     "dev:web": "pnpm --filter @pluse/web build:watch",
     "build": "pnpm --filter @pluse/types build && pnpm --filter @pluse/web build && pnpm --filter @pluse/server build",
+    "start": "pnpm --filter @pluse/server start",
     "typecheck": "pnpm --recursive typecheck",
     "test": "pnpm --filter @pluse/server test"
   },

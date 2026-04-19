@@ -7,7 +7,12 @@
   },
   "scripts": {
     "dev": "bun --watch src/server.ts",
-    "build": "rm -rf dist && bun build src/server.ts --outdir dist --target bun && bun build src/cli.ts --outfile dist/cli.js --target bun && node scripts/write-cli-wrapper.mjs",
+    "start": "bun --watch dist/server.js",
+    "clean": "rimraf dist",
+    "build:server": "bun build src/server.ts --outdir dist --target bun",
+    "build:cli": "bun build src/cli.ts --outfile dist/cli.js --target bun",
+    "build:wrapper": "node scripts/write-cli-wrapper.mjs",
+    "build": "run-s clean build:server build:cli build:wrapper",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/__tests__"
   },
@@ -22,6 +27,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "@types/ws": "^8.5.13",
+    "npm-run-all": "^4.1.5",
+    "rimraf": "^6.1.3",
     "typescript": "^5.6.0"
   }
 }
