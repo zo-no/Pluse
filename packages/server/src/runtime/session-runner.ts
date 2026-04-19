@@ -37,7 +37,7 @@ import { createTodo } from '../models/todo'
 import { emit } from '../services/events'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { getManagedCodexHome } from '../support/paths'
-import { getRuntimeModelCatalog } from './catalog'
+import { getRuntimeModelCatalog, normalizeCodexModelId } from './catalog'
 
 type ToolName = 'codex' | 'claude'
 type ProviderEvent = Omit<QuestEvent, 'seq'>
@@ -256,8 +256,8 @@ function resolveTool(tool?: string | null): ToolName {
 
 function resolveModel(tool: ToolName, requested?: string | null): string {
   const next = requested?.trim()
-  if (next) return next === '5.3-codex-spark' ? 'gpt-5.3-codex' : next
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : 'gpt-5.3-codex')
+  if (next) return tool === 'codex' ? normalizeCodexModelId(next) : next
+  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : 'gpt-5.3-codex-spark')
 }
 
 function resolveToolCommand(tool: ToolName): string {

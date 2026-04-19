@@ -441,7 +441,7 @@ questCommand
 const taskQuestCreateExample = [
   'Example task quest:',
   '  pluse quest create --project-id proj_music --kind task --title "Music Essay"',
-  '    --tool codex --model gpt-5.3-codex --schedule-kind recurring --cron "*/30 * * * *"',
+  '    --tool codex --model gpt-5.3-codex-spark --schedule-kind recurring --cron "*/30 * * * *"',
   '    --timezone Asia/Shanghai --executor-kind ai_prompt',
   '    --prompt "Use the local NetEase CLI in this project to read the current song, then write a short Chinese essay about the mood of the track."',
   '    --continue-quest --review-on-complete --enable',
