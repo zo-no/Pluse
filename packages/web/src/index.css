@@ -1964,27 +1964,32 @@ select {
 .pluse-tab {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   color: var(--text-secondary);
-  background: var(--bg-secondary);
+  background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .pluse-tab.is-active {
-  border-color: var(--border-strong);
+  border-color: color-mix(in srgb, var(--text) 78%, transparent);
   color: var(--text);
-  background: var(--accent-soft);
+}
+
+.pluse-tab:hover:not(.is-active) {
+  color: var(--text);
 }
 
 .pluse-tab.is-active .pluse-tab-count {
-  background: color-mix(in srgb, white 68%, var(--accent-soft));
+  opacity: 1;
 }
 
 .pluse-task-list {
@@ -2897,9 +2902,9 @@ select {
 
 .pluse-project-context-row {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 6px 6px 0;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 0;
 }
 
 .pluse-project-switcher {
@@ -2911,7 +2916,16 @@ select {
 
 .pluse-project-settings-btn {
   flex: 0 0 auto;
-  margin-top: 2px;
+  min-width: 34px;
+  height: 34px;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .pluse-project-switcher-btn {
@@ -2920,20 +2934,26 @@ select {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: color-mix(in srgb, white 62%, transparent);
+  padding: 6px 0 8px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease;
 }
 
 .pluse-project-switcher-btn:hover,
 .pluse-project-switcher-btn.is-open {
   border-color: var(--border-strong);
-  background: color-mix(in srgb, white 70%, transparent);
+}
+
+.pluse-project-settings-btn:hover:not(:disabled) {
+  transform: none;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--panel) 52%, transparent);
 }
 
 .pluse-project-switcher-label {
@@ -3067,37 +3087,39 @@ select {
 
 .pluse-project-tabs-bar {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 20px 0;
-  border-bottom: 0;
+  gap: 12px 20px;
+  padding: 4px 20px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 
 .pluse-project-tab-group {
   display: flex;
+  align-items: flex-end;
+  gap: 18px;
 }
 
 .pluse-project-tab {
-  min-height: 42px;
-  padding: 0 12px;
-  margin-right: 8px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  min-height: 38px;
+  padding: 0 0 11px;
+  margin-right: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
 .pluse-project-tab.is-active {
   color: var(--text);
-  border-color: color-mix(in srgb, var(--border) 80%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 66%, white);
+  border-color: color-mix(in srgb, var(--text) 78%, transparent);
 }
 
 .pluse-project-tab:hover:not(.is-active) {
@@ -3106,10 +3128,20 @@ select {
 
 .pluse-project-tab-meta {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  padding-bottom: 11px;
+}
+
+.pluse-project-tab-meta .pluse-inline-pill {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
 }
 
 .pluse-settings-grid {
@@ -3144,43 +3176,44 @@ select {
 .pluse-overview-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 0;
+  margin-top: 6px;
   align-items: flex-start;
 }
 
+.pluse-overview-strip {
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
 .pluse-overview-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, white 70%, transparent);
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   min-width: 0;
-  flex: 0 0 auto;
+  flex: 1 1 150px;
 }
 
 .pluse-overview-stat span {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .pluse-overview-stat strong {
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
 }
 
 .pluse-overview-stat-sm {
-  font-size: 11px !important;
+  font-size: 13px !important;
+  color: var(--text-secondary);
 }
 
 .pluse-overview-stack {
@@ -3192,10 +3225,8 @@ select {
 .pluse-project-group {
   display: grid;
   gap: 0;
-  padding: 12px 12px 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 22px;
-  background: color-mix(in srgb, white 60%, transparent);
+  padding: 16px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   min-width: 0;
 }
 
@@ -3214,13 +3245,14 @@ select {
 
 .pluse-project-group-head-main {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .pluse-project-group-title {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -3228,15 +3260,16 @@ select {
 .pluse-project-group-count {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 72%, white);
-  color: var(--text);
-  font-size: 11px;
+  justify-content: flex-start;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .pluse-project-group-note {
@@ -3259,8 +3292,8 @@ select {
 .pluse-project-group-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 8px;
+  gap: 10px;
+  padding-top: 12px;
   overflow: hidden;
   min-height: 0;
 }
@@ -3535,15 +3568,16 @@ select {
 
 .pluse-rail-head-info {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
 }
 
 .pluse-rail-head-rich {
   display: grid;
-  gap: 10px;
-  padding: 6px 0 12px;
+  gap: 8px;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .pluse-rail-kicker {
@@ -3566,15 +3600,17 @@ select {
 .pluse-rail-head-count {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 28px;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 76%, white);
-  color: var(--text);
-  font-size: 12px;
+  justify-content: flex-start;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .pluse-rail-summary {
@@ -3599,21 +3635,26 @@ select {
 .pluse-rail-tabs {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 18px;
   flex-wrap: wrap;
+  width: 100%;
+  padding-bottom: 2px;
 }
 
 .pluse-tab-count {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 76%, white);
-  font-size: 10px;
+  justify-content: flex-start;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11px;
   font-weight: 700;
+  line-height: 1;
+  color: currentColor;
+  opacity: 0.72;
 }
 
 .pluse-task-stream {
@@ -3826,16 +3867,16 @@ select {
   }
 
   .pluse-overview-row {
-    gap: 6px;
+    gap: 0;
   }
 
   .pluse-overview-stat {
-    padding: 7px 10px;
+    padding: 10px 10px;
+    flex-basis: 120px;
   }
 
   .pluse-project-group {
-    padding: 10px 10px 8px;
-    border-radius: 20px;
+    padding: 12px 0 0;
   }
 
   .pluse-project-group-body {
