@@ -345,11 +345,11 @@ function ProjectPage({
               <h3>危险操作</h3>
               {!confirmDelete ? (
                 <button type="button" className="pluse-button pluse-button-danger" onClick={() => setConfirmDelete(true)}>
-                  删除项目
+                  归档项目
                 </button>
               ) : (
                 <div className="pluse-delete-confirm">
-                  <p>此操作将永久删除项目及其所有会话、AI 任务、人类任务和运行数据，不可恢复。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
+                  <p>此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称 <strong>{overview.project.name}</strong> 确认：</p>
                   <input
                     type="text"
                     value={deleteConfirmName}
@@ -364,7 +364,7 @@ function ProjectPage({
                       onClick={() => void handleDeleteProject()}
                       disabled={deleting || deleteConfirmName !== overview.project.name}
                     >
-                      {deleting ? '删除中…' : '确认删除'}
+                      {deleting ? '归档中…' : '确认归档'}
                     </button>
                     <button type="button" className="pluse-button pluse-button-ghost" onClick={() => { setConfirmDelete(false); setDeleteConfirmName('') }}>
                       取消

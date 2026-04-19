@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { displayQuestName } from '@/views/utils/display'
-import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SettingsIcon, SlidersIcon, TrashIcon } from './icons'
+import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SettingsIcon, SlidersIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
@@ -92,8 +92,6 @@ export function SessionList({
   const [error, setError] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -132,7 +130,6 @@ export function SessionList({
 
   useEffect(() => {
     void loadQuests()
-    setConfirmDeleteId(null)
   }, [loadQuests])
 
   useEffect(() => {
@@ -162,17 +159,6 @@ export function SessionList({
       renameInputRef.current.select()
     }
   }, [renamingId])
-
-  useEffect(() => {
-    if (!confirmDeleteId) return
-    function handleClick(event: MouseEvent) {
-      if (sidebarRef.current && !sidebarRef.current.contains(event.target as Node)) {
-        setConfirmDeleteId(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [confirmDeleteId])
 
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
@@ -306,24 +292,6 @@ export function SessionList({
     await onOverviewChanged?.(activeProjectId ?? undefined)
   }
 
-  async function handleDelete(questId: string) {
-    setDeletingId(questId)
-    const result = await api.deleteQuest(questId)
-    setDeletingId(null)
-    setConfirmDeleteId(null)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    if (activeQuestId === questId && activeProjectId) {
-      const nextQuestId = nextSessionIdAfterDelete(questId)
-      if (nextQuestId) navigate(`/quests/${nextQuestId}`)
-      else navigate(`/projects/${activeProjectId}`)
-    }
-    await loadQuests()
-    await onOverviewChanged?.(activeProjectId ?? undefined)
-  }
-
   const filteredSessions = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase()
     return normalized
@@ -422,48 +390,6 @@ export function SessionList({
           >
             <ArchiveIcon className="pluse-icon" />
           </button>
-          {confirmDeleteId === quest.id ? (
-            <>
-              <button
-                type="button"
-                className="pluse-sidebar-action-btn is-danger"
-                onClick={(event) => {
-                  event.preventDefault()
-                  void handleDelete(quest.id)
-                }}
-                disabled={deletingId === quest.id}
-                aria-label="确认删除"
-                title="确认删除"
-              >
-                <TrashIcon className="pluse-icon" />
-              </button>
-              <button
-                type="button"
-                className="pluse-sidebar-action-btn"
-                onClick={(event) => {
-                  event.preventDefault()
-                  setConfirmDeleteId(null)
-                }}
-                aria-label="取消"
-                title="取消"
-              >
-                ×
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn is-danger"
-              onClick={(event) => {
-                event.preventDefault()
-                setConfirmDeleteId(quest.id)
-              }}
-              aria-label="删除"
-              title="删除"
-            >
-              <TrashIcon className="pluse-icon" />
-            </button>
-          )}
         </div>
       </div>
     )

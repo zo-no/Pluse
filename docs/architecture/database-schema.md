@@ -53,7 +53,7 @@ CREATE TABLE quests (
   review_on_complete   INTEGER NOT NULL DEFAULT 0,
   order_index          INTEGER,
 
-  -- 归档（软删除）= deleted，归档区折叠展示，可恢复或永久删除
+  -- 归档（软删除）= deleted，归档区折叠展示，可恢复
   deleted              INTEGER NOT NULL DEFAULT 0,
   deleted_at           TEXT,
 
@@ -86,12 +86,14 @@ CREATE TABLE todos (
   description          TEXT,
   waiting_instructions TEXT,
   status               TEXT NOT NULL DEFAULT 'pending',
+  deleted              INTEGER NOT NULL DEFAULT 0,
+  deleted_at           TEXT,
 
   created_at           TEXT NOT NULL,
   updated_at           TEXT NOT NULL
 ) STRICT;
 
-CREATE INDEX idx_todos_project ON todos (project_id, status);
+CREATE INDEX idx_todos_project ON todos (project_id, deleted, status, updated_at DESC);
 
 
 CREATE TABLE runs (

@@ -4,7 +4,7 @@ import type { Quest, QuestOp, Run, RuntimeModelCatalog, RuntimeTool } from '@plu
 import * as api from '@/api/client'
 import { displaySessionName, displayTaskName } from '@/views/utils/display'
 import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
-import { CloseIcon, ConvertIcon, PlayIcon, PlusIcon, TrashIcon } from './icons'
+import { ArchiveIcon, CloseIcon, ConvertIcon, PlayIcon, PlusIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
 interface TaskDetailProps {
@@ -54,7 +54,7 @@ function formatOp(op: QuestOp['op']): string {
   if (op === 'failed') return '失败'
   if (op === 'cancelled') return '已取消'
   if (op === 'status_changed') return '状态变更'
-  if (op === 'deleted') return '已删除'
+  if (op === 'deleted') return '已归档'
   return op
 }
 
@@ -322,29 +322,55 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     await loadData()
   }
 
-  async function handleDeleteTask() {
+  async function handleArchiveTask() {
     if (!quest) return
-    const confirmed = window.confirm(`删除 AI 任务“${displayTaskName(quest.title ?? quest.name)}”？`)
-    if (!confirmed) return
-    const result = await api.deleteQuest(quest.id)
+    const archived = quest.deleted === true
+    if (!archived && quest.activeRunId) {
+      const confirmed = window.confirm('当前任务正在运行，归档前会先取消当前执行。继续吗？')
+      if (!confirmed) return
+      const cancelled = await api.cancelRun(quest.activeRunId)
+      if (!cancelled.ok) {
+        setError(cancelled.error)
+        return
+      }
+      let cleared = false
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const current = await api.getQuest(quest.id)
+        if (current.ok && !current.data.activeRunId) {
+          cleared = true
+          break
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 150))
+      }
+      if (!cleared) {
+        setError('当前执行尚未完全停止，请稍后再试')
+        return
+      }
+    }
+    const result = await api.updateQuest(quest.id, { deleted: !archived })
     if (!result.ok) {
       setError(result.error)
       return
     }
     await onDataChanged?.()
-    const questsResult = await api.getQuests({ projectId: quest.projectId, deleted: false })
-    const state = location.state as TaskDetailLocationState | null
-    const fallback = state?.nextQuestId
-      ? `/quests/${state.nextQuestId}`
-      : questsResult.ok
-        ? (() => {
-          const quests = questsResult.data
-          const index = quests.findIndex((item) => item.id === quest.id)
-          const nextQuest = index >= 0 ? quests[index + 1] || quests[index - 1] : null
-          return nextQuest ? `/quests/${nextQuest.id}` : `/projects/${quest.projectId}`
-        })()
-        : `/projects/${quest.projectId}`
-    navigate(fallback, { replace: true })
+    if (!archived) {
+      const questsResult = await api.getQuests({ projectId: quest.projectId, deleted: false })
+      const state = location.state as TaskDetailLocationState | null
+      const fallback = state?.nextQuestId
+        ? `/quests/${state.nextQuestId}`
+        : questsResult.ok
+          ? (() => {
+            const quests = questsResult.data
+            const index = quests.findIndex((item) => item.id === quest.id)
+            const nextQuest = index >= 0 ? quests[index + 1] || quests[index - 1] : null
+            return nextQuest ? `/quests/${nextQuest.id}` : `/projects/${quest.projectId}`
+          })()
+          : `/projects/${quest.projectId}`
+      navigate(fallback, { replace: true })
+    } else {
+      setQuest(result.data)
+      onQuestLoaded?.(result.data)
+    }
   }
 
   async function handleSwitchToSession() {
@@ -392,6 +418,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <span>{formatScheduleKind(form.scheduleKind)}</span>
                   <span>{form.continueQuest ? '继续上下文' : '独立运行'}</span>
                   {quest.enabled === false ? <span>已暂停</span> : null}
+                  {quest.deleted ? <span>已归档</span> : null}
                 </div>
               ) : null}
             </div>
@@ -415,7 +442,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                     type="button"
                     className="pluse-button pluse-button-ghost"
                     onClick={() => void handleRunNow()}
-                    disabled={Boolean(quest.activeRunId) || quest.enabled === false}
+                    disabled={Boolean(quest.activeRunId) || quest.enabled === false || quest.deleted}
                   >
                     <PlayIcon className="pluse-icon" />
                     立即运行
@@ -430,24 +457,30 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <button
                     type="button"
                     className="pluse-icon-button"
+                    title="新建人类任务"
+                    aria-label="新建人类任务"
+                    onClick={() => setCreateTaskModalOpen(true)}
+                  >
+                    <PlusIcon className="pluse-icon" />
+                  </button>
+                  <button
+                    type="button"
+                    className="pluse-icon-button"
                     title="转会话"
                     aria-label="转会话"
                     onClick={() => void handleSwitchToSession()}
-                    disabled={Boolean(quest.activeRunId)}
+                    disabled={Boolean(quest.activeRunId) || quest.deleted}
                   >
                     <ConvertIcon className="pluse-icon" />
                   </button>
                   <button
                     type="button"
                     className="pluse-icon-button"
-                    title="人类任务"
-                    aria-label="新建人类任务"
-                    onClick={() => setCreateTaskModalOpen(true)}
+                    title={quest.deleted ? '恢复任务' : '归档任务'}
+                    aria-label={quest.deleted ? '恢复任务' : '归档任务'}
+                    onClick={() => void handleArchiveTask()}
                   >
-                    <PlusIcon className="pluse-icon" />
-                  </button>
-                  <button type="button" className="pluse-icon-button" title="删除" aria-label="删除" onClick={() => void handleDeleteTask()}>
-                    <TrashIcon className="pluse-icon" />
+                    {quest.deleted ? <PlusIcon className="pluse-icon" /> : <ArchiveIcon className="pluse-icon" />}
                   </button>
                 </div>
               </div>

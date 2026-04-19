@@ -83,7 +83,7 @@ interface Quest {
   name?: string
   autoRenamePending?: boolean
   pinned?: boolean
-  deleted?: boolean      // 归档（软删除），不出现在任何列表
+  deleted?: boolean      // 归档（软删除），默认不出现在 active 列表
   deletedAt?: string
   followUpQueue?: QueuedMessage[]
 
@@ -159,11 +159,18 @@ interface Todo {
   waitingInstructions?: string
 
   status: 'pending' | 'done' | 'cancelled'
+  deleted?: boolean
+  deletedAt?: string
 
   createdAt: string
   updatedAt: string
 }
 ```
+
+**归档语义：**
+- 所有用户删除动作统一视为归档
+- `deleted=false` 的 Quest/Todo 出现在 active 列表
+- `deleted=true` 的 Quest/Todo 只在归档区显示，可恢复
 
 ---
 
@@ -386,11 +393,13 @@ CREATE TABLE todos (
   description          TEXT,
   waiting_instructions TEXT,
   status               TEXT NOT NULL DEFAULT 'pending',
+  deleted              INTEGER NOT NULL DEFAULT 0,
+  deleted_at           TEXT,
   created_at           TEXT NOT NULL,
   updated_at           TEXT NOT NULL
 ) STRICT;
 
-CREATE INDEX idx_todos_project ON todos (project_id, status);
+CREATE INDEX idx_todos_project ON todos (project_id, deleted, status, updated_at DESC);
 
 
 CREATE TABLE runs (
@@ -481,12 +490,10 @@ GET    /api/runs/:id/spool
 POST   /api/runs/:id/cancel
 
 # Todo
-GET    /api/todos?projectId=&status=
+GET    /api/todos?projectId=&status=&deleted=
 POST   /api/todos
 GET    /api/todos/:id
 PATCH  /api/todos/:id
-POST   /api/todos/:id/done
-POST   /api/todos/:id/cancel
 DELETE /api/todos/:id
 
 # Project
@@ -519,7 +526,7 @@ pluse run list --quest <id> [--json]
 pluse run cancel <id>
 
 # Todo
-pluse todo list --project <id> [--status pending|done|cancelled] [--json]
+pluse todo list --project <id> [--status pending|done|cancelled] [--deleted] [--json]
 pluse todo get <id> [--json]
 pluse todo create --project <id> --title <title> [--description <desc>] [--waiting-instructions <text>] [--origin-quest <questId>] [--json]
 pluse todo done <id>

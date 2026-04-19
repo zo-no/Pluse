@@ -56,7 +56,7 @@ interface Quest {
   name?: string
   autoRenamePending?: boolean
   pinned?: boolean
-  deleted?: boolean      // 归档（软删除），不出现在任何列表
+  deleted?: boolean      // 归档（软删除），默认不出现在 active 列表
   deletedAt?: string
   followUpQueue?: QueuedMessage[]
 
@@ -131,6 +131,8 @@ interface Todo {
   waitingInstructions?: string // 给人的操作指引（AI 创建时填写）
 
   status: 'pending' | 'done' | 'cancelled'
+  deleted?: boolean
+  deletedAt?: string
 
   createdAt: string
   updatedAt: string
@@ -140,6 +142,11 @@ interface Todo {
 **`description` vs `waitingInstructions`：**
 - `description`：说明这个 Todo 是什么，背景信息
 - `waitingInstructions`：告诉人具体要做什么操作，AI 创建时填写
+
+**归档语义：**
+- 所有用户“删除”动作统一视为归档
+- `deleted=false` 的 Quest/Todo 出现在 active 列表
+- `deleted=true` 的 Quest/Todo 只在归档区展示，可恢复
 
 ---
 

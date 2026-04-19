@@ -193,10 +193,11 @@ export function cancelRun(id: string): Promise<ApiResult<Run>> {
   return request<Run>('POST', `/runs/${id}/cancel`)
 }
 
-export function getTodos(params: { projectId?: string; status?: Todo['status'] } = {}): Promise<ApiResult<Todo[]>> {
+export function getTodos(params: { projectId?: string; status?: Todo['status']; deleted?: boolean } = {}): Promise<ApiResult<Todo[]>> {
   const search = new URLSearchParams()
   if (params.projectId) search.set('projectId', params.projectId)
   if (params.status) search.set('status', params.status)
+  if (params.deleted !== undefined) search.set('deleted', params.deleted ? 'true' : 'false')
   return request<Todo[]>('GET', `/todos${search.toString() ? `?${search.toString()}` : ''}`)
 }
 

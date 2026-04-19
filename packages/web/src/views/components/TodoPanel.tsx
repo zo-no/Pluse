@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, type Location as RouterLocation } from 
 import type { Quest, Todo } from '@pluse/types'
 import * as api from '@/api/client'
 import { displayTaskName } from '@/views/utils/display'
-import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SparkIcon, TrashIcon, UserIcon } from './icons'
+import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, SparkIcon, UserIcon } from './icons'
 import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
 
 interface TodoPanelProps {
@@ -15,6 +15,10 @@ interface TodoPanelProps {
 }
 
 type TaskTab = 'all' | 'human' | 'ai'
+
+type RailTaskItem =
+  | { entityType: 'quest'; quest: Quest; archived: boolean }
+  | { entityType: 'todo'; todo: Todo; archived: boolean }
 
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
   return { backgroundLocation: location }
@@ -72,8 +76,20 @@ function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]): T[] {
   return [...items].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
 }
 
-function isTodoItem(item: Quest | Todo): item is Todo {
-  return 'originQuestId' in item
+function railTaskUpdatedAt(item: RailTaskItem): string {
+  return item.entityType === 'todo' ? item.todo.updatedAt : item.quest.updatedAt
+}
+
+function sortRailTaskItems(items: RailTaskItem[]): RailTaskItem[] {
+  return [...items].sort((left, right) => Date.parse(railTaskUpdatedAt(right)) - Date.parse(railTaskUpdatedAt(left)))
+}
+
+function createTodoItems(items: Todo[], archived = false): RailTaskItem[] {
+  return items.map((todo) => ({ entityType: 'todo', todo, archived }))
+}
+
+function createQuestItems(items: Quest[], archived = false): RailTaskItem[] {
+  return items.map((quest) => ({ entityType: 'quest', quest, archived }))
 }
 
 export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClose, onDataChanged }: TodoPanelProps) {
@@ -82,6 +98,7 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
   const [tasks, setTasks] = useState<Quest[]>([])
   const [archivedTasks, setArchivedTasks] = useState<Quest[]>([])
   const [todos, setTodos] = useState<Todo[]>([])
+  const [archivedTodos, setArchivedTodos] = useState<Todo[]>([])
   const [tab, setTab] = useState<TaskTab>('all')
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -94,13 +111,16 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
       setTasks([])
       setArchivedTasks([])
       setTodos([])
+      setArchivedTodos([])
+      setError(null)
       return
     }
 
-    const [taskResult, archivedTaskResult, todoResult] = await Promise.all([
+    const [taskResult, archivedTaskResult, todoResult, archivedTodoResult] = await Promise.all([
       api.getQuests({ projectId, kind: 'task', deleted: false }),
       api.getQuests({ projectId, kind: 'task', deleted: true }),
-      api.getTodos({ projectId }),
+      api.getTodos({ projectId, deleted: false }),
+      api.getTodos({ projectId, deleted: true }),
     ])
 
     if (!taskResult.ok) {
@@ -115,10 +135,15 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
       setError(todoResult.error)
       return
     }
+    if (!archivedTodoResult.ok) {
+      setError(archivedTodoResult.error)
+      return
+    }
 
     setTasks(taskResult.data)
     setArchivedTasks(archivedTaskResult.data)
     setTodos(todoResult.data)
+    setArchivedTodos(archivedTodoResult.data)
     setError(null)
   }
 
@@ -151,9 +176,8 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
     await onDataChanged?.()
   }
 
-  async function handleDeleteTodo(todo: Todo) {
-    if (!window.confirm(`删除任务“${todo.title}”？`)) return
-    const result = await api.deleteTodo(todo.id)
+  async function handleArchiveTodo(todo: Todo, deleted: boolean) {
+    const result = await api.updateTodo(todo.id, { deleted })
     if (!result.ok) {
       setError(result.error)
       return
@@ -212,22 +236,6 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
     await onDataChanged?.()
   }
 
-  async function handleDeleteQuest(questId: string) {
-    const result = await api.deleteQuest(questId)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    if (activeQuestId === questId && projectId) {
-      const index = tasks.findIndex((quest) => quest.id === questId)
-      const nextQuest = index >= 0 ? (tasks[index + 1] || tasks[index - 1]) : null
-      if (nextQuest) navigate(`/quests/${nextQuest.id}`)
-      else navigate(`/projects/${projectId}`)
-    }
-    await loadData()
-    await onDataChanged?.()
-  }
-
   const visibleTodos = useMemo(
     () => tab === 'ai' ? [] : todos,
     [todos, tab],
@@ -239,8 +247,13 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
   )
 
   const visibleArchivedTasks = useMemo(
-    () => sortByUpdatedAt(tab === 'human' ? [] : archivedTasks),
+    () => tab === 'human' ? [] : archivedTasks,
     [archivedTasks, tab],
+  )
+
+  const visibleArchivedTodos = useMemo(
+    () => tab === 'ai' ? [] : archivedTodos,
+    [archivedTodos, tab],
   )
 
   const openHumanTodos = useMemo(
@@ -263,14 +276,33 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
     [visibleTasks],
   )
 
-  const visibleItems = useMemo(
-    () => sortByUpdatedAt([
-      ...openHumanTodos,
-      ...openAiTasks,
-      ...historyHumanTodos,
-      ...historyAiTasks,
+  const activeItems = useMemo(
+    () => sortRailTaskItems([
+      ...createTodoItems(openHumanTodos),
+      ...createQuestItems(openAiTasks),
     ]),
-    [openHumanTodos, openAiTasks, historyHumanTodos, historyAiTasks],
+    [openHumanTodos, openAiTasks],
+  )
+
+  const historyItems = useMemo(
+    () => sortRailTaskItems([
+      ...createTodoItems(historyHumanTodos),
+      ...createQuestItems(historyAiTasks),
+    ]),
+    [historyHumanTodos, historyAiTasks],
+  )
+
+  const visibleItems = useMemo(
+    () => [...activeItems, ...historyItems],
+    [activeItems, historyItems],
+  )
+
+  const visibleArchivedItems = useMemo(
+    () => sortRailTaskItems([
+      ...createTodoItems(visibleArchivedTodos, true),
+      ...createQuestItems(visibleArchivedTasks, true),
+    ]),
+    [visibleArchivedTasks, visibleArchivedTodos],
   )
 
   const counts = useMemo(
@@ -351,30 +383,18 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
           >
             <ArchiveIcon className="pluse-icon" />
           </button>
-          <button
-            type="button"
-            className="pluse-sidebar-action-btn is-danger"
-            onClick={(event) => {
-              event.preventDefault()
-              void handleDeleteQuest(quest.id)
-            }}
-            aria-label="删除任务"
-            title="删除任务"
-          >
-            <TrashIcon className="pluse-icon" />
-          </button>
         </div>
       </article>
     )
   }
 
-  function renderTodoItem(todo: Todo) {
+  function renderTodoItem(todo: Todo, archived = false) {
     const hasSource = Boolean(todo.originQuestId)
     const isActive = hasSource && todo.originQuestId === activeQuestId
     return (
       <article
         key={todo.id}
-        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}`}
+        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}`}
       >
         <div className="pluse-sidebar-item-main pluse-task-list-main">
           <div className="pluse-task-list-copy">
@@ -404,36 +424,50 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
               来源
             </Link>
           ) : null}
-          {todo.status === 'pending' ? (
+          {archived ? (
             <button
               type="button"
               className="pluse-sidebar-action-btn"
-              onClick={() => void handleUpdateTodo(todo, { status: 'done' })}
-              aria-label="完成任务"
-              title="完成任务"
-            >
-              <CheckIcon className="pluse-icon" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn"
-              onClick={() => void handleUpdateTodo(todo, { status: 'pending' })}
+              onClick={() => void handleArchiveTodo(todo, false)}
               aria-label="恢复任务"
               title="恢复任务"
             >
-              <PlusIcon className="pluse-icon" />
+              <ArchiveIcon className="pluse-icon" />
             </button>
+          ) : (
+            <>
+              {todo.status === 'pending' ? (
+                <button
+                  type="button"
+                  className="pluse-sidebar-action-btn"
+                  onClick={() => void handleUpdateTodo(todo, { status: 'done' })}
+                  aria-label="完成任务"
+                  title="完成任务"
+                >
+                  <CheckIcon className="pluse-icon" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="pluse-sidebar-action-btn"
+                  onClick={() => void handleUpdateTodo(todo, { status: 'pending' })}
+                  aria-label="恢复任务"
+                  title="恢复任务"
+                >
+                  <PlusIcon className="pluse-icon" />
+                </button>
+              )}
+              <button
+                type="button"
+                className="pluse-sidebar-action-btn"
+                onClick={() => void handleArchiveTodo(todo, true)}
+                aria-label="归档任务"
+                title="归档任务"
+              >
+                <ArchiveIcon className="pluse-icon" />
+              </button>
+            </>
           )}
-          <button
-            type="button"
-            className="pluse-sidebar-action-btn is-danger"
-            onClick={() => void handleDeleteTodo(todo)}
-            aria-label="删除任务"
-            title="删除任务"
-          >
-            <TrashIcon className="pluse-icon" />
-          </button>
         </div>
       </article>
     )
@@ -475,7 +509,11 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
         <div className="pluse-task-list">
           {visibleItems.length > 0 ? (
             <div className="pluse-note-list pluse-task-stream">
-              {visibleItems.map((item) => (isTodoItem(item) ? renderTodoItem(item) : renderQuestItem(item)))}
+              {visibleItems.map((item) => (
+                item.entityType === 'todo'
+                  ? renderTodoItem(item.todo, item.archived)
+                  : renderQuestItem(item.quest, item.archived)
+              ))}
             </div>
           ) : (
             <div className="pluse-rail-empty pluse-task-empty-state">
@@ -484,18 +522,22 @@ export function TodoPanel({ projectId, projectName, activeQuestId, onRequestClos
             </div>
           )}
 
-          {visibleArchivedTasks.length > 0 ? (
+          {visibleArchivedItems.length > 0 ? (
             <section className="pluse-task-archive">
               <button
                 type="button"
                 className="pluse-sidebar-archive-toggle"
                 onClick={() => setArchivedExpanded((value) => !value)}
               >
-                <span>{archivedExpanded ? '▾' : '▸'} 归档任务 ({visibleArchivedTasks.length})</span>
+                <span>{archivedExpanded ? '▾' : '▸'} 归档任务 ({visibleArchivedItems.length})</span>
               </button>
               {archivedExpanded ? (
                 <div className="pluse-note-list" style={{ marginTop: 8 }}>
-                  {visibleArchivedTasks.map((quest) => renderQuestItem(quest, true))}
+                  {visibleArchivedItems.map((item) => (
+                    item.entityType === 'todo'
+                      ? renderTodoItem(item.todo, item.archived)
+                      : renderQuestItem(item.quest, item.archived)
+                  ))}
                 </div>
               ) : null}
             </section>
