@@ -1,0 +1,332 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+
+export type Locale = 'zh-CN' | 'en-US'
+
+const STORAGE_KEY = 'pluse_locale'
+
+const EN_MESSAGES: Record<string, string> = {
+  Pluse: 'Pluse',
+  '未记录': 'Not recorded',
+  '已完成': 'Completed',
+  '执行中': 'Running',
+  '失败': 'Failed',
+  '已取消': 'Cancelled',
+  '待处理': 'Pending',
+  '空闲': 'Idle',
+  '暂无周期触发': 'No schedule',
+  '下次 {{time}}': 'Next {{time}}',
+  '最近 {{time}}': 'Last {{time}}',
+  '已配置，未触发': 'Configured, not triggered',
+  '运行已完成': 'Completed run',
+  运行: 'Session',
+  任务: 'Task',
+  'AI 任务': 'AI Task',
+  '人类任务': 'Human Task',
+  '等待中': 'Queued',
+  调度: 'Schedule',
+  '会话': 'Session',
+  '最近输出': 'Recent outputs',
+  '等待新的输入后再继续。': 'Waiting for additional input.',
+  '可折叠': 'Collapsible',
+  '项目名称': 'Project name',
+  '项目目标': 'Project goal',
+  '项目 Prompt': 'Project prompt',
+  '输入项目 Prompt': 'Enter project prompt',
+  '仅当前项目生效。全局系统 Prompt 在右上角设置里。': 'Only applies to this project. Global system prompt is configured in top-right settings.',
+  保存中: 'Saving',
+  '保存中…': 'Saving…',
+  保存: 'Save',
+  取消: 'Cancel',
+  '危险操作': 'Danger zone',
+  归档项目: 'Archive project',
+  '此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称 <strong>{name}</strong> 确认：':
+    'This action archives this project and all of its sessions, AI tasks, human tasks, and run data. Type the project name <strong>{name}</strong> to confirm.',
+  '归档中…': 'Archiving…',
+  '确认归档': 'Confirm archive',
+  '正在加载项目…': 'Loading project…',
+  概览: 'Overview',
+  设置: 'Settings',
+  固定: 'Pinned',
+  '人类待办': 'Human todos',
+  '加载失败：{error}': 'Load failed: {error}',
+  '正在加载任务…': 'Loading task…',
+  '正在加载内容…': 'Loading content…',
+  运行中: 'Running',
+  '排队 {{count}}': 'Queued {{count}}',
+  '打开侧栏': 'Open sidebar',
+  '切换到浅色模式': 'Switch to light theme',
+  '切换到深色模式': 'Switch to dark theme',
+  '打开设置': 'Open settings',
+  '切换侧栏': 'Toggle sidebar',
+  '切换任务面板': 'Toggle task panel',
+  '正在加载 Pluse…': 'Loading Pluse…',
+  重试: 'Retry',
+  '全局系统 Prompt': 'Global system prompt',
+  '关闭面板': 'Close panel',
+  '系统 Prompt': 'System prompt',
+  全局: 'Global',
+  '作用于所有项目。项目级 Prompt 在各项目设置里单独编辑。': 'Applied to all projects. Project-level prompt can be configured on each project page.',
+  编辑: 'Edit',
+  '留空则不注入全局系统 Prompt。': 'Empty value disables global system prompt injection.',
+  '输入全局系统 Prompt': 'Enter global system prompt',
+  '当前内容会先于项目 Prompt 注入到所有 Quest。': 'This content is injected before project-level prompts for all quests.',
+  '加载中…': 'Loading…',
+  '单端口、本地优先，项目、会话、任务与 Todo 共用同一个工作域。':
+    'Single-port, local-first workspace with shared project, session, task, and todo domain.',
+  用户名: 'Username',
+  '输入用户名': 'Enter username',
+  密码: 'Password',
+  '输入密码': 'Enter password',
+  '密码登录': 'Sign in with password',
+  'API Token': 'API token',
+  '输入 API Token': 'Enter API token',
+  'Token 登录': 'Sign in with token',
+  '会话消息正在保存中': 'Saving messages…',
+  '刚刚': 'just now',
+  '{count} 分钟前': '{count} min ago',
+  '{count} 小时前': '{count} hr ago',
+  '{count} 天前': '{count} day ago',
+  '已排队': 'Queued',
+  'Codex 运行时状态库异常': 'Codex runtime state DB error',
+  '当前 Codex 模型不可用': 'Current Codex model is unavailable',
+  空白消息: 'Empty message',
+  工具调用: 'Tool use',
+  工具结果: 'Tool result',
+  思考过程: 'Reasoning',
+  状态: 'Status',
+  文件变更: 'File change',
+  用量: 'Usage',
+  事件: 'Event',
+  '文件 {name} 超过 20MB 限制': 'File {name} exceeds 20MB limit',
+  '最多附加 {count} 个文件': 'Attach at most {count} files',
+  '给当前会话发送消息…': 'Send a message in this session…',
+  开始会话: 'Start a session',
+  '有 {count} 条新消息，滚动到底部': '{count} new messages, scroll to bottom',
+  '有 {count} 条新消息': '{count} new messages',
+  滚动到底部: 'Scroll to bottom',
+  '调整输入区高度': 'Resize composer',
+  '拖动调整输入区高度': 'Drag to resize composer',
+  '排队中的消息': 'Queued messages',
+  '待发送 {count}': 'Waiting {{count}}',
+  '当前回复结束后自动发送': 'Sends automatically after the current reply finishes',
+  '移除排队消息': 'Remove queued message',
+  '排队中 {count}': 'Queued {count}',
+  'Enter 发送': 'Press Enter to send',
+  '上次：{{state}}': 'Last: {{state}}',
+  清空排队消息: 'Clear queue',
+  '转任务': 'Convert to task',
+  移除: 'Remove',
+  '发送中': 'Sending',
+  发送: 'Send',
+  '发送 (Enter) · 换行 (Cmd/Ctrl+Enter)': 'Send (Enter) · Newline (Cmd/Ctrl+Enter)',
+  '未命名会话': 'Untitled session',
+  '新会话': 'New session',
+  '新任务': 'New task',
+  'Untitled Session': 'Untitled Session',
+  'Untitled Task': 'Untitled Task',
+  'New Session': 'New Session',
+  'New Task': 'New Task',
+  '新建人类任务': 'Create human task',
+  '新建会话': 'New session',
+  '新建任务': 'New task',
+  '返回内容': 'Output',
+  '未命名任务': 'Untitled task',
+  '任务详情': 'Task details',
+  立即运行: 'Run now',
+  停止: 'Stop',
+  转会话: 'Switch to session',
+  '恢复任务': 'Restore task',
+  '归档任务': 'Archive task',
+  基础: 'General',
+  说明: 'Description',
+  模型: 'Model',
+  推理强度: 'Thinking effort',
+  深度思考: 'Deep thinking',
+  开启: 'Enable',
+  停用: 'Disable',
+  完成后复盘: 'Review when complete',
+  沿用上下文: 'Continue context',
+  '继续上下文': 'Continue context',
+  独立运行: 'Run independently',
+  执行: 'Execution',
+  执行类型: 'Execution type',
+  '超时（秒）': 'Timeout (seconds)',
+  'AI 提示词': 'AI prompt',
+  提示词: 'Prompt',
+  输入提示词: 'Enter prompt',
+  命令: 'Command',
+  工作目录: 'Working directory',
+  'pnpm test': 'pnpm test',
+  '/abs/path': '/abs/path',
+  环境变量: 'Environment variables',
+  'FOO=bar\nNODE_ENV=production': 'FOO=bar\nNODE_ENV=production',
+  调度方式: 'Schedule type',
+  手动: 'Manual',
+  定时: 'Scheduled',
+  周期: 'Recurring',
+  运行时间: 'Run time',
+  '上次运行': 'Last run',
+  '下次运行': 'Next run',
+  '运行记录': 'Run history',
+  活动: 'Activity',
+  '暂无运行历史': 'No run history',
+  '暂无活动日志': 'No activity logs',
+  '任务类型': 'Task type',
+  人类: 'Human',
+  '当前项目': 'Current project',
+  来源: 'Source',
+  '暂无任务': 'No tasks',
+  归档: 'Archive',
+  '当前会话暂无 AI 任务。': 'No AI tasks in this session yet.',
+  '当前会话暂无待办。': 'No todos in this session yet.',
+  '当前范围暂无 AI 任务。': 'No AI tasks in this scope yet.',
+  '当前范围暂无待办。': 'No todos in this scope yet.',
+  '当前任务正在运行，归档前会先取消当前执行。继续吗？':
+    'Current task is running. Archiving will cancel it first. Continue?',
+  '当前执行尚未完全停止，请稍后再试': 'Execution is still stopping, please retry shortly',
+  '当前任务正在运行，停用前会先取消当前执行。继续吗？':
+    'Task is running. Disabling it will first cancel execution. Continue?',
+  '当前会话正在运行，归档会先取消当前执行。继续吗？':
+    'Session is running. Archiving will first cancel the current execution. Continue?',
+  '任务 {{name}}': 'Task {{name}}',
+  '任务 {{status}}': 'Task {{status}}',
+  '暂无输出': 'No output',
+  创建任务: 'Create task',
+  '转换为任务': 'Convert to task',
+  关闭: 'Close',
+  来源会话: 'Source session',
+  '等待说明': 'Wait note',
+  例子: 'Example',
+  '请查看附件': 'Please check attachment',
+  继续: 'Continue',
+  标题: 'Title',
+  工具: 'Tool',
+  项目: 'Project',
+  搜索: 'Search',
+  '未记录日期': 'Date unavailable',
+  '{count} 分钟': '{count} min',
+  '{count} 小时': '{count} hr',
+  '{count} 天': '{count} day',
+  '{count} 周': '{count} wk',
+  '{count} 周前': '{count} wk ago',
+  '取消固定': 'Unpin',
+  恢复: 'Restore',
+  '关闭侧栏': 'Close sidebar',
+  '选择项目': 'Select project',
+  '无项目': 'No project',
+  '项目名称（可选）': 'Project name (optional)',
+  '工作目录，如 ~/projects/xxx': 'Working directory, e.g. ~/projects/xxx',
+  '项目目标（可选）': 'Project goal (optional)',
+  打开: 'Open',
+  '添加项目': 'Add project',
+  '项目面板': 'Project panel',
+  '打开项目面板': 'Open project panel',
+  '还没有内容': 'Nothing here yet',
+  '无搜索结果': 'No results',
+  '新 AI 任务': 'New AI task',
+  AI: 'AI',
+  '上下文、约束、验收标准。': 'Context, constraints, acceptance criteria.',
+  等待: 'Waiting',
+  执行器: 'Executor',
+  脚本: 'Script',
+  默认: 'Default',
+  '例如：等设计确认后再继续。': 'Example: continue after design approval.',
+  '保存并转换': 'Save and convert',
+  '创建 AI 任务': 'Create AI task',
+  '创建人类任务': 'Create human task',
+  '关闭任务详情': 'Close task details',
+  '未设置': 'Unset',
+  自动: 'Automatic',
+  '已创建': 'Created',
+  '形态切换': 'Kind changed',
+  '已触发': 'Triggered',
+  '状态变更': 'Status changed',
+  '已归档': 'Archived',
+  '已暂停': 'Paused',
+  '立即触发': 'Run now',
+  '完成任务': 'Complete task',
+  '清空队列': 'Clear queue',
+  '附加文件': 'Attach files',
+  '取消中…': 'Stopping…',
+  '正在加载会话…': 'Loading session…',
+  '正在执行中，归档会先取消当前执行。继续吗？':
+    'Currently running. Archiving will cancel the current execution first. Continue?',
+  '切换语言': 'Switch language',
+  '此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称':
+    'This action archives this project and all of its sessions, AI tasks, human tasks, and run data. Type the project name',
+  '确认：': 'to confirm:',
+}
+
+type I18nDictionary = {
+  locale: Locale
+  t: (key: string, values?: Record<string, string | number>) => string
+  setLocale: (locale: Locale) => void
+}
+
+const I18nContext = createContext<I18nDictionary | null>(null)
+
+function interpolate(template: string, values?: Record<string, string | number>): string {
+  if (!values) return template
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.replace(new RegExp(`\\{\\{${key}\\}\\}|\\{${key}\\}`, 'g'), String(value)),
+    template,
+  )
+}
+
+function resolveBrowserLocale(): Locale {
+  if (typeof navigator === 'undefined') return 'zh-CN'
+  const language = navigator.language.toLowerCase()
+  return language.startsWith('en') ? 'en-US' : 'zh-CN'
+}
+
+function getSavedLocale(): Locale | null {
+  if (typeof localStorage === 'undefined') return null
+  const raw = localStorage.getItem(STORAGE_KEY)
+  return raw === 'en-US' || raw === 'zh-CN' ? raw : null
+}
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [locale, setLocaleValue] = useState<Locale>(() => getSavedLocale() ?? resolveBrowserLocale())
+
+  const setLocale = useCallback((next: Locale) => {
+    setLocaleValue(next)
+    if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, next)
+  }, [])
+
+  const t = useCallback((key: string, values?: Record<string, string | number>) => {
+    const value = EN_MESSAGES[key]
+    return interpolate(value ?? key, values)
+  }, [])
+
+  const value = useMemo<I18nDictionary>(() => ({
+    locale,
+    setLocale,
+    t: (key: string, values?: Record<string, string | number>) => {
+      if (locale === 'zh-CN') return interpolate(key, values)
+      return t(key, values)
+    },
+  }), [locale, setLocale, t])
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
+}
+
+export function useI18n(): I18nDictionary {
+  const ctx = useContext(I18nContext)
+  if (!ctx) throw new Error('useI18n must be used within I18nProvider')
+  return ctx
+}
+
+export function localeLabel(locale: Locale): string {
+  return locale === 'zh-CN' ? '中文' : 'English'
+}
+
+export function nextLocale(locale: Locale): Locale {
+  return locale === 'zh-CN' ? 'en-US' : 'zh-CN'
+}

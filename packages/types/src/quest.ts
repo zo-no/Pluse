@@ -16,6 +16,8 @@ export type ExecutorKind = 'ai_prompt' | 'script'
 export interface QueuedMessage {
   requestId: string
   text: string
+  displayText?: string
+  promptText?: string
   tool: string
   model: string | null
   effort: string | null

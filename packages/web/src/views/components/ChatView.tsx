@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { MessageAttachment, Quest, QuestEvent, Run, RuntimeModelCatalog, RuntimeTool, UpdateQuestInput } from '@pluse/types'
+import type { MessageAttachment, Quest, QuestEvent, QueuedMessage, Run, RuntimeModelCatalog, RuntimeTool, UpdateQuestInput } from '@pluse/types'
 import * as api from '@/api/client'
+import { useI18n } from '@/i18n'
 import { displaySessionName } from '@/views/utils/display'
 import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
+import { parseSseMessage } from '@/views/utils/sse'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -19,12 +21,12 @@ interface ChatViewProps {
   onDataChanged?: () => Promise<void> | void
 }
 
-function formatTime(value: number): string {
+function formatTime(value: number, locale = 'zh-CN'): string {
   const date = new Date(value < 1_000_000_000_000 ? value * 1000 : value)
-  return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit' }).format(date)
+  return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
-function formatRelativeTime(value: number): string {
+function formatRelativeTime(value: number, t?: (key: string, values?: Record<string, string | number>) => string): string {
   const target = value < 1_000_000_000_000 ? value * 1000 : value
   const now = Date.now()
   const delta = Math.max(0, now - target)
@@ -32,18 +34,18 @@ function formatRelativeTime(value: number): string {
   const hour = 60 * minute
   const day = 24 * hour
 
-  if (delta < minute) return '刚刚'
-  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`
-  if (delta < day) return `${Math.floor(delta / hour)} 小时前`
-  return `${Math.floor(delta / day)} 天前`
+  if (delta < minute) return t ? t('刚刚') : '刚刚'
+  if (delta < hour) return t ? t('{count} 分钟前', { count: Math.floor(delta / minute) }) : `${Math.floor(delta / minute)} 分钟前`
+  if (delta < day) return t ? t('{count} 小时前', { count: Math.floor(delta / hour) }) : `${Math.floor(delta / hour)} 小时前`
+  return t ? t('{count} 天前', { count: Math.floor(delta / day) }) : `${Math.floor(delta / day)} 天前`
 }
 
-function formatRunState(value: string): string {
-  if (value === 'running') return '运行中'
-  if (value === 'completed') return '已完成'
-  if (value === 'failed') return '失败'
-  if (value === 'cancelled') return '已取消'
-  if (value === 'accepted') return '已排队'
+function formatRunState(value: string, t?: (key: string) => string): string {
+  if (value === 'running') return t ? t('运行中') : '运行中'
+  if (value === 'completed') return t ? t('已完成') : '已完成'
+  if (value === 'failed') return t ? t('失败') : '失败'
+  if (value === 'cancelled') return t ? t('已取消') : '已取消'
+  if (value === 'accepted') return t ? t('已排队') : '已排队'
   return value
 }
 
@@ -53,10 +55,10 @@ function compactText(value: string, maxLength = 88): string {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized
 }
 
-function summarizeFailureReason(value?: string): string {
+function summarizeFailureReason(value?: string, t?: (key: string) => string): string {
   if (!value) return ''
-  if (value.includes('failed to open state db') || value.includes('state runtime')) return 'Codex 运行时状态库异常'
-  if (value.includes('model is not supported')) return '当前 Codex 模型不可用'
+  if (value.includes('failed to open state db') || value.includes('state runtime')) return t ? t('Codex 运行时状态库异常') : 'Codex 运行时状态库异常'
+  if (value.includes('model is not supported')) return t ? t('当前 Codex 模型不可用') : '当前 Codex 模型不可用'
   const firstMeaningfulLine = value
     .split('\n')
     .map((line) => line.trim())
@@ -64,10 +66,14 @@ function summarizeFailureReason(value?: string): string {
   return compactText((firstMeaningfulLine ?? value).replace(/^Error:\s*/, ''), 72)
 }
 
-function queuePreview(value: string): string {
+function queuePreview(value: string, t?: (key: string) => string): string {
   const compact = value.replace(/\s+/g, ' ').trim()
-  if (!compact) return '空白消息'
+  if (!compact) return t ? t('空白消息') : '空白消息'
   return compact.length > 48 ? `${compact.slice(0, 45)}...` : compact
+}
+
+function queuedMessageText(item: QueuedMessage): string {
+  return item.displayText ?? item.text
 }
 
 function isDrawingModel(model?: string): boolean {
@@ -125,10 +131,10 @@ type ThreadSegment =
   | { kind: 'message'; key: string; event: QuestEvent }
   | { kind: 'meta'; key: string; events: QuestEvent[] }
 
-function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
+function describeMetaEvent(event: QuestEvent, t?: (key: string) => string): MetaEventDisplay {
   if (event.type === 'tool_use') {
     const raw = event.content ?? event.toolInput ?? ''
-    let toolName = '工具调用'
+    let toolName = t ? t('工具调用') : '工具调用'
     let inputPreview = raw
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>
@@ -137,7 +143,7 @@ function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
     } catch {
       // Keep raw preview.
     }
-    return { label: 'tool-use', icon: '⚙', content: `${toolName}: ${inputPreview}` }
+    return { label: t ? t('工具调用') : '工具调用', icon: '⚙', content: `${toolName}: ${inputPreview}` }
   }
 
   if (event.type === 'tool_result') {
@@ -155,12 +161,12 @@ function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
     } catch {
       // Keep raw preview.
     }
-    return { label: '工具结果', icon: isError ? '✗' : '✓', content, isError }
+    return { label: t ? t('工具结果') : '工具结果', icon: isError ? '✗' : '✓', content, isError }
   }
 
   if (event.type === 'reasoning') {
     return {
-      label: '思考过程',
+      label: t ? t('思考过程') : '思考过程',
       icon: '💭',
       content: event.content ?? event.bodyPreview ?? '',
     }
@@ -169,7 +175,7 @@ function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
   if (event.type === 'status') {
     const content = event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? ''
     return {
-      label: '状态',
+      label: t ? t('状态') : '状态',
       icon: '·',
       content,
       isError: content.toLowerCase().startsWith('error:'),
@@ -177,7 +183,11 @@ function describeMetaEvent(event: QuestEvent): MetaEventDisplay {
   }
 
   return {
-    label: event.type === 'file_change' ? '文件变更' : event.type === 'usage' ? '用量' : '事件',
+    label: event.type === 'file_change'
+      ? (t ? t('文件变更') : '文件变更')
+      : event.type === 'usage'
+        ? (t ? t('用量') : '用量')
+        : (t ? t('事件') : '事件'),
     icon: '•',
     content: event.content ?? event.output ?? event.toolInput ?? event.bodyPreview ?? '',
   }
@@ -210,13 +220,21 @@ function buildThreadSegments(events: QuestEvent[]): ThreadSegment[] {
   return segments
 }
 
-function MessageEventCard({ event }: { event: QuestEvent }) {
+function MessageEventCard({
+  event,
+  locale,
+  t,
+}: {
+  event: QuestEvent
+  locale: string
+  t: (key: string, values?: Record<string, string | number>) => string
+}) {
   if (event.role === 'user') {
     return (
       <div className="pluse-message-row is-user">
         <div className="pluse-user-bubble-shell">
           <div className="pluse-user-bubble">{event.content}</div>
-          <span className="pluse-message-time">{formatTime(event.timestamp)}</span>
+          <span className="pluse-message-time">{formatTime(event.timestamp, locale)}</span>
         </div>
       </div>
     )
@@ -225,7 +243,7 @@ function MessageEventCard({ event }: { event: QuestEvent }) {
   return (
     <div className="pluse-message-row is-assistant">
       <div className="pluse-message-head is-assistant">
-        <span className="pluse-assistant-stamp" title={formatTime(event.timestamp)}>{formatRelativeTime(event.timestamp)}</span>
+        <span className="pluse-assistant-stamp" title={formatTime(event.timestamp, locale)}>{formatRelativeTime(event.timestamp, t)}</span>
       </div>
       <div className="pluse-assistant-copy pluse-markdown">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
@@ -234,8 +252,14 @@ function MessageEventCard({ event }: { event: QuestEvent }) {
   )
 }
 
-function MetaEventEntry({ event }: { event: QuestEvent }) {
-  const meta = describeMetaEvent(event)
+function MetaEventEntry({
+  event,
+  t,
+}: {
+  event: QuestEvent
+  t: (key: string) => string
+}) {
+  const meta = describeMetaEvent(event, t)
   if (event.type === 'status') {
     return (
       <details className={`pluse-status-detail${meta.isError ? ' is-error' : ''}`}>
@@ -275,15 +299,22 @@ function MetaEventEntry({ event }: { event: QuestEvent }) {
   )
 }
 
-function MetaEventGroup({ events }: { events: QuestEvent[] }) {
+function MetaEventGroup({
+  events,
+  t,
+}: {
+  events: QuestEvent[]
+  t: (key: string) => string
+}) {
   return (
     <div className="pluse-meta-group-body">
-      {events.map((event) => <MetaEventEntry key={event.seq} event={event} />)}
+      {events.map((event) => <MetaEventEntry key={event.seq} event={event} t={t} />)}
     </div>
   )
 }
 
 export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProps) {
+  const { locale, t } = useI18n()
   const [quest, setQuest] = useState<Quest | null>(null)
   const [events, setEvents] = useState<QuestEvent[]>([])
   const [runs, setRuns] = useState<Run[]>([])
@@ -328,13 +359,13 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   function addFiles(files: File[]) {
     const oversized = files.find((file) => file.size > MAX_FILE_SIZE)
     if (oversized) {
-      setUploadError(`文件 ${oversized.name} 超过 20MB 限制`)
+      setUploadError(t('文件 {name} 超过 20MB 限制', { name: oversized.name }))
       return
     }
     setPendingFiles((previous) => {
       const merged = [...previous, ...files].slice(0, MAX_ATTACHMENTS)
       if (previous.length + files.length > MAX_ATTACHMENTS) {
-        setUploadError(`最多附加 ${MAX_ATTACHMENTS} 个文件`)
+        setUploadError(t('最多附加 {count} 个文件', { count: MAX_ATTACHMENTS }))
       }
       const newUrls = files
         .slice(0, MAX_ATTACHMENTS - previous.length)
@@ -447,12 +478,40 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
 
   useEffect(() => {
     const source = new EventSource(`/api/events?questId=${encodeURIComponent(questId)}`)
-    source.onmessage = () => {
+    let pendingQuestRefresh = false
+    let pendingThreadRefresh = false
+    let pendingProjectRefresh = false
+
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+
+      if (event.type === 'quest_updated') {
+        pendingQuestRefresh = true
+        pendingProjectRefresh = true
+      }
+      if (event.type === 'run_updated') {
+        pendingQuestRefresh = true
+        pendingThreadRefresh = true
+      }
+      if (event.type === 'run_line') {
+        pendingThreadRefresh = true
+      }
+      if (!pendingQuestRefresh && !pendingThreadRefresh && !pendingProjectRefresh) return
+
       if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
       reloadTimer.current = window.setTimeout(() => {
-        void refreshQuest()
-        void refreshThread()
-        void onDataChanged?.()
+        const shouldRefreshQuest = pendingQuestRefresh
+        const shouldRefreshThread = pendingThreadRefresh
+        const shouldRefreshProject = pendingProjectRefresh
+
+        pendingQuestRefresh = false
+        pendingThreadRefresh = false
+        pendingProjectRefresh = false
+
+        if (shouldRefreshQuest) void refreshQuest()
+        if (shouldRefreshThread) void refreshThread()
+        if (shouldRefreshProject) void onDataChanged?.()
       }, 200)
     }
     return () => {
@@ -608,7 +667,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     }
 
     const result = await api.sendQuestMessage(questId, {
-      text: draft.trim() || '请查看附件',
+      text: draft.trim() || t('请查看附件'),
       tool: quest.tool,
       model: quest.model ?? null,
       effort: quest.effort ?? null,
@@ -670,7 +729,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }
 
   if (!quest) {
-    return <div className="pluse-page pluse-page-loading">正在加载会话…</div>
+    return <div className="pluse-page pluse-page-loading">{t('正在加载会话…')}</div>
   }
 
   return (
@@ -680,12 +739,12 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
           <div className="pluse-thread-inner">
             {events.length === 0 ? (
               <div className="pluse-empty-state pluse-chat-empty">
-                <h2>开始会话</h2>
+                <h2>{t('开始会话')}</h2>
               </div>
             ) : null}
             {threadSegments.map((segment) => segment.kind === 'message'
-              ? <MessageEventCard key={segment.key} event={segment.event} />
-              : <MetaEventGroup key={segment.key} events={segment.events} />)}
+              ? <MessageEventCard key={segment.key} event={segment.event} locale={locale} t={t} />
+              : <MetaEventGroup key={segment.key} events={segment.events} t={t} />)}
             <div ref={bottomRef} />
           </div>
         </div>
@@ -694,8 +753,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             type="button"
             className="pluse-scroll-bottom-btn"
             onClick={() => scrollToBottom()}
-            aria-label={newMessageCount > 0 ? `有 ${newMessageCount} 条新消息，滚动到底部` : '滚动到底部'}
-            title={newMessageCount > 0 ? `有 ${newMessageCount} 条新消息` : '滚动到底部'}
+            aria-label={newMessageCount > 0 ? t('有 {count} 条新消息，滚动到底部', { count: newMessageCount }) : t('滚动到底部')}
+            title={newMessageCount > 0 ? t('有 {count} 条新消息', { count: newMessageCount }) : t('滚动到底部')}
           >
             <span className="pluse-scroll-bottom-icon" aria-hidden="true">↓</span>
             {newMessageCount > 0 ? (
@@ -711,36 +770,49 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             type="button"
             className="pluse-composer-resize-handle"
             onPointerDown={handleResizeStart}
-            aria-label="调整输入区高度"
-            title="拖动调整输入区高度"
+            aria-label={t('调整输入区高度')}
+            title={t('拖动调整输入区高度')}
           >
             <span />
           </button>
           {quest.followUpQueue.length > 0 ? (
             <div className="pluse-queue-panel">
-              <div className="pluse-inline-status pluse-queue-panel-head">
-                <span>排队中的消息</span>
-                <span>{quest.followUpQueue.length}</span>
-              </div>
-              {quest.followUpQueue.map((item) => (
-                <div key={item.requestId} className="pluse-queue-item">
-                  <div className="pluse-queue-item-copy">
-                    <strong className="pluse-queue-item-title">
-                      {queuePreview(item.text)}
-                    </strong>
-                    <span className="pluse-message-time">{formatTime(Date.parse(item.queuedAt))}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="pluse-attachment-remove-btn"
-                    onClick={() => void handleRemoveQueuedRequest(item.requestId)}
-                    disabled={removingRequestId === item.requestId}
-                    aria-label="移除排队消息"
-                  >
-                    ×
-                  </button>
+              <div className="pluse-queue-panel-head">
+                <div className="pluse-inline-status pluse-inline-status-compact">
+                  <span>{t('待发送 {count}', { count: quest.followUpQueue.length })}</span>
+                  <span>{t('当前回复结束后自动发送')}</span>
                 </div>
-              ))}
+                <button
+                  type="button"
+                  className="pluse-button pluse-button-ghost pluse-button-compact"
+                  onClick={() => void handleClearQueue()}
+                  title={t('清空排队消息')}
+                >
+                  {t('清空队列')}
+                </button>
+              </div>
+              <div className="pluse-queue-chip-list">
+                {quest.followUpQueue.map((item) => (
+                  <div key={item.requestId} className="pluse-queue-item">
+                    <div className="pluse-queue-item-copy">
+                      <strong className="pluse-queue-item-title">
+                        {queuePreview(queuedMessageText(item), t)}
+                      </strong>
+                      <span className="pluse-queue-item-meta">{formatTime(Date.parse(item.queuedAt), locale)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="pluse-queue-item-remove"
+                      onClick={() => void handleRemoveQueuedRequest(item.requestId)}
+                      disabled={removingRequestId === item.requestId}
+                      aria-label={t('移除排队消息')}
+                      title={t('移除排队消息')}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
 
@@ -748,13 +820,11 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
             <div className="pluse-composer-toolbar">
               <div className="pluse-composer-mainline">
                 <div className="pluse-inline-status pluse-inline-status-compact">
-                  {quest.followUpQueue.length > 0
-                    ? <span>排队中 {quest.followUpQueue.length}</span>
-                    : quest.activeRunId
-                      ? <span>运行中</span>
-                      : <span>Enter 发送</span>}
-                  {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>上次：{formatRunState(latestRun.state)}</span> : null}
-                  {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason)}</span> : null}
+                  {quest.activeRunId ? <span>{t('运行中')}</span> : null}
+                  {quest.followUpQueue.length > 0 ? <span>{t('待发送 {count}', { count: quest.followUpQueue.length })}</span> : null}
+                  {!quest.activeRunId && quest.followUpQueue.length === 0 ? <span>{t('Enter 发送')}</span> : null}
+                  {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>{t('上次：{{state}}', { state: formatRunState(latestRun.state, t) })}</span> : null}
+                  {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason, t)}</span> : null}
                 </div>
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">
                   <select
@@ -787,21 +857,11 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   ) : null}
                 </div>
                 <div className="pluse-composer-quick-actions">
-                  {quest.followUpQueue.length > 0 ? (
-                    <button
-                      type="button"
-                      className="pluse-button pluse-button-ghost pluse-button-compact"
-                      onClick={() => void handleClearQueue()}
-                      title="清空排队消息"
-                    >
-                      清空队列
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     className="pluse-icon-button pluse-transfer-action"
-                    title="转任务"
-                    aria-label="转任务"
+                    title={t('转任务')}
+                    aria-label={t('转任务')}
                     onClick={() => setConvertTaskModalOpen(true)}
                     disabled={Boolean(quest.activeRunId)}
                   >
@@ -831,7 +891,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                       type="button"
                       className="pluse-attachment-remove-btn"
                       onClick={() => removeFile(index)}
-                      aria-label="移除"
+                      aria-label={t('移除')}
+                      title={t('移除')}
                     >
                       ×
                     </button>
@@ -866,7 +927,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   addFiles(files)
                 }
               }}
-              placeholder="给当前会话发送消息…"
+              placeholder={t('给当前会话发送消息…')}
               rows={2}
             />
             <div className="pluse-composer-input-actions">
@@ -875,8 +936,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                 className="pluse-icon-button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={sending || pendingFiles.length >= MAX_ATTACHMENTS}
-                aria-label="附加文件"
-                title="附加文件"
+                aria-label={t('附加文件')}
+                title={t('附加文件')}
               >
                 <AttachIcon className="pluse-icon" />
               </button>
@@ -887,7 +948,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   onClick={() => void handleCancel()}
                   disabled={cancelling}
                 >
-                  <span className="pluse-label-desktop">{cancelling ? '取消中…' : '停止'}</span>
+                  <span className="pluse-label-desktop">{cancelling ? t('取消中…') : t('停止')}</span>
                   <span className="pluse-label-mobile" aria-hidden="true">⏹</span>
                 </button>
               ) : null}
@@ -896,8 +957,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                 className="pluse-icon-button pluse-send-btn"
                 onClick={() => void handleSend()}
                 disabled={sending}
-                aria-label={sending ? '发送中' : '发送'}
-                title="发送 (Enter) · 换行 (Cmd/Ctrl+Enter)"
+                aria-label={sending ? t('发送中') : t('发送')}
+                title={t('发送 (Enter) · 换行 (Cmd/Ctrl+Enter)')}
               >
                 <SendIcon className="pluse-icon" />
               </button>
@@ -928,7 +989,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
           projectName={null}
           initialKind="ai"
           conversionQuestId={quest.id}
-          conversionQuestName={displaySessionName(quest.name)}
+          conversionQuestName={displaySessionName(quest.name, t)}
           conversionQuestDescription={quest.description ?? ''}
           conversionPrompt=""
           conversionContinueQuest={true}

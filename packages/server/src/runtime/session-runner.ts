@@ -12,6 +12,7 @@ import type {
   RunTriggeredBy,
 } from '@pluse/types'
 import { appendEvent, listEvents } from '../models/history'
+import { createProjectActivity } from '../models/project-activity'
 import { createQuestOp } from '../models/quest-op'
 import {
   clearFollowUps,
@@ -33,9 +34,9 @@ import {
   getRunsByQuest,
   updateRun,
 } from '../models/run'
-import { createTodo } from '../models/todo'
 import { emit } from '../services/events'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
+import { createTodoWithEffects } from '../services/todos'
 import { getManagedCodexHome } from '../support/paths'
 import { getRuntimeModelCatalog, normalizeCodexModelId } from './catalog'
 
@@ -648,7 +649,7 @@ function requestTermination(runId: string, reason: 'cancelled' | 'timeout'): voi
 
 function ensureTaskReviewTodo(quest: Quest, succeeded: boolean): void {
   if (!succeeded || !quest.reviewOnComplete || quest.kind !== 'task' || quest.deleted) return
-  createTodo({
+  createTodoWithEffects({
     projectId: quest.projectId,
     originQuestId: quest.id,
     createdBy: 'system',
@@ -770,6 +771,7 @@ function maybeStartNextFollowUp(questId: string): void {
   const message = next.message
   const queuedQuest = getQuest(questId)
   if (!queuedQuest) return
+  appendEvent(questId, makeMessageEvent('user', message.displayText ?? message.text))
   const runtime = questRuntimePreferences(queuedQuest, {
     tool: resolveTool(message.tool),
     model: message.model ?? resolveModel(resolveTool(message.tool)),
@@ -778,7 +780,7 @@ function maybeStartNextFollowUp(questId: string): void {
   })
   const run = createAcceptedRun(queuedQuest, message.requestId, 'chat', 'human', runtime)
   queueMicrotask(() => {
-    void executeQuestRun(run.id, questId, message.text)
+    void executeQuestRun(run.id, questId, message.promptText ?? message.text)
   })
 }
 
@@ -812,6 +814,18 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
   if (quest.kind === 'task') {
     createQuestOp({
       questId: quest.id,
+      op: state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'failed',
+      actor: 'system',
+      fromStatus: 'running',
+      toStatus: nextQuestStatus,
+      note: failureReason,
+    })
+    createProjectActivity({
+      projectId: quest.projectId,
+      subjectType: 'task',
+      subjectId: quest.id,
+      questId: quest.id,
+      title: quest.title?.trim() || quest.name?.trim() || '未命名任务',
       op: state === 'completed' ? 'done' : state === 'cancelled' ? 'cancelled' : 'failed',
       actor: 'system',
       fromStatus: 'running',
@@ -864,6 +878,17 @@ function createAcceptedRun(
   if (quest.kind === 'task') {
     createQuestOp({
       questId: quest.id,
+      op: 'triggered',
+      actor: triggeredBy === 'scheduler' ? 'scheduler' : 'human',
+      fromStatus: quest.status,
+      toStatus: 'running',
+    })
+    createProjectActivity({
+      projectId: quest.projectId,
+      subjectType: 'task',
+      subjectId: quest.id,
+      questId: quest.id,
+      title: quest.title?.trim() || quest.name?.trim() || '未命名任务',
       op: 'triggered',
       actor: triggeredBy === 'scheduler' ? 'scheduler' : 'human',
       fromStatus: quest.status,
@@ -1191,7 +1216,6 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
 
   const recordedText = buildRecordedUserText(input)
   const aiPromptText = buildAttachmentPrompt(input)
-  appendEvent(initialQuest.id, makeMessageEvent('user', recordedText))
 
   const updatedQuest = updateQuest(initialQuest.id, {
     tool: input.tool ? resolveTool(input.tool) : initialQuest.tool ?? null,
@@ -1211,6 +1235,8 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
     enqueueFollowUp(updatedQuest.id, {
       requestId,
       text: aiPromptText,
+      displayText: recordedText,
+      promptText: aiPromptText,
       tool: runtime.tool,
       model: runtime.model,
       effort: runtime.effort,
@@ -1221,6 +1247,7 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
     return { queued: true, run: null, quest: getQuest(updatedQuest.id) }
   }
 
+  appendEvent(initialQuest.id, makeMessageEvent('user', recordedText))
   const run = createAcceptedRun(updatedQuest, requestId, 'chat', 'human', runtime)
   queueMicrotask(() => {
     void executeQuestRun(run.id, updatedQuest.id, aiPromptText)

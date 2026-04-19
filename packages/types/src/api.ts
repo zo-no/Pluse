@@ -85,6 +85,7 @@ export interface ProjectOverview {
   tasks: Quest[]
   todos: Todo[]
   waitingTodos: Todo[]
+  recentActivity: ProjectActivityItem[]
   recentOutputs: ProjectRecentOutput[]
   schedule: {
     lastRunAt?: string
@@ -95,6 +96,37 @@ export interface ProjectOverview {
     tasks: number
     todos: number
   }
+}
+
+export type ProjectActivitySubjectType = 'session' | 'task' | 'todo'
+
+export type ProjectActivityOp =
+  | 'created'
+  | 'kind_changed'
+  | 'project_changed_in'
+  | 'project_changed_out'
+  | 'triggered'
+  | 'done'
+  | 'failed'
+  | 'cancelled'
+  | 'status_changed'
+  | 'deleted'
+
+export interface ProjectActivityItem {
+  id: string
+  projectId: string
+  subjectType: ProjectActivitySubjectType
+  subjectId: string
+  questId?: string
+  title: string
+  op: ProjectActivityOp
+  actor: 'human' | 'ai' | 'scheduler' | 'system'
+  fromKind?: string
+  toKind?: string
+  fromStatus?: string
+  toStatus?: string
+  note?: string
+  createdAt: string
 }
 
 export interface ProjectRecentOutput {

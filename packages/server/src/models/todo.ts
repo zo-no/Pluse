@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { CreateTodoInput, Todo, TodoStatus, UpdateTodoInput } from '@pluse/types'
+import type { CreateTodoInput, Todo, TodoRepeat, TodoStatus, UpdateTodoInput } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {
@@ -18,6 +18,8 @@ type TodoRow = {
   title: string
   description: string | null
   waiting_instructions: string | null
+  due_at: string | null
+  repeat: TodoRepeat
   status: TodoStatus
   deleted: number
   deleted_at: string | null
@@ -34,6 +36,8 @@ function rowToTodo(row: TodoRow): Todo {
     title: row.title,
     description: row.description ?? undefined,
     waitingInstructions: row.waiting_instructions ?? undefined,
+    dueAt: row.due_at ?? undefined,
+    repeat: row.repeat ?? 'none',
     status: row.status,
     deleted: row.deleted === 1 ? true : undefined,
     deletedAt: row.deleted_at ?? undefined,
@@ -60,7 +64,12 @@ export function listTodos(filter: { projectId?: string; status?: TodoStatus; del
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const rows = db.query<TodoRow, string[]>(
-    `SELECT * FROM todos ${where} ORDER BY status = 'pending' DESC, updated_at DESC`
+    `SELECT * FROM todos ${where}
+      ORDER BY
+        status = 'pending' DESC,
+        CASE WHEN status = 'pending' AND due_at IS NOT NULL THEN 0 ELSE 1 END ASC,
+        due_at ASC,
+        updated_at DESC`
   ).all(...params)
   return rows.map(rowToTodo)
 }
@@ -78,8 +87,8 @@ export function createTodo(input: CreateTodoInput): Todo {
   db.run(
     `INSERT INTO todos (
       id, project_id, created_by, origin_quest_id,
-      title, description, waiting_instructions, status, deleted, deleted_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      title, description, waiting_instructions, due_at, repeat, status, deleted, deleted_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.projectId,
@@ -88,6 +97,8 @@ export function createTodo(input: CreateTodoInput): Todo {
       input.title,
       input.description ?? null,
       input.waitingInstructions ?? null,
+      input.dueAt ?? null,
+      input.repeat ?? 'none',
       input.status ?? 'pending',
       input.deleted ? 1 : 0,
       input.deleted ? ts : null,
@@ -110,6 +121,8 @@ export function updateTodo(id: string, input: UpdateTodoInput): Todo {
   if ('title' in input && input.title !== undefined) { sets.push('title = ?'); params.push(input.title) }
   if ('description' in input) { sets.push('description = ?'); params.push(input.description ?? null) }
   if ('waitingInstructions' in input) { sets.push('waiting_instructions = ?'); params.push(input.waitingInstructions ?? null) }
+  if ('dueAt' in input) { sets.push('due_at = ?'); params.push(input.dueAt ?? null) }
+  if ('repeat' in input && input.repeat !== undefined) { sets.push('repeat = ?'); params.push(input.repeat) }
   if ('status' in input && input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
   if ('deleted' in input && input.deleted !== undefined) {
     sets.push('deleted = ?')

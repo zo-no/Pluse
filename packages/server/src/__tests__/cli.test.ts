@@ -218,7 +218,7 @@ describe('pluse cli', () => {
       )
       expect(taskQuest.kind).toBe('task')
 
-      const todo = parseJson<{ id: string; title: string; status: string }>(
+      const todo = parseJson<{ id: string; title: string; status: string; dueAt?: string; repeat: string }>(
         runCli(sandbox, [
           'todo',
           'create',
@@ -881,10 +881,16 @@ describe('pluse cli', () => {
           'Initial description',
           '--waiting',
           'Please review this.',
+          '--due-at',
+          '2026-04-20T02:00:00.000Z',
+          '--repeat',
+          'daily',
           '--json',
         ]),
       )
       expect(todo.status).toBe('pending')
+      expect(todo.dueAt).toBe('2026-04-20T02:00:00.000Z')
+      expect(todo.repeat).toBe('daily')
 
       const todos = parseJson<Array<{ id: string; title: string; status: string }>>(
         runCli(sandbox, ['todo', 'list', '--project-id', project.id, '--status', 'pending', '--json']),
@@ -911,6 +917,11 @@ describe('pluse cli', () => {
         runCli(sandbox, ['todo', 'list', '--project-id', project.id, '--status', 'done', '--json']),
       )
       expect(doneTodos.map((item) => item.id)).toContain(todo.id)
+
+      const pendingTodosAfterDone = parseJson<Array<{ id: string; status: string; repeat: string; dueAt?: string }>>(
+        runCli(sandbox, ['todo', 'list', '--project-id', project.id, '--status', 'pending', '--json']),
+      )
+      expect(pendingTodosAfterDone.some((item) => item.id !== todo.id && item.repeat === 'daily' && item.dueAt === '2026-04-21T02:00:00.000Z')).toBe(true)
 
       const deleted = runCli(sandbox, ['todo', 'delete', todo.id, '--confirm'])
       expect(deleted.exitCode).toBe(0)

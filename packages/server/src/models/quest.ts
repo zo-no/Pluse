@@ -56,6 +56,15 @@ type QuestRow = {
   updated_at: string
 }
 
+function normalizeQueuedMessage(entry: QueuedMessage): QueuedMessage {
+  return {
+    ...entry,
+    displayText: entry.displayText || entry.text,
+    promptText: entry.promptText || entry.text,
+    queuedAt: entry.queuedAt || now(),
+  }
+}
+
 function parseJson<T>(value: string | null): T | undefined {
   if (!value) return undefined
   try {
@@ -66,6 +75,7 @@ function parseJson<T>(value: string | null): T | undefined {
 }
 
 function rowToQuest(row: QuestRow): Quest {
+  const followUpQueue = (parseJson<QueuedMessage[]>(row.follow_up_queue) ?? []).map(normalizeQueuedMessage)
   return {
     id: row.id,
     projectId: row.project_id,
@@ -81,7 +91,7 @@ function rowToQuest(row: QuestRow): Quest {
     name: row.name ?? undefined,
     autoRenamePending: row.auto_rename_pending === 1 ? true : undefined,
     pinned: row.pinned === 1 ? true : undefined,
-    followUpQueue: parseJson<QueuedMessage[]>(row.follow_up_queue) ?? [],
+    followUpQueue,
     title: row.title ?? undefined,
     description: row.description ?? undefined,
     status: row.status,
@@ -111,13 +121,6 @@ function defaultTitle(input: CreateQuestInput): string {
 
 function defaultStatus(kind: QuestKind): QuestStatus {
   return kind === 'session' ? 'idle' : 'pending'
-}
-
-function normalizeQueuedMessage(entry: QueuedMessage): QueuedMessage {
-  return {
-    ...entry,
-    queuedAt: entry.queuedAt || now(),
-  }
 }
 
 export function listQuests(filter: ListQuestsFilter = {}): Quest[] {

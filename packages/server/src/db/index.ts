@@ -92,6 +92,8 @@ function initSchema(db: Database): void {
     title                TEXT NOT NULL,
     description          TEXT,
     waiting_instructions TEXT,
+    due_at               TEXT,
+    repeat               TEXT NOT NULL DEFAULT 'none',
     status               TEXT NOT NULL DEFAULT 'pending',
     deleted              INTEGER NOT NULL DEFAULT 0,
     deleted_at           TEXT,
@@ -100,6 +102,8 @@ function initSchema(db: Database): void {
   ) STRICT`)
   ensureColumn(db, 'todos', 'deleted', 'ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
+  ensureColumn(db, 'todos', 'due_at', 'ALTER TABLE todos ADD COLUMN due_at TEXT')
+  ensureColumn(db, 'todos', 'repeat', "ALTER TABLE todos ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
   db.run('DROP INDEX IF EXISTS idx_todos_project')
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project
     ON todos (project_id, deleted, status, updated_at DESC)`)
@@ -158,6 +162,25 @@ function initSchema(db: Database): void {
   ) STRICT`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quest_ops_quest
     ON quest_ops(quest_id, created_at DESC)`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS project_activity (
+    id           TEXT PRIMARY KEY NOT NULL,
+    project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    subject_type TEXT NOT NULL,
+    subject_id   TEXT NOT NULL,
+    quest_id     TEXT,
+    title        TEXT NOT NULL,
+    op           TEXT NOT NULL,
+    actor        TEXT NOT NULL,
+    from_kind    TEXT,
+    to_kind      TEXT,
+    from_status  TEXT,
+    to_status    TEXT,
+    note         TEXT,
+    created_at   TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_project_activity_project
+    ON project_activity(project_id, created_at DESC)`)
 
   db.run(`CREATE TABLE IF NOT EXISTS assets (
     id          TEXT PRIMARY KEY NOT NULL,

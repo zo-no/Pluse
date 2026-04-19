@@ -85,6 +85,8 @@ CREATE TABLE todos (
   title                TEXT NOT NULL,
   description          TEXT,
   waiting_instructions TEXT,
+  due_at               TEXT,
+  repeat               TEXT NOT NULL DEFAULT 'none',
   status               TEXT NOT NULL DEFAULT 'pending',
   deleted              INTEGER NOT NULL DEFAULT 0,
   deleted_at           TEXT,
