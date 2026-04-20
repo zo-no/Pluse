@@ -1,6 +1,6 @@
 # 0005 — 会话失败 Todo 通知
 
-**状态**: approved  
+**状态**: done  
 **优先级**: medium  
 **估算**: S
 
@@ -56,14 +56,14 @@
 
 ## 验收标准
 
-- [ ] 会话单轮失败后，自动创建 Todo「查看失败会话：xxx」
-- [ ] 设置页"通知"section 显示两个开关，失败通知开关默认开启
-- [ ] 关闭失败通知开关后，失败不再创建 Todo
-- [ ] 已有的完成通知行为不受影响
+- [x] 会话单轮失败后，自动创建 Todo「查看失败会话：xxx」
+- [x] 设置页"通知"section 显示两个开关，失败通知开关默认开启
+- [x] 关闭失败通知开关后，失败不再创建 Todo
+- [x] 已有的完成通知行为不受影响
 
 ## 备注
 
 - `DEFAULT_HOOKS_CONFIG` 变更只影响首次使用（`~/.pluse/hooks.json` 不存在时）；
   已有用户需手动在 `~/.pluse/hooks.json` 加入新 hook，或通过设置页开关触发写入。
-- 设置页开关写入逻辑：`PATCH /api/hooks/notify-on-session-failed { enabled: true/false }`，
-  若该 hook 不在文件里，`patchHook` 会抛错——需确认 `patchHook` 的行为（见实现注意事项）。
+- `patchHook` 已改为：找不到 hook 时从 `DEFAULT_HOOKS_CONFIG` 取模板插入，设置页开关可直接操作新 hook。
+- 前端文件路径为 `packages/web/src/views/pages/SettingsPage.tsx`（非 spec 中写的 `pages/`）。

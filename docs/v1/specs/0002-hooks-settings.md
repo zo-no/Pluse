@@ -104,3 +104,11 @@ if (hook.enabled === false) return false  // 跳过
 - `enabled` 默认为 true（不写等于开启）
 - 文件不存在时，`GET /api/hooks` 返回内置默认配置（`notify-on-session-complete` enabled=true），开关显示开启状态
 - `HooksConfig`/`Hook` 类型不放 `@pluse/types`，前端只定义简单接口 `{ id: string, enabled?: boolean }`，避免过度耦合
+
+## 实现状态（已完成）
+
+- [x] `Hook` 接口加 `enabled?: boolean`，`matchesFilter` 检查 `enabled !== false`
+- [x] 导出 `loadGlobalHooksConfig`、`saveGlobalHooksConfig`、`patchHook`
+- [x] `controllers/http/hooks.ts` — `GET /api/hooks`、`PATCH /api/hooks/:id`
+- [x] `server.ts` — 注册 `hooksRouter`
+- [x] `SettingsPage.tsx` — "通知"section + 开关

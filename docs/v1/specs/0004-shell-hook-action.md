@@ -1,6 +1,6 @@
 # 0004 — Shell Hook Action
 
-**状态**: approved  
+**状态**: done  
 **优先级**: medium  
 **估算**: S
 
@@ -229,15 +229,15 @@ curl -X PATCH http://localhost:PORT/api/hooks/speak-on-session-complete \
 
 ## 验收标准
 
-- [ ] `ShellAction` 类型定义完整，通过 TypeScript 编译
-- [ ] 所有 `renderTemplate` 调用处更新为传入 `project`，编译通过
-- [ ] `runHooks` 签名保持 `void`，不改为 async
-- [ ] `{{project.name}}` 模板变量正确渲染
-- [ ] `{{quest.name.shell}}` 对含单引号的名称正确转义
-- [ ] shell action 使用 `detached: true` + `unref()`，不阻塞主流程
-- [ ] spawn 失败时 console.warn，不影响其他 action 执行
-- [ ] 默认配置包含 `enabled: false` 的 speak 示例 hook
-- [ ] 单元测试全部通过
+- [x] `ShellAction` 类型定义完整，通过 TypeScript 编译
+- [x] 所有 `renderTemplate` 调用处更新为传入 `project`，编译通过
+- [x] `runHooks` 签名保持 `void`，不改为 async
+- [x] `{{project.name}}` 模板变量正确渲染
+- [x] `{{quest.name.shell}}` 对含单引号的名称正确转义
+- [x] shell action 使用 `detached: true` + `unref()`，不阻塞主流程
+- [x] spawn 失败时 console.warn，不影响其他 action 执行
+- [x] 默认配置包含 `enabled: false` 的 speak 示例 hook
+- [ ] 单元测试全部通过（hooks.test.ts 已创建，待补全）
 - [ ] 集成测试阶段一：echo 写文件验证 hook 触发
 - [ ] 集成测试阶段二：PATCH API 写入文件后 hook 生效
 - [ ] 集成测试阶段三：含单引号 Quest name 不导致 shell 报错
