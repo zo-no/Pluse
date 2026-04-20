@@ -5,7 +5,7 @@
 每个功能在实现前必须经过以下流程：
 
 1. **讨论** — 与用户讨论功能方案，达成一致
-2. **写 Spec** — 在 `docs/specs/` 下创建 spec 文档，文件名格式：`NNNN-feature-name.md`
+2. **写 Spec** — 在 `docs/v1/specs/` 下创建 spec 文档，文件名格式：`NNNN-feature-name.md`
 3. **用户确认** — 等待用户确认 spec 后再开始编码
 4. **按 spec 实现** — 严格按照 spec 实现，不擅自扩展范围
 
@@ -19,7 +19,8 @@ Spec 文件模板见 `docs/v1/0000-template.md`。
 
 ## 版本说明
 
-- `docs/mvp/` — MVP 阶段的架构文档和 specs（已归档，只读参考）
+- `docs/mvp/architecture/` — 当前仍在使用的架构口径
+- `docs/mvp/specs/` — 早期 MVP specs，归档参考
 - `docs/v1/` — v1 迭代的 specs 和 roadmap（当前开发阶段）
 
 ## 项目结构

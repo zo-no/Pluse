@@ -1,6 +1,6 @@
 # 0008 — Domain 作为 Project 上层组织
 
-**状态**: draft  
+**状态**: done
 **类型**: feature  
 **优先级**: high  
 **估算**: M  

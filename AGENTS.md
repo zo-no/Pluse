@@ -17,6 +17,7 @@ Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 **当前仓库按 big-bang Quest/Todo/Run 模型实现：不做向前兼容，不保留旧 `sessions/tasks/task_runs/task_ops` 作为长期边界。**
 
 核心对象：
+- **Domain**：Project 的可选上层分组，只负责组织项目
 - **Project**：项目容器，对应本地工作目录
 - **Quest**：统一工作容器；`kind='session'` 或 `kind='task'`
 - **Run**：Quest 的一次执行
@@ -33,21 +34,22 @@ Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 优先阅读：
 
 ```text
-docs/architecture/architecture.md
-docs/architecture/database-schema.md
-docs/architecture/ui-design.md
-docs/specs/core/0003-thread-unified-model.md
-docs/specs/core/0005-thread-execution-model.md
-docs/specs/features/0011-thread-centric-ia.md
+docs/mvp/architecture/architecture.md
+docs/mvp/architecture/database-schema.md
+docs/mvp/architecture/ui-design.md
+docs/mvp/specs/core/0003-thread-unified-model.md
+docs/mvp/specs/core/0005-thread-execution-model.md
+docs/mvp/specs/features/0011-thread-centric-ia.md
+docs/v1/specs/0008-domain-project-grouping.md
 ```
 
 按需深入：
-- `docs/architecture/data-model.md`
-- `docs/architecture/execution-model.md`
-- `docs/specs/features/0007-file-attachments.md`
-- `docs/specs/features/0009-session-search.md`
-- `docs/specs/features/0005-project-delete.md`
-- `docs/specs/infra/0001-sse-realtime.md`
+- `docs/mvp/architecture/data-model.md`
+- `docs/mvp/architecture/execution-model.md`
+- `docs/mvp/specs/features/0007-file-attachments.md`
+- `docs/mvp/specs/features/0009-session-search.md`
+- `docs/mvp/specs/features/0005-project-delete.md`
+- `docs/mvp/specs/infra/0001-sse-realtime.md`
 
 ### 第二步：看目录结构
 
@@ -74,13 +76,14 @@ pluse/
 ### 第三步：理解主线
 
 ```text
-Project
-  ├── Quest(kind='session')
-  ├── Quest(kind='task')
-  ├── Todo
-  └── Run / QuestOp / UploadedAsset
+Domain
+  └── Project
+        ├── Quest(kind='session' | 'task')
+        │     └── Run / QuestOp / UploadedAsset
+        └── Todo
 ```
 
+- Domain 只组织 Project，不承载 Quest / Todo / Run。
 - Session 与 Task 不是两套主对象，而是 Quest 的两种形态。
 - 所有详情页统一使用 `/quests/:id`。
 - Todo 是独立对象，不挂在 Quest 子表里。
@@ -91,15 +94,16 @@ Project
 
 | 要改什么 | 先看文档 | 再看代码 |
 |---|---|---|
-| Quest 数据结构 | `docs/architecture/data-model.md` | `packages/server/src/models/quest.ts` |
-| Run 执行流程 | `docs/architecture/execution-model.md` | `packages/server/src/runtime/session-runner.ts` / `packages/server/src/models/run.ts` |
-| 调度逻辑 | `docs/specs/core/0005-thread-execution-model.md` | `packages/server/src/services/scheduler.ts` |
-| Todo | `docs/architecture/architecture.md` | `packages/server/src/models/todo.ts` / `packages/server/src/services/todos.ts` |
-| 附件 | `docs/specs/features/0007-file-attachments.md` | `packages/server/src/controllers/http/assets.ts` / `packages/server/src/models/asset.ts` |
-| HTTP 路由 | `docs/architecture/architecture.md` | `packages/server/src/controllers/http/` |
-| CLI 命令 | `docs/architecture/architecture.md` | `packages/server/src/controllers/cli/` |
-| 前端信息架构 | `docs/architecture/ui-design.md` | `packages/web/src/views/` |
-| 实时更新 | `docs/specs/infra/0001-sse-realtime.md` | `packages/server/src/controllers/http/events.ts` |
+| Domain / Project 分组 | `docs/v1/specs/0008-domain-project-grouping.md` | `packages/server/src/models/domain.ts` / `packages/server/src/services/domains.ts` |
+| Quest 数据结构 | `docs/mvp/architecture/data-model.md` | `packages/server/src/models/quest.ts` |
+| Run 执行流程 | `docs/mvp/architecture/execution-model.md` | `packages/server/src/runtime/session-runner.ts` / `packages/server/src/models/run.ts` |
+| 调度逻辑 | `docs/mvp/specs/core/0005-thread-execution-model.md` | `packages/server/src/services/scheduler.ts` |
+| Todo | `docs/mvp/architecture/architecture.md` | `packages/server/src/models/todo.ts` / `packages/server/src/services/todos.ts` |
+| 附件 | `docs/mvp/specs/features/0007-file-attachments.md` | `packages/server/src/controllers/http/assets.ts` / `packages/server/src/models/asset.ts` |
+| HTTP 路由 | `docs/mvp/architecture/architecture.md` | `packages/server/src/controllers/http/` |
+| CLI 命令 | `docs/mvp/architecture/architecture.md` | `packages/server/src/controllers/cli/` |
+| 前端信息架构 | `docs/mvp/architecture/ui-design.md` | `packages/web/src/views/` |
+| 实时更新 | `docs/mvp/specs/infra/0001-sse-realtime.md` | `packages/server/src/controllers/http/events.ts` |
 
 ---
 

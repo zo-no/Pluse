@@ -2,12 +2,13 @@
 
 Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 
-它把项目内的 AI 会话、AI 任务、人类待办、运行记录和附件统一放进同一个工作域，而不是拆成互相松散的子系统。
+它把领域下的项目、项目内的 AI 会话、AI 任务、人类待办、运行记录和附件统一放进同一个工作域，而不是拆成互相松散的子系统。
 
 ## 当前模型
 
 当前仓库已经切到统一的 Quest/Todo/Run 模型，核心对象如下：
 
+- `Domain`: Project 的可选上层分组，只负责组织项目
 - `Project`: 本地工作目录对应的项目容器
 - `Quest`: 统一工作单元，`kind` 为 `session` 或 `task`
 - `Run`: Quest 的一次执行
@@ -17,6 +18,7 @@ Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 
 当前实现口径：
 
+- `Domain` 只组织 `Project`，不承载 `Quest` / `Todo` / `Run`
 - `session` 和 `task` 不是两套主对象，而是同一个 `Quest` 的两种形态
 - 详情页统一走 `/quests/:id`
 - Todo 是独立对象，不挂在 Quest 子表下
@@ -31,18 +33,21 @@ packages/
 └── types/    # 共享类型
 
 docs/
-├── architecture/
-└── specs/
+├── mvp/
+│   └── architecture/
+└── v1/
+    └── specs/
 ```
 
 如果你要理解项目，建议先读这些文档：
 
-- `docs/architecture/architecture.md`
-- `docs/architecture/database-schema.md`
-- `docs/architecture/ui-design.md`
-- `docs/specs/core/0003-thread-unified-model.md`
-- `docs/specs/core/0005-thread-execution-model.md`
-- `docs/specs/features/0011-thread-centric-ia.md`
+- `docs/mvp/architecture/architecture.md`
+- `docs/mvp/architecture/database-schema.md`
+- `docs/mvp/architecture/ui-design.md`
+- `docs/mvp/specs/core/0003-thread-unified-model.md`
+- `docs/mvp/specs/core/0005-thread-execution-model.md`
+- `docs/mvp/specs/features/0011-thread-centric-ia.md`
+- `docs/v1/specs/0008-domain-project-grouping.md`
 
 ## 开发环境
 
@@ -118,7 +123,7 @@ pnpm test
 | --- | --- | --- |
 | `PORT` | 服务端口 | `7760` |
 | `PLUSE_ROOT` | 数据根目录 | `~/.pluse` |
-| `PLUSE_DB_PATH` | SQLite 路径 | `~/.pluse/db.sqlite` |
+| `PLUSE_DB_PATH` | SQLite 路径 | `~/.pluse/runtime/pluse.db` |
 | `PLUSE_WEB_DIST` | 前端产物目录 | `packages/web/dist` |
 
 补充约束：
@@ -143,4 +148,4 @@ pnpm test
 - 不再把 Todo 当作 Quest 子对象
 - 不再走 “Task 执行自动创建 Session” 这套模型
 
-如果 README 和代码不一致，以 `docs/architecture/*` 与 `docs/specs/*` 为准。
+如果 README 和代码不一致，以 `docs/mvp/architecture/*`、`docs/mvp/specs/*` 与 `docs/v1/specs/*` 为准。

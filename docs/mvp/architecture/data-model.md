@@ -2,6 +2,25 @@
 
 > 正式口径，由 0003-quest-unified-model.md 收敛而来。
 
+## Domain
+
+```typescript
+interface Domain {
+  id: string
+  name: string
+  description?: string
+  icon?: string
+  color?: string
+  orderIndex: number
+  deleted?: boolean
+  deletedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+```
+
+Domain 只组织 Project，不直接承载 Quest / Todo / Run。
+
 ---
 
 ## Project
@@ -13,10 +32,16 @@ interface Project {
   workDir: string      // 本地文件夹绝对路径
   goal?: string
   systemPrompt?: string
+  domainId?: string
+  archived: boolean
+  pinned: boolean
+  visibility: 'user' | 'system'
   createdAt: string
   updatedAt: string
 }
 ```
+
+`domainId` 可为空；为空时，Project 归入“未分组”。
 
 ---
 
@@ -238,13 +263,33 @@ interface QuestOp {
 
 ---
 
+## UploadedAsset
+
+Quest 级附件元数据，文件本体按 `~/.pluse/assets/{questId}` 落盘。
+
+```typescript
+interface UploadedAsset {
+  id: string
+  questId: string
+  filename: string
+  savedPath: string
+  mimeType: string
+  sizeBytes: number
+  createdAt: string
+}
+```
+
+---
+
 ## 模型关系图
 
 ```
-Project (1)
-  ├── Quest (n)
-  │     ├── Run (n)
-  │     └── QuestOp (n)
-  └── Todo (n)
-        └── originQuestId → Quest (optional)
+Domain (optional)
+  └── Project (n)
+        ├── Quest (n)
+        │     ├── Run (n)
+        │     ├── QuestOp (n)
+        │     └── UploadedAsset (n)
+        └── Todo (n)
+              └── originQuestId → Quest (optional)
 ```
