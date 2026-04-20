@@ -3397,14 +3397,45 @@ select {
 }
 
 .pluse-settings-grid {
-  padding-top: 16px;
-  gap: 16px;
+  padding-top: 8px;
+  gap: 0;
+}
+
+.pluse-settings-section {
+  border-bottom: 1px solid var(--border);
+  padding: 20px 24px;
+}
+
+.pluse-settings-section:last-of-type {
+  border-bottom: none;
+}
+
+.pluse-settings-section .pluse-detail-section-head {
+  padding: 0;
+  margin-bottom: 0;
+  border: none;
+}
+
+.pluse-settings-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 4px;
+  letter-spacing: 0.01em;
+}
+
+.pluse-settings-section-desc {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0 0 12px;
 }
 
 .pluse-settings-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  padding: 16px 24px;
 }
 
 .pluse-settings-toggle-row {
@@ -3412,7 +3443,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 4px 0;
+  padding: 10px 0 2px;
 }
 
 .pluse-settings-toggle-info {

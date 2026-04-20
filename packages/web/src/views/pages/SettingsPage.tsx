@@ -11,7 +11,6 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // 通知设置
   const [notifyOnComplete, setNotifyOnComplete] = useState(true)
   const [hookLoading, setHookLoading] = useState(true)
   const [hookSaving, setHookSaving] = useState(false)
@@ -20,10 +19,7 @@ export function SettingsPage() {
     setLoading(true)
     const result = await api.getSettings()
     setLoading(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
+    if (!result.ok) { setError(result.error); return }
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
     setError(null)
   }
@@ -34,7 +30,6 @@ export function SettingsPage() {
     setHookLoading(false)
     if (!result.ok) return
     const hook = result.data.hooks.find((h) => h.id === NOTIFY_HOOK_ID)
-    // enabled 默认为 true，undefined 也视为开启
     setNotifyOnComplete(hook ? hook.enabled !== false : true)
   }
 
@@ -47,10 +42,7 @@ export function SettingsPage() {
     setSaving(true)
     const result = await api.updateSettings({ globalSystemPrompt })
     setSaving(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
+    if (!result.ok) { setError(result.error); return }
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
     setError(null)
   }
@@ -68,23 +60,18 @@ export function SettingsPage() {
         <div className="pluse-detail-hero pluse-settings-hero">
           <div className="pluse-detail-hero-main">
             <div className="pluse-detail-title-row pluse-settings-title-row">
-              <h1 className="pluse-info-path pluse-settings-title">{t('系统 Prompt')}</h1>
+              <h1 className="pluse-info-path pluse-settings-title">{t('设置')}</h1>
               <span className="pluse-inline-pill pluse-settings-scope-pill">{t('全局')}</span>
             </div>
-            <p className="pluse-detail-summary">
-              {t('作用于所有项目。项目级 Prompt 在各项目设置里单独编辑。')}
-            </p>
           </div>
         </div>
 
         <div className="pluse-detail-grid pluse-settings-grid">
-          {/* 通知设置 */}
-          <section className="pluse-detail-section">
+
+          {/* 通知 */}
+          <section className="pluse-detail-section pluse-settings-section">
             <header className="pluse-detail-section-head">
-              <div>
-                <h2>{t('通知')}</h2>
-                <p>{t('控制 AI 完成任务后的自动提醒行为。')}</p>
-              </div>
+              <h2 className="pluse-settings-section-title">{t('通知')}</h2>
             </header>
             <div className="pluse-settings-toggle-row">
               <div className="pluse-settings-toggle-info">
@@ -107,29 +94,33 @@ export function SettingsPage() {
           </section>
 
           {/* 系统 Prompt */}
-          <section className="pluse-detail-section">
+          <section className="pluse-detail-section pluse-settings-section">
             <header className="pluse-detail-section-head">
-              <div>
-                <h2>{t('编辑')}</h2>
-                <p>{t('留空则不注入全局系统 Prompt。')}</p>
-              </div>
+              <h2 className="pluse-settings-section-title">{t('系统 Prompt')}</h2>
+              <p className="pluse-settings-section-desc">
+                {t('作用于所有项目。项目级 Prompt 在各项目设置里单独编辑。')}
+              </p>
             </header>
             <textarea
               value={globalSystemPrompt}
               onChange={(event) => setGlobalSystemPrompt(event.target.value)}
-              rows={14}
-              placeholder={t('输入全局系统 Prompt')}
+              rows={12}
+              placeholder={t('输入全局系统 Prompt，留空则不注入')}
             />
-            <p className="pluse-info-copy">{t('当前内容会先于项目 Prompt 注入到所有 Quest。')}</p>
           </section>
 
           <div className="pluse-settings-actions">
-            <button type="button" className="pluse-button" onClick={() => void handleSave()} disabled={saving || loading}>
+            {error ? <p className="pluse-error">{error}</p> : null}
+            <button
+              type="button"
+              className="pluse-button"
+              onClick={() => void handleSave()}
+              disabled={saving || loading}
+            >
               {saving ? t('保存中…') : loading ? t('加载中…') : t('保存')}
             </button>
           </div>
 
-          {error ? <p className="pluse-error pluse-detail-error">{error}</p> : null}
         </div>
       </div>
     </div>
