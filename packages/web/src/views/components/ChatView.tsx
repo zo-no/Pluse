@@ -230,10 +230,12 @@ function MessageEventCard({
   event,
   locale,
   t,
+  tokenUsage,
 }: {
   event: QuestEvent
   locale: string
   t: (key: string, values?: Record<string, string | number>) => string
+  tokenUsage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; costUsd?: number }
 }) {
   if (event.role === 'user') {
     return (
@@ -250,6 +252,13 @@ function MessageEventCard({
     <div className="pluse-message-row is-assistant">
       <div className="pluse-message-head is-assistant">
         <span className="pluse-assistant-stamp" title={formatTime(event.timestamp, locale)}>{formatRelativeTime(event.timestamp, t)}</span>
+        {tokenUsage ? (
+          <span className="pluse-token-pill">
+            {`↑${formatTokenCount(tokenUsage.inputTokens)} ↓${formatTokenCount(tokenUsage.outputTokens)}`}
+            {tokenUsage.cacheReadTokens ? ` · ↩${Math.round(tokenUsage.cacheReadTokens / (tokenUsage.inputTokens + tokenUsage.cacheReadTokens + (tokenUsage.cacheCreationTokens ?? 0)) * 100)}%` : ''}
+            {tokenUsage.costUsd != null ? ` · $${tokenUsage.costUsd.toFixed(4)}` : ''}
+          </span>
+        ) : null}
       </div>
       <div className="pluse-assistant-copy pluse-markdown">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
@@ -546,6 +555,15 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   const latestRun = runs[0] ?? null
   const threadSegments = useMemo(() => buildThreadSegments(events), [events])
 
+  // Key of the last assistant message segment — used to attach token usage inline
+  const lastAssistantSegmentKey = useMemo(() => {
+    for (let i = threadSegments.length - 1; i >= 0; i--) {
+      const seg = threadSegments[i]!
+      if (seg.kind === 'message' && seg.event.role === 'assistant') return seg.key
+    }
+    return null
+  }, [threadSegments])
+
   const updateScrollBottomVisibility = useCallback(() => {
     const thread = threadRef.current
     if (!thread) return
@@ -738,7 +756,17 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
               </div>
             ) : null}
             {threadSegments.map((segment) => segment.kind === 'message'
-              ? <MessageEventCard key={segment.key} event={segment.event} locale={locale} t={t} />
+              ? <MessageEventCard
+                  key={segment.key}
+                  event={segment.event}
+                  locale={locale}
+                  t={t}
+                  tokenUsage={
+                    segment.key === lastAssistantSegmentKey && latestRun?.inputTokens != null && latestRun.state !== 'running'
+                      ? { inputTokens: latestRun.inputTokens, outputTokens: latestRun.outputTokens ?? 0, cacheReadTokens: latestRun.cacheReadTokens, cacheCreationTokens: latestRun.cacheCreationTokens, costUsd: latestRun.costUsd }
+                      : undefined
+                  }
+                />
               : <MetaEventGroup key={segment.key} events={segment.events} t={t} />)}
             <div ref={bottomRef} />
           </div>
@@ -819,12 +847,6 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   {quest.followUpQueue.length > 0 ? <span>{t('待发送 {count}', { count: quest.followUpQueue.length })}</span> : null}
                   {!quest.activeRunId && quest.followUpQueue.length === 0 ? <span>{t('Enter 发送')}</span> : null}
                   {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>{t('上次：{{state}}', { state: formatRunState(latestRun.state, t) })}</span> : null}
-                  {latestRun && latestRun.state !== 'running' && latestRun.inputTokens != null ? (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
-                      {`↑${formatTokenCount(latestRun.inputTokens)} ↓${formatTokenCount(latestRun.outputTokens ?? 0)}`}
-                      {latestRun.cacheReadTokens ? ` · ↩${Math.round(latestRun.cacheReadTokens / (latestRun.inputTokens + latestRun.cacheReadTokens + (latestRun.cacheCreationTokens ?? 0)) * 100)}%` : ''}
-                    </span>
-                  ) : null}
                   {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason, t)}</span> : null}
                 </div>
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">

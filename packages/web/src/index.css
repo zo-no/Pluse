@@ -1684,6 +1684,13 @@ select {
   letter-spacing: 0.01em;
 }
 
+.pluse-token-pill {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
 .pluse-message-time {
   display: block;
   font-size: 11px;
