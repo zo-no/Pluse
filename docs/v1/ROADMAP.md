@@ -1,5 +1,8 @@
 # Pluse v1 Roadmap
 
+> 当前开发以 `docs/v1` 为准。`docs/mvp` 仅保留历史参考。
+> `docs/v1/specs/0007-session-project-grouping.md` 是旧草稿，当前有效方案见 `docs/v1/specs/0008-domain-project-grouping.md`。
+
 ## 核心方向
 
 v1 的核心目标：**让 Agent 可以自主配置自己的工作环境**，人类从"盯着看"变成"按需介入"。
@@ -16,6 +19,8 @@ v1 的核心目标：**让 Agent 可以自主配置自己的工作环境**，人
 | 0005a | 会话失败 Todo 通知 — run_failed 触发高亮与待办 | ✅ 已完成 | [0005-session-failed-todo.md](./specs/0005-session-failed-todo.md) |
 | 0005b | Kairos 语音播报设置 — 一键安装 + 开关控制 | ✅ 已完成 | [0005-kairos-settings.md](./specs/0005-kairos-settings.md) |
 | 0006 | Hook 自动 Todo 标签 — 会话完成/失败 Todo 自动打 tag | ✅ 已完成 | [0006-hook-todo-tags.md](./specs/0006-hook-todo-tags.md) |
+| 0007 | 会话/项目分组旧草稿 | 📝 旧草稿 | [0007-session-project-grouping.md](./specs/0007-session-project-grouping.md) |
+| 0008 | Domain/Project 分组 — Project 上层组织层 | 📝 草稿 | [0008-domain-project-grouping.md](./specs/0008-domain-project-grouping.md) |
 
 ## 设计原则
 

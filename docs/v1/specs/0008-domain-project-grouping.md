@@ -1,7 +1,12 @@
-# 0013 Project Domains
+# 0008 — Domain 作为 Project 上层组织
 
-> 备注：当前开发以 `docs/v1/specs/0008-domain-project-grouping.md` 为准。
-> 此文保留为先前 MVP 方案参考，避免历史内容丢失。
+**状态**: draft  
+**类型**: feature  
+**优先级**: high  
+**估算**: M  
+
+> 当前 v1 开发的正式方案。
+> 旧草稿保留在 `0007-session-project-grouping.md`，仅作历史参考。
 
 ## 背景
 
@@ -18,13 +23,13 @@
 
 为 `Project` 增加一个可选的上层组织对象 `Domain`。
 
-`Domain` 在 v0 中只负责：
+`Domain` 在这版中只负责：
 
 - 组织多个 Project
 - 改善左侧导航与项目切换
 - 为后续更完整的人生系统保留上层入口
 
-`Domain` 在 v0 中不负责：
+`Domain` 不负责：
 
 - 承载 Quest
 - 承载 Todo
@@ -44,11 +49,11 @@
 - Quest / Todo / Run 仍然归属于 Project
 - `codexThreadId` / `claudeSessionId` 仍然跟随 Quest，不受 Domain 影响
 
-### v0 是组织层，不是人生控制层
+### 这版是组织层，不是人生控制层
 
-v0 只解决“多个项目如何分组与切换”，不解决“人生目标如何计算与闭环”。
+这版只解决“多个项目如何分组与切换”，不解决“人生目标如何计算与闭环”。
 
-### 一个 Project 在 v0 中只能属于一个 Domain
+### 一个 Project 在这版中只能属于一个 Domain
 
 - `project.domainId` 可空
 - 未设置时归入“未分组”
@@ -171,7 +176,7 @@ Domain (1)
 - 切换到对应 Project
 - 进入 `/projects/:id`
 
-v0 不要求单独的 `/domains/:id` 页面。
+这版不要求单独的 `/domains/:id` 页面。
 
 ## Project 创建与编辑
 
@@ -248,7 +253,7 @@ CREATE INDEX idx_projects_domain
 
 ## API / CLI 边界
 
-v0 建议增加：
+这版建议增加：
 
 - `domain list`
 - `domain create`
@@ -261,7 +266,7 @@ HTTP 层对应增加 Domain CRUD 与 Project 归属修改接口。
 
 ## 不做的事
 
-v0 明确不做：
+这版明确不做：
 
 - Domain 级 Quest 列表
 - Domain 级 Todo 面板
@@ -285,7 +290,7 @@ v0 明确不做：
 
 ## 后续扩展方向
 
-若 v0 验证成立，后续再评估：
+若这版验证成立，后续再评估：
 
 - Domain Overview 页面
 - Domain 级项目健康度聚合
