@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type { ApiResult, CreateTodoInput, Todo, UpdateTodoInput } from '@pluse/types'
-import { getTodo } from '../../models/todo'
+import { getTodo, listProjectTags, listTodos } from '../../models/todo'
 import { createTodoWithEffects, deleteTodoWithEffects, listTodoViews, updateTodoWithEffects } from '../../services/todos'
 
 function ok<T>(data: T): ApiResult<T> {
@@ -26,6 +26,8 @@ const TodoSchema = z.object({
   waitingInstructions: z.string().optional(),
   dueAt: z.string().optional(),
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
+  priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
+  tags: z.array(z.string()).optional(),
   status: z.enum(['pending', 'done']).optional(),
   deleted: z.boolean().optional(),
 })
@@ -37,6 +39,8 @@ const TodoPatchSchema = z.object({
   waitingInstructions: z.string().nullable().optional(),
   dueAt: z.string().nullable().optional(),
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
+  priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
+  tags: z.array(z.string()).nullable().optional(),
   status: z.enum(['pending', 'done']).optional(),
   deleted: z.boolean().optional(),
 })
@@ -46,11 +50,24 @@ export const todosRouter = new Hono()
 todosRouter.get('/todos', (c) => {
   const deletedQuery = c.req.query('deleted')
   const deleted = deletedQuery === 'true'
+  const tagsQuery = c.req.query('tags')
+  const tags = tagsQuery ? tagsQuery.split(',').map((t) => t.trim()).filter(Boolean) : undefined
+  const priority = c.req.query('priority') as Todo['priority'] | undefined
   return c.json(ok<Todo[]>(listTodoViews({
     projectId: c.req.query('projectId') || undefined,
     status: (c.req.query('status') as Todo['status'] | undefined) || undefined,
     deleted,
+    tags,
+    priority,
   })))
+})
+
+// Must be registered before /todos/:id to avoid route conflict
+todosRouter.get('/todos/tags', (c) => {
+  const projectId = c.req.query('projectId')
+  if (!projectId) return c.json(errBody('projectId is required'), sc(400))
+  const tags = listProjectTags(projectId)
+  return c.json(ok({ tags }))
 })
 
 todosRouter.get('/todos/:id', (c) => {

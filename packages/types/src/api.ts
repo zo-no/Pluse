@@ -139,6 +139,15 @@ export interface ProjectRecentOutput {
   questId?: string
 }
 
+export interface TokenUsageSummary {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  runCount: number
+  costUsd: number | null
+}
+
 export type SseMessage =
   | { type: 'connected'; data: { ts: string } }
   | { type: 'project_opened' | 'project_updated'; data: { projectId: string } }

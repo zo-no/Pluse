@@ -58,12 +58,21 @@ type RuntimePreferences = {
   thinking: boolean
 }
 
+type TokenUsage = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  costUsd?: number
+}
+
 type ProviderParseResult = {
   events: ProviderEvent[]
   assistantText?: string
   claudeSessionId?: string
   codexThreadId?: string
   providerError?: string
+  tokenUsage?: TokenUsage
 }
 
 type AutoRenameSnapshot = {
@@ -499,18 +508,29 @@ function parseClaudeLine(line: string): ProviderParseResult {
     }
   }
 
+  let tokenUsage: TokenUsage | undefined
   if (obj.type === 'result') {
     const usage = obj.usage && typeof obj.usage === 'object' ? obj.usage as Record<string, unknown> : {}
     events.push(makeUsageEvent([
       typeof usage.input_tokens === 'number' ? `input ${usage.input_tokens}` : null,
       typeof usage.output_tokens === 'number' ? `output ${usage.output_tokens}` : null,
     ]))
+    // Extract token usage — note Claude API uses cache_read_input_tokens / cache_creation_input_tokens
+    if (typeof usage.input_tokens === 'number' || typeof usage.output_tokens === 'number') {
+      tokenUsage = {
+        inputTokens: typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
+        outputTokens: typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
+        cacheReadTokens: typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0,
+        cacheCreationTokens: typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0,
+        costUsd: typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : undefined,
+      }
+    }
     providerError = normalizeProviderError(obj.error)
   } else if (obj.type === 'error') {
     providerError = normalizeProviderError(obj.error ?? obj.message)
   }
 
-  return { events, assistantText, claudeSessionId, providerError }
+  return { events, assistantText, claudeSessionId, providerError, tokenUsage }
 }
 
 function parseCodexLine(line: string): ProviderParseResult {
@@ -982,6 +1002,7 @@ type ProviderAttemptResult = {
   failureReason?: string
   assistantText?: string
   retryWithHistory?: boolean
+  tokenUsage?: TokenUsage
 }
 
 async function executeProviderRun(runId: string, questId: string, latestPrompt: string): Promise<void> {
@@ -1063,6 +1084,8 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     let lastAssistantText = ''
     let lastProviderError: string | undefined
     const stderrLines: string[] = []
+    // Declared inside attempt() so each call gets its own independent variable
+    let capturedTokenUsage: TokenUsage | undefined
 
     wireLineStream(child.stdout, (line) => {
       appendRunSpoolLine(runId, line)
@@ -1070,6 +1093,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       const parsed = parseProviderLine(tool, line)
       if (parsed.assistantText?.trim()) lastAssistantText = parsed.assistantText
       if (parsed.providerError) lastProviderError = parsed.providerError
+      if (parsed.tokenUsage) capturedTokenUsage = parsed.tokenUsage
       if (
         parsed.events.length > 0
         || Boolean(parsed.assistantText?.trim())
@@ -1098,29 +1122,30 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     child.once('error', (error) => {
       clearRunnerTimers(handle)
       activeRunners.delete(runId)
-      resolve({ state: 'failed', failureReason: error.message, assistantText: lastAssistantText })
+      resolve({ state: 'failed', failureReason: error.message, assistantText: lastAssistantText, tokenUsage: capturedTokenUsage })
     })
 
     child.once('close', (code, signal) => {
       clearRunnerTimers(handle)
       activeRunners.delete(runId)
       if (handle.reason === 'cancelled') {
-        resolve({ state: 'cancelled', failureReason: 'cancelled', assistantText: lastAssistantText })
+        resolve({ state: 'cancelled', failureReason: 'cancelled', assistantText: lastAssistantText, tokenUsage: capturedTokenUsage })
         return
       }
       if (handle.reason === 'timeout') {
-        resolve({ state: 'failed', failureReason: `${tool} run timed out`, assistantText: lastAssistantText })
+        resolve({ state: 'failed', failureReason: `${tool} run timed out`, assistantText: lastAssistantText, tokenUsage: capturedTokenUsage })
         return
       }
       const failureReason = resolveFailureReason(code, signal, lastProviderError, stderrLines)
       if (!failureReason && code === 0) {
-        resolve({ state: 'completed', assistantText: lastAssistantText })
+        resolve({ state: 'completed', assistantText: lastAssistantText, tokenUsage: capturedTokenUsage })
         return
       }
       resolve({
         state: 'failed',
         failureReason,
         assistantText: lastAssistantText,
+        tokenUsage: capturedTokenUsage,
         retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
       })
     })
@@ -1130,6 +1155,8 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   if (firstAttempt.retryWithHistory) {
     appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
     const fallbackAttempt = await attempt(false)
+    // Use fallbackAttempt's tokenUsage (firstAttempt's is discarded — it failed before completion)
+    if (fallbackAttempt.tokenUsage) updateRun(runId, fallbackAttempt.tokenUsage)
     if (fallbackAttempt.state === 'completed') {
       finalizeRun(runId, 'completed', undefined, fallbackAttempt.assistantText)
       return
@@ -1144,6 +1171,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     return
   }
 
+  if (firstAttempt.tokenUsage) updateRun(runId, firstAttempt.tokenUsage)
   if (firstAttempt.state === 'completed') {
     finalizeRun(runId, 'completed', undefined, firstAttempt.assistantText)
     return

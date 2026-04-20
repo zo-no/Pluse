@@ -40,6 +40,10 @@ function formatRelativeTime(value: number, t?: (key: string, values?: Record<str
   return t ? t('{count} 天前', { count: Math.floor(delta / day) }) : `${Math.floor(delta / day)} 天前`
 }
 
+function formatTokenCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
 function formatRunState(value: string, t?: (key: string) => string): string {
   if (value === 'running') return t ? t('运行中') : '运行中'
   if (value === 'completed') return t ? t('已完成') : '已完成'
@@ -213,6 +217,8 @@ function buildThreadSegments(events: QuestEvent[]): ThreadSegment[] {
       segments.push({ kind: 'message', key: `message:${event.seq}`, event })
       continue
     }
+    // usage events are now shown via Run fields in the status bar — skip here to avoid duplication
+    if (event.type === 'usage') continue
     pendingMeta.push(event)
   }
 
@@ -813,6 +819,12 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   {quest.followUpQueue.length > 0 ? <span>{t('待发送 {count}', { count: quest.followUpQueue.length })}</span> : null}
                   {!quest.activeRunId && quest.followUpQueue.length === 0 ? <span>{t('Enter 发送')}</span> : null}
                   {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>{t('上次：{{state}}', { state: formatRunState(latestRun.state, t) })}</span> : null}
+                  {latestRun && latestRun.state !== 'running' && latestRun.inputTokens != null ? (
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                      {`↑${formatTokenCount(latestRun.inputTokens)} ↓${formatTokenCount(latestRun.outputTokens ?? 0)}`}
+                      {latestRun.cacheReadTokens ? ` · ↩${Math.round(latestRun.cacheReadTokens / (latestRun.inputTokens + latestRun.cacheReadTokens + (latestRun.cacheCreationTokens ?? 0)) * 100)}%` : ''}
+                    </span>
+                  ) : null}
                   {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason, t)}</span> : null}
                 </div>
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">

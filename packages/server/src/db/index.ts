@@ -105,6 +105,8 @@ function initSchema(db: Database): void {
   ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
   ensureColumn(db, 'todos', 'due_at', 'ALTER TABLE todos ADD COLUMN due_at TEXT')
   ensureColumn(db, 'todos', 'repeat', "ALTER TABLE todos ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
+  ensureColumn(db, 'todos', 'priority', "ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
+  ensureColumn(db, 'todos', 'tags', "ALTER TABLE todos ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
   db.run('DROP INDEX IF EXISTS idx_todos_project')
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project
     ON todos (project_id, deleted, status, updated_at DESC)`)
@@ -139,6 +141,11 @@ function initSchema(db: Database): void {
     ON runs (quest_id, created_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_runs_project
     ON runs (project_id, created_at DESC)`)
+  ensureColumn(db, 'runs', 'input_tokens',          'ALTER TABLE runs ADD COLUMN input_tokens INTEGER')
+  ensureColumn(db, 'runs', 'output_tokens',         'ALTER TABLE runs ADD COLUMN output_tokens INTEGER')
+  ensureColumn(db, 'runs', 'cache_read_tokens',     'ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER')
+  ensureColumn(db, 'runs', 'cache_creation_tokens', 'ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER')
+  ensureColumn(db, 'runs', 'cost_usd',              'ALTER TABLE runs ADD COLUMN cost_usd REAL')
 
   db.run(`CREATE TABLE IF NOT EXISTS run_spool (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,

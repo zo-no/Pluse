@@ -26,6 +26,12 @@ export interface Run {
   contextInputTokens?: number
   contextWindowTokens?: number
 
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
+  costUsd?: number
+
   createdAt: string
   startedAt?: string
   updatedAt: string

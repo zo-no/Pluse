@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
-import type { AuthMe, Project, ProjectActivityItem, ProjectOverview, Quest, Todo } from '@pluse/types'
+import type { AuthMe, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
 import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
@@ -148,12 +148,20 @@ function ProjectCompactSection(props: {
   )
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
 function ProjectOverviewHero({
   overview,
+  tokenSummary,
   locale,
   t,
 }: {
   overview: ProjectOverview
+  tokenSummary: TokenUsageSummary | null
   locale: string
   t: (key: string, values?: Record<string, string>) => string
 }) {
@@ -270,6 +278,15 @@ function ProjectOverviewHero({
               <span>{t('已完成')}</span>
               <strong>{number.format(completedRecentCount)}</strong>
             </div>
+            {tokenSummary && tokenSummary.runCount > 0 ? (
+              <div className="pluse-overview-aside-item">
+                <span>{t('Token 消耗')}</span>
+                <strong>
+                  {formatTokenCount(tokenSummary.inputTokens + tokenSummary.outputTokens)}
+                  {tokenSummary.costUsd != null ? ` · $${tokenSummary.costUsd.toFixed(2)}` : ''}
+                </strong>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -450,6 +467,7 @@ function ProjectPage({
   const { locale, t } = useI18n()
   const navigate = useNavigate()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
+  const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary | null>(null)
   const [tab, setTab] = useState<'overview' | 'settings'>('overview')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -477,6 +495,9 @@ function ProjectPage({
 
   useEffect(() => {
     void loadOverview()
+    void api.getProjectTokenSummary(projectId).then((result) => {
+      if (result.ok) setTokenSummary(result.data)
+    })
   }, [projectId])
 
   async function saveProject() {
@@ -546,7 +567,7 @@ function ProjectPage({
 
         {tab === 'overview' ? (
           <div className="pluse-detail-grid">
-            <ProjectOverviewHero overview={overview} locale={locale} t={t} />
+            <ProjectOverviewHero overview={overview} tokenSummary={tokenSummary} locale={locale} t={t} />
 
             {overview.waitingTodos.length > 0 ? (
               <ProjectCompactSection

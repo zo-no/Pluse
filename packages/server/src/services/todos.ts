@@ -93,6 +93,8 @@ export function updateTodoWithEffects(id: string, input: UpdateTodoInput): Todo 
       waitingInstructions: todo.waitingInstructions,
       dueAt: nextRecurringDueAt(todo.dueAt, todo.repeat),
       repeat: todo.repeat,
+      priority: todo.priority,
+      tags: todo.tags,
       status: 'pending',
     })
   }

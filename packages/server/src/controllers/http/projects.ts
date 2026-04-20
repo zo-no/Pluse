@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, OpenProjectInput, Project, ProjectOverview, UpdateProjectInput } from '@pluse/types'
+import type { ApiResult, OpenProjectInput, Project, ProjectOverview, TokenUsageSummary, UpdateProjectInput } from '@pluse/types'
 import { getProject } from '../../models/project'
+import { getProjectTokenSummary } from '../../models/run'
 import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
 
 function ok<T>(data: T): ApiResult<T> {
@@ -112,6 +113,17 @@ projectsRouter.delete('/projects/:id', (c) => {
   try {
     deleteProjectWithCascade(id)
     return c.json(ok({ deleted: true }))
+  } catch (error) {
+    return c.json(errBody(String(error)), sc(500))
+  }
+})
+
+projectsRouter.get('/projects/:id/token-summary', (c) => {
+  const id = c.req.param('id')
+  const project = getProject(id)
+  if (!project) return c.json(errBody('Project not found'), sc(404))
+  try {
+    return c.json(ok<TokenUsageSummary>(getProjectTokenSummary(id)))
   } catch (error) {
     return c.json(errBody(String(error)), sc(500))
   }

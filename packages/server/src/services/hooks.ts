@@ -22,6 +22,7 @@ interface CreateTodoAction {
   type: 'create_todo'
   title: string
   description?: string
+  tags?: string[]
 }
 
 interface ShellAction {
@@ -53,7 +54,7 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
       filter: { kind: 'session', triggeredBy: ['human'] },
       actions: [
         { type: 'highlight_quest' },
-        { type: 'create_todo', title: '查看会话：{{quest.name}}' },
+        { type: 'create_todo', title: '{{quest.name}}', tags: ['review'] },
       ],
     },
     {
@@ -63,7 +64,7 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
       filter: { kind: 'session', triggeredBy: ['human'] },
       actions: [
         { type: 'highlight_quest' },
-        { type: 'create_todo', title: '查看失败会话：{{quest.name}}' },
+        { type: 'create_todo', title: '{{quest.name}}', tags: ['failed'] },
       ],
     },
     {
@@ -185,6 +186,7 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
           createdBy: 'system',
           title: renderTemplate(action.title, fullCtx),
           description: action.description ? renderTemplate(action.description, fullCtx) : undefined,
+          tags: action.tags,
         })
       } else if (action.type === 'shell') {
         const rendered = renderTemplate(action.command, fullCtx)

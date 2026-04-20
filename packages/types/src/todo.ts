@@ -1,6 +1,7 @@
 export type TodoStatus = 'pending' | 'done' | 'cancelled'
 export type TodoCreatedBy = 'human' | 'ai' | 'system'
 export type TodoRepeat = 'none' | 'daily' | 'weekly' | 'monthly'
+export type TodoPriority = 'urgent' | 'high' | 'normal' | 'low'
 
 export interface Todo {
   id: string
@@ -12,6 +13,8 @@ export interface Todo {
   waitingInstructions?: string
   dueAt?: string
   repeat: TodoRepeat
+  priority: TodoPriority
+  tags: string[]
   status: TodoStatus
   deleted?: boolean
   deletedAt?: string
@@ -28,6 +31,8 @@ export interface CreateTodoInput {
   waitingInstructions?: string
   dueAt?: string
   repeat?: TodoRepeat
+  priority?: TodoPriority
+  tags?: string[]
   status?: TodoStatus
   deleted?: boolean
 }
@@ -39,6 +44,8 @@ export interface UpdateTodoInput {
   waitingInstructions?: string | null
   dueAt?: string | null
   repeat?: TodoRepeat
+  priority?: TodoPriority
+  tags?: string[] | null
   status?: TodoStatus
   deleted?: boolean
 }

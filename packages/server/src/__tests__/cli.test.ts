@@ -869,7 +869,7 @@ describe('pluse cli', () => {
         pinned: false,
       })
 
-      const todo = parseJson<{ id: string; title: string; status: string }>(
+      const todo = parseJson<{ id: string; title: string; status: string; dueAt?: string; repeat?: string }>(
         runCli(sandbox, [
           'todo',
           'create',

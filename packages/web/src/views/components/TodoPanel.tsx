@@ -198,10 +198,15 @@ export function TodoPanel({
     description: '',
     dueAt: '',
     repeat: 'none' as Todo['repeat'],
+    priority: 'normal' as Todo['priority'],
+    tags: [] as string[],
+    tagInput: '',
   })
   const [todoSaving, setTodoSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
+  const [filterTags, setFilterTags] = useState<string[]>([])
+  const [projectTags, setProjectTags] = useState<string[]>([])
 
   async function loadData() {
     const [globalTaskResult, globalArchivedTaskResult, globalTodoResult, globalArchivedTodoResult] = await Promise.all([
@@ -271,6 +276,9 @@ export function TodoPanel({
     setTodos(todoResult.data)
     setArchivedTodos(archivedTodoResult.data)
     setError(null)
+
+    const tagsResult = await api.getProjectTags(projectId)
+    if (tagsResult.ok) setProjectTags(tagsResult.data.tags)
   }
 
   function setSourceTab(tab: ScopeTab, source: SourceTab) {
@@ -314,6 +322,8 @@ export function TodoPanel({
       repeat: patch.repeat,
       originQuestId: patch.originQuestId === undefined ? undefined : patch.originQuestId ?? null,
       status: patch.status,
+      priority: patch.priority,
+      tags: patch.tags,
     })
     if (!result.ok) {
       setError(result.error)
@@ -407,10 +417,14 @@ export function TodoPanel({
     [scopeTab, tasks, archivedTasks, todos, archivedTodos, globalTasks, globalArchivedTasks, globalTodos, globalArchivedTodos, projectId, activeQuest, activeQuestId],
   )
 
-  const visibleTodos = useMemo(
-    () => sourceTab === 'ai' ? [] : scopeData.todos,
-    [scopeData.todos, sourceTab],
-  )
+  const visibleTodos = useMemo(() => {
+    if (sourceTab === 'ai') return []
+    const base = scopeData.todos
+    if (filterTags.length === 0) return base
+    return base.filter((todo) =>
+      filterTags.some((ft) => todo.tags.some((tag) => tag.toLowerCase() === ft.toLowerCase()))
+    )
+  }, [scopeData.todos, sourceTab, filterTags])
 
   const visibleTasks = useMemo(
     () => sourceTab === 'human' ? [] : scopeData.tasks,
@@ -526,6 +540,9 @@ export function TodoPanel({
         description: '',
         dueAt: '',
         repeat: 'none',
+        priority: 'normal',
+        tags: [],
+        tagInput: '',
       })
       return
     }
@@ -535,6 +552,9 @@ export function TodoPanel({
       description: selectedTodo.description ?? '',
       dueAt: toDateTimeLocalValue(selectedTodo.dueAt),
       repeat: selectedTodo.repeat,
+      priority: selectedTodo.priority,
+      tags: selectedTodo.tags,
+      tagInput: '',
     })
     setTodoEditOpen(false)
   }, [selectedTodoId, selectedTodo?.updatedAt])
@@ -567,6 +587,8 @@ export function TodoPanel({
       description: todoDraft.description.trim() || null,
       dueAt: todoDraft.dueAt.trim() ? fromDateTimeLocalValue(todoDraft.dueAt) ?? null : null,
       repeat: todoDraft.repeat,
+      priority: todoDraft.priority,
+      tags: todoDraft.tags,
     })
     setTodoSaving(false)
     if (ok) setTodoEditOpen(false)
@@ -667,9 +689,15 @@ export function TodoPanel({
         >
           <div className="pluse-task-list-copy">
             <div className="pluse-sidebar-item-title">
+              {todo.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${todo.priority}`} aria-label={todo.priority} /> : null}
               <strong>{todo.title}</strong>
             </div>
             {scheduleSummary ? <p className="pluse-task-list-note">{scheduleSummary}</p> : null}
+            {todo.tags.length > 0 ? (
+              <div className="pluse-todo-tags">
+                {todo.tags.map((tag) => <span key={tag} className="pluse-todo-tag">{tag}</span>)}
+              </div>
+            ) : null}
             <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
               <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
               <span className="pluse-task-list-dot" aria-hidden="true">·</span>
@@ -780,6 +808,23 @@ export function TodoPanel({
         </div>
 
         <div className="pluse-task-list">
+          {projectTags.length > 0 ? (
+            <div className="pluse-todo-tag-filter">
+              {projectTags.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`pluse-todo-tag-chip${filterTags.includes(tag) ? ' is-active' : ''}`}
+                  onClick={() => setFilterTags((current) =>
+                    current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {activeItems.length > 0 ? (
             <div className="pluse-note-list pluse-task-stream">
               {activeItems.map((item) => (
@@ -915,6 +960,62 @@ export function TodoPanel({
                       maxLength={160}
                     />
                   </label>
+                  <div className="pluse-form-field">
+                    <span>{t('优先级')}</span>
+                    <div className="pluse-priority-selector">
+                      {(['urgent', 'high', 'normal', 'low'] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          className={`pluse-priority-option is-${p}${todoDraft.priority === p ? ' is-active' : ''}`}
+                          onClick={() => setTodoDraft((current) => ({ ...current, priority: p }))}
+                        >
+                          {p === 'urgent' ? t('紧急') : p === 'high' ? t('高') : p === 'normal' ? t('普通') : t('低')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="pluse-form-field">
+                    <span>{t('标签')}</span>
+                    <div className="pluse-tags-editor">
+                      {todoDraft.tags.map((tag) => (
+                        <span key={tag} className="pluse-todo-tag pluse-todo-tag-removable">
+                          {tag}
+                          <button
+                            type="button"
+                            className="pluse-todo-tag-remove"
+                            onClick={() => setTodoDraft((current) => ({ ...current, tags: current.tags.filter((t) => t !== tag) }))}
+                            aria-label={`${t('移除标签')} ${tag}`}
+                          >×</button>
+                        </span>
+                      ))}
+                      <input
+                        className="pluse-tags-input"
+                        value={todoDraft.tagInput}
+                        onChange={(event) => setTodoDraft((current) => ({ ...current, tagInput: event.target.value }))}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ',') {
+                            event.preventDefault()
+                            const newTag = todoDraft.tagInput.trim().replace(/,+$/, '')
+                            if (newTag && !todoDraft.tags.some((t) => t.toLowerCase() === newTag.toLowerCase())) {
+                              setTodoDraft((current) => ({ ...current, tags: [...current.tags, newTag], tagInput: '' }))
+                            } else {
+                              setTodoDraft((current) => ({ ...current, tagInput: '' }))
+                            }
+                          } else if (event.key === 'Backspace' && !todoDraft.tagInput && todoDraft.tags.length > 0) {
+                            setTodoDraft((current) => ({ ...current, tags: current.tags.slice(0, -1) }))
+                          }
+                        }}
+                        placeholder={todoDraft.tags.length === 0 ? t('输入标签，回车确认') : ''}
+                        list="pluse-project-tags-datalist"
+                      />
+                      <datalist id="pluse-project-tags-datalist">
+                        {projectTags.filter((tag) => !todoDraft.tags.includes(tag)).map((tag) => (
+                          <option key={tag} value={tag} />
+                        ))}
+                      </datalist>
+                    </div>
+                  </div>
                   <label>
                     <span>{t('等待说明')}</span>
                     <textarea
@@ -956,6 +1057,20 @@ export function TodoPanel({
                 </div>
               ) : (
                 <>
+                  {(selectedTodo.priority !== 'normal' || selectedTodo.tags.length > 0) ? (
+                    <section className="pluse-todo-detail-section">
+                      <div className="pluse-todo-detail-pills">
+                        {selectedTodo.priority !== 'normal' ? (
+                          <span className={`pluse-sidebar-badge pluse-priority-badge is-${selectedTodo.priority}`}>
+                            {selectedTodo.priority === 'urgent' ? t('紧急') : selectedTodo.priority === 'high' ? t('高优先级') : t('低优先级')}
+                          </span>
+                        ) : null}
+                        {selectedTodo.tags.map((tag) => (
+                          <span key={tag} className="pluse-todo-tag">{tag}</span>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                   {(selectedTodo.dueAt || selectedTodo.repeat !== 'none') ? (
                     <section className="pluse-todo-detail-section">
                       <h3>{t('计划')}</h3>
@@ -1030,6 +1145,9 @@ export function TodoPanel({
                             description: selectedTodo.description ?? '',
                             dueAt: toDateTimeLocalValue(selectedTodo.dueAt),
                             repeat: selectedTodo.repeat,
+                            priority: selectedTodo.priority,
+                            tags: selectedTodo.tags,
+                            tagInput: '',
                           })
                           setTodoEditOpen(false)
                         }}

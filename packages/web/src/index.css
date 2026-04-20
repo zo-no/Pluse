@@ -5129,6 +5129,146 @@ select {
   padding: 0 20px 20px;
 }
 
+/* ── Priority dot (list item) ── */
+.pluse-todo-priority-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 5px;
+}
+.pluse-todo-priority-dot.is-urgent { background: var(--color-red, #ef4444); }
+.pluse-todo-priority-dot.is-high   { background: var(--color-orange, #f97316); }
+.pluse-todo-priority-dot.is-low    { background: var(--text-muted, #9ca3af); }
+
+/* ── Tags (list item) ── */
+.pluse-todo-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.pluse-todo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.6;
+  background: var(--surface-raised, rgba(0,0,0,.06));
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ── Tag filter bar ── */
+.pluse-todo-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 12px 4px;
+}
+.pluse-todo-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.pluse-todo-tag-chip:hover {
+  background: var(--surface-raised, rgba(0,0,0,.06));
+  color: var(--text-primary);
+}
+.pluse-todo-tag-chip.is-active {
+  background: var(--accent-soft, rgba(99,102,241,0.12));
+  color: var(--accent, #6366f1);
+}
+
+/* ── Priority selector (edit form) ── */
+.pluse-form-field {
+  display: grid;
+  gap: 6px;
+}
+.pluse-form-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.pluse-priority-selector {
+  display: flex;
+  gap: 6px;
+}
+.pluse-priority-option {
+  flex: 1;
+  padding: 5px 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border-subtle, rgba(0,0,0,.12));
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pluse-priority-option:hover { background: var(--surface-raised, rgba(0,0,0,.06)); }
+.pluse-priority-option.is-urgent.is-active { background: #fef2f2; border-color: #ef4444; color: #dc2626; }
+.pluse-priority-option.is-high.is-active   { background: #fff7ed; border-color: #f97316; color: #ea580c; }
+.pluse-priority-option.is-normal.is-active { background: var(--surface-raised, rgba(0,0,0,.06)); border-color: var(--border-default); color: var(--text-primary); }
+.pluse-priority-option.is-low.is-active    { background: var(--surface-raised, rgba(0,0,0,.06)); border-color: var(--border-subtle); color: var(--text-muted); }
+
+/* ── Tags editor (edit form) ── */
+.pluse-tags-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default, rgba(0,0,0,.2));
+  background: var(--input-bg, #fff);
+  cursor: text;
+}
+.pluse-todo-tag-removable {
+  padding: 2px 4px 2px 8px;
+}
+.pluse-todo-tag-remove {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+}
+.pluse-todo-tag-remove:hover { opacity: 1; }
+.pluse-tags-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-primary);
+  min-width: 80px;
+  flex: 1;
+  padding: 2px 0;
+}
+
+/* ── Priority badge (detail view) ── */
+.pluse-priority-badge.is-urgent { background: #fef2f2; color: #dc2626; }
+.pluse-priority-badge.is-high   { background: #fff7ed; color: #ea580c; }
+.pluse-priority-badge.is-low    { background: var(--surface-raised); color: var(--text-muted); }
+
 .pluse-task-detail-head {
   display: flex;
   align-items: flex-start;
@@ -6300,4 +6440,200 @@ select {
   .pluse-task-modal-actions .pluse-button {
     width: 100%;
   }
+}
+
+/* ── Todo priority & tags ─────────────────────────────────────── */
+
+/* Priority dot in list item title */
+.pluse-todo-priority-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.pluse-todo-priority-dot.is-urgent { background: var(--error, #ef4444); }
+.pluse-todo-priority-dot.is-high   { background: var(--warning, #f97316); }
+.pluse-todo-priority-dot.is-low    { background: var(--text-muted, #9ca3af); }
+
+/* Tags row in list item */
+.pluse-todo-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.pluse-todo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 16px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Tag filter bar above list */
+.pluse-todo-tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 12px 4px;
+}
+
+.pluse-todo-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.pluse-todo-tag-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.pluse-todo-tag-chip.is-active {
+  background: var(--accent-soft, rgba(99,102,241,0.12));
+  color: var(--accent, #6366f1);
+}
+
+/* Priority selector in edit form */
+.pluse-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pluse-form-field > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pluse-priority-selector {
+  display: flex;
+  gap: 4px;
+}
+
+.pluse-priority-option {
+  flex: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  text-align: center;
+}
+.pluse-priority-option:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.pluse-priority-option.is-active.is-urgent {
+  background: rgba(239,68,68,0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+.pluse-priority-option.is-active.is-high {
+  background: rgba(249,115,22,0.1);
+  border-color: #f97316;
+  color: #f97316;
+}
+.pluse-priority-option.is-active.is-normal {
+  background: var(--accent-soft, rgba(99,102,241,0.12));
+  border-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
+}
+.pluse-priority-option.is-active.is-low {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+  color: var(--text-muted);
+}
+
+/* Tags editor in edit form */
+.pluse-tags-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  min-height: 34px;
+  cursor: text;
+}
+.pluse-tags-editor:focus-within {
+  border-color: var(--accent, #6366f1);
+  outline: 2px solid var(--accent-soft, rgba(99,102,241,0.2));
+}
+
+.pluse-todo-tag-removable {
+  padding-right: 3px;
+}
+
+.pluse-todo-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  margin-left: 1px;
+}
+.pluse-todo-tag-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.pluse-tags-input {
+  flex: 1;
+  min-width: 80px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  padding: 0;
+}
+.pluse-tags-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Priority badge in detail view */
+.pluse-priority-badge.is-urgent {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+.pluse-priority-badge.is-high {
+  background: rgba(249,115,22,0.1);
+  border-color: rgba(249,115,22,0.3);
+  color: #f97316;
+}
+.pluse-priority-badge.is-low {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  color: var(--text-muted);
 }

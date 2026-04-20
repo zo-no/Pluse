@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { Run, CreateRunInput } from '@pluse/types'
+import type { Run, CreateRunInput, TokenUsageSummary } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {
@@ -29,6 +29,11 @@ type RunRow = {
   runner_process_id: number | null
   context_input_tokens: number | null
   context_window_tokens: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  cache_read_tokens: number | null
+  cache_creation_tokens: number | null
+  cost_usd: number | null
   created_at: string
   started_at: string | null
   updated_at: string
@@ -56,6 +61,11 @@ function rowToRun(row: RunRow): Run {
     runnerProcessId: row.runner_process_id ?? undefined,
     contextInputTokens: row.context_input_tokens ?? undefined,
     contextWindowTokens: row.context_window_tokens ?? undefined,
+    inputTokens: row.input_tokens ?? undefined,
+    outputTokens: row.output_tokens ?? undefined,
+    cacheReadTokens: row.cache_read_tokens ?? undefined,
+    cacheCreationTokens: row.cache_creation_tokens ?? undefined,
+    costUsd: row.cost_usd ?? undefined,
     createdAt: row.created_at,
     startedAt: row.started_at ?? undefined,
     updatedAt: row.updated_at,
@@ -148,6 +158,11 @@ export function updateRun(id: string, patch: Partial<Run>): Run {
     ['failureReason', 'failure_reason'],
     ['contextInputTokens', 'context_input_tokens'],
     ['contextWindowTokens', 'context_window_tokens'],
+    ['inputTokens', 'input_tokens'],
+    ['outputTokens', 'output_tokens'],
+    ['cacheReadTokens', 'cache_read_tokens'],
+    ['cacheCreationTokens', 'cache_creation_tokens'],
+    ['costUsd', 'cost_usd'],
     ['startedAt', 'started_at'], ['completedAt', 'completed_at'],
     ['finalizedAt', 'finalized_at'],
   ]
@@ -185,4 +200,37 @@ export function getRunSpool(runId: string): Array<{ id: number; ts: string; line
   return db.query<{ id: number; ts: string; line: string }, [string]>(
     `SELECT id, ts, line FROM run_spool WHERE run_id = ? ORDER BY id ASC`,
   ).all(runId)
+}
+
+export function getProjectTokenSummary(projectId: string): TokenUsageSummary {
+  const db = getDb()
+  const row = db.query<{
+    input_tokens: number | null
+    output_tokens: number | null
+    cache_read_tokens: number | null
+    cache_creation_tokens: number | null
+    cost_usd: number | null
+    run_count: number
+  }, [string]>(
+    `SELECT
+      SUM(input_tokens)          AS input_tokens,
+      SUM(output_tokens)         AS output_tokens,
+      SUM(cache_read_tokens)     AS cache_read_tokens,
+      SUM(cache_creation_tokens) AS cache_creation_tokens,
+      SUM(cost_usd)              AS cost_usd,
+      COUNT(*)                   AS run_count
+    FROM runs
+    WHERE project_id = ?
+      AND state = 'completed'
+      AND input_tokens IS NOT NULL`,
+  ).get(projectId)
+
+  return {
+    inputTokens: row?.input_tokens ?? 0,
+    outputTokens: row?.output_tokens ?? 0,
+    cacheReadTokens: row?.cache_read_tokens ?? 0,
+    cacheCreationTokens: row?.cache_creation_tokens ?? 0,
+    costUsd: row?.cost_usd ?? null,
+    runCount: row?.run_count ?? 0,
+  }
 }

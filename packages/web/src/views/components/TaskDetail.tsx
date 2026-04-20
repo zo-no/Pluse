@@ -16,6 +16,10 @@ interface TaskDetailProps {
   onDataChanged?: () => Promise<void> | void
 }
 
+function formatTokenCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
 function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => string): string {
   if (!value) return t ? t('未记录') : '未记录'
   return new Intl.DateTimeFormat(locale, {
@@ -1132,7 +1136,15 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                       <div key={run.id} className="pluse-note-item">
                         <div>
                           <strong>{formatStatus(run.state, t)}</strong>
-                          <p>{run.tool}/{run.model} · {formatTrigger(run.trigger, t)} · {formatDateTime(run.createdAt, locale, t)}</p>
+                          <p>
+                            {run.tool}/{run.model} · {formatTrigger(run.trigger, t)} · {formatDateTime(run.createdAt, locale, t)}
+                            {run.inputTokens != null ? (
+                              <span style={{ color: 'var(--text-muted)' }}>
+                                {` · ↑${formatTokenCount(run.inputTokens)} ↓${formatTokenCount(run.outputTokens ?? 0)}`}
+                                {run.cacheReadTokens ? ` · ↩${Math.round(run.cacheReadTokens / (run.inputTokens + run.cacheReadTokens + (run.cacheCreationTokens ?? 0)) * 100)}%` : ''}
+                              </span>
+                            ) : null}
+                          </p>
                           {run.failureReason ? <p>{run.failureReason}</p> : null}
                         </div>
                       </div>
