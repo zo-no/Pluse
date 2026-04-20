@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, OpenProjectInput, Project, ProjectOverview, TokenUsageSummary, UpdateProjectInput } from '@pluse/types'
+import type { ApiResult, Project, ProjectOverview, TokenUsageSummary } from '@pluse/types'
 import { getProject } from '../../models/project'
 import { getProjectTokenSummary } from '../../models/run'
 import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
@@ -23,6 +23,7 @@ const OpenProjectSchema = z.object({
   name: z.string().min(1).optional(),
   goal: z.string().optional(),
   systemPrompt: z.string().optional(),
+  domainId: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 })
 
@@ -30,6 +31,7 @@ const UpdateProjectSchema = z.object({
   name: z.string().min(1).optional(),
   goal: z.string().nullable().optional(),
   systemPrompt: z.string().nullable().optional(),
+  domainId: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
   archived: z.boolean().optional(),
 })
@@ -54,9 +56,10 @@ projectsRouter.post('/projects/open', async (c) => {
   const parsed = OpenProjectSchema.safeParse(body)
   if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
   try {
-    return c.json(ok<Project>(openProject(parsed.data as OpenProjectInput)), sc(201))
+    return c.json(ok<Project>(openProject(parsed.data)), sc(201))
   } catch (error) {
-    return c.json(errBody(String(error)), sc(500))
+    const message = String(error)
+    return c.json(errBody(message), message.includes('Domain not found') ? sc(400) : sc(500))
   }
 })
 
@@ -90,10 +93,13 @@ projectsRouter.patch('/projects/:id', async (c) => {
   const parsed = UpdateProjectSchema.safeParse(body)
   if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
   try {
-    return c.json(ok(updateProject(c.req.param('id'), parsed.data as UpdateProjectInput)))
+    return c.json(ok(updateProject(c.req.param('id'), parsed.data)))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    if (message.includes('Domain not found')) {
+      return c.json(errBody(message), sc(400))
+    }
+    return c.json(errBody(message), message.includes('Project not found') ? sc(404) : sc(400))
   }
 })
 

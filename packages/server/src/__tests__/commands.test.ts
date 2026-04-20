@@ -5,6 +5,7 @@ describe('command catalog', () => {
   it('exposes the full project command set', () => {
     const catalog = getCommandCatalog()
     const projectModule = catalog.modules.find((module) => module.name === 'project')
+    const domainModule = catalog.modules.find((module) => module.name === 'domain')
 
     expect(projectModule).toBeTruthy()
     expect(projectModule?.commands.map((command) => command.name)).toEqual([
@@ -15,6 +16,17 @@ describe('command catalog', () => {
       'project update',
       'project archive',
       'project delete',
+    ])
+    expect(projectModule?.commands.find((command) => command.name === 'project open')?.cli).toContain('--domain-id <id>')
+    expect(projectModule?.commands.find((command) => command.name === 'project update')?.cli).toContain('--clear-domain')
+
+    expect(domainModule).toBeTruthy()
+    expect(domainModule?.commands.map((command) => command.name)).toEqual([
+      'domain list',
+      'domain defaults',
+      'domain create',
+      'domain update',
+      'domain delete',
     ])
   })
 

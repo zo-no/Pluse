@@ -1,8 +1,10 @@
 import type {
   ApiResult,
   AuthMe,
+  CreateDomainInput,
   CreateQuestInput,
   CreateTodoInput,
+  Domain,
   OpenProjectInput,
   PagedResult,
   Project,
@@ -17,6 +19,7 @@ import type {
   AppSettings,
   Todo,
   TokenUsageSummary,
+  UpdateDomainInput,
   UpdateProjectInput,
   UpdateQuestInput,
   UpdateTodoInput,
@@ -108,6 +111,28 @@ export function logout(): Promise<ApiResult<{ ok: true }>> {
 
 export function getProjects(): Promise<ApiResult<Project[]>> {
   return request<Project[]>('GET', '/projects')
+}
+
+export function getDomains(params: { deleted?: boolean } = {}): Promise<ApiResult<Domain[]>> {
+  const search = new URLSearchParams()
+  if (params.deleted !== undefined) search.set('deleted', params.deleted ? 'true' : 'false')
+  return request<Domain[]>('GET', `/domains${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
+export function createDomain(input: CreateDomainInput): Promise<ApiResult<Domain>> {
+  return request<Domain>('POST', '/domains', input)
+}
+
+export function createDefaultDomains(): Promise<ApiResult<Domain[]>> {
+  return request<Domain[]>('POST', '/domains/defaults')
+}
+
+export function updateDomain(id: string, input: UpdateDomainInput): Promise<ApiResult<Domain>> {
+  return request<Domain>('PATCH', `/domains/${id}`, input)
+}
+
+export function deleteDomain(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/domains/${id}`)
 }
 
 export function openProject(input: OpenProjectInput): Promise<ApiResult<Project>> {

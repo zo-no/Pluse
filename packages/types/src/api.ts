@@ -151,6 +151,7 @@ export interface TokenUsageSummary {
 export type SseMessage =
   | { type: 'connected'; data: { ts: string } }
   | { type: 'project_opened' | 'project_updated'; data: { projectId: string } }
+  | { type: 'domain_updated' | 'domain_deleted'; data: { domainId: string } }
   | { type: 'quest_updated' | 'quest_deleted'; data: { questId: string; projectId: string } }
   | { type: 'todo_updated' | 'todo_deleted'; data: { todoId: string; projectId: string; originQuestId?: string } }
   | { type: 'run_updated'; data: { runId: string; questId: string; projectId: string } }

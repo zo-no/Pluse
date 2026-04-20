@@ -1,4 +1,5 @@
 export * from './project'
+export * from './domain'
 export * from './quest'
 export * from './todo'
 export * from './run'

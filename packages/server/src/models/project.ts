@@ -16,6 +16,7 @@ type ProjectRow = {
   goal: string | null
   work_dir: string | null
   system_prompt: string | null
+  domain_id: string | null
   archived: number
   pinned: number
   visibility: ProjectVisibility
@@ -30,6 +31,7 @@ function rowToProject(row: ProjectRow): Project {
     goal: row.goal ?? undefined,
     workDir: row.work_dir ?? '',
     systemPrompt: row.system_prompt ?? undefined,
+    domainId: row.domain_id ?? undefined,
     archived: row.archived === 1,
     pinned: row.pinned === 1,
     visibility: row.visibility,
@@ -93,14 +95,15 @@ export function createProjectRecord(
 
   db.run(
     `INSERT INTO projects (
-      id, name, goal, work_dir, system_prompt, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      id, name, goal, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     [
       id,
       input.name,
       input.goal ?? null,
       input.workDir,
       input.systemPrompt ?? null,
+      input.domainId ?? null,
       input.pinned ? 1 : 0,
       input.visibility ?? 'user',
       ts,
@@ -115,13 +118,14 @@ export function upsertProjectRecord(project: Project): Project {
   const db = getDb()
   db.run(
     `INSERT INTO projects (
-      id, name, goal, work_dir, system_prompt, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, name, goal, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       goal = excluded.goal,
       work_dir = excluded.work_dir,
       system_prompt = excluded.system_prompt,
+      domain_id = excluded.domain_id,
       archived = excluded.archived,
       pinned = excluded.pinned,
       visibility = excluded.visibility,
@@ -132,6 +136,7 @@ export function upsertProjectRecord(project: Project): Project {
       project.goal ?? null,
       project.workDir,
       project.systemPrompt ?? null,
+      project.domainId ?? null,
       project.archived ? 1 : 0,
       project.pinned ? 1 : 0,
       project.visibility,
@@ -166,6 +171,10 @@ export function updateProject(id: string, input: UpdateProjectInput & { workDir?
   if ('systemPrompt' in input) {
     sets.push('system_prompt = ?')
     params.push(input.systemPrompt ?? null)
+  }
+  if ('domainId' in input && input.domainId !== undefined) {
+    sets.push('domain_id = ?')
+    params.push(input.domainId ?? null)
   }
   if ('pinned' in input && input.pinned !== undefined) {
     sets.push('pinned = ?')

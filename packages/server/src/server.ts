@@ -5,6 +5,7 @@ import type { ApiErr } from '@pluse/types'
 import { authRouter } from './controllers/http/auth'
 import { assetsRouter } from './controllers/http/assets'
 import { commandsRouter } from './controllers/http/commands'
+import { domainsRouter } from './controllers/http/domains'
 import { eventsRouter } from './controllers/http/events'
 import { projectsRouter } from './controllers/http/projects'
 import { settingsRouter } from './controllers/http/settings'
@@ -31,6 +32,7 @@ app.get('/health', (c) => c.json({ ok: true, service: 'pluse', ts: Date.now() })
 app.route('/', authRouter)
 app.use('/api/*', requireAuth)
 app.route('/api', projectsRouter)
+app.route('/api', domainsRouter)
 app.route('/api', questsRouter)
 app.route('/api', runsRouter)
 app.route('/api', todosRouter)

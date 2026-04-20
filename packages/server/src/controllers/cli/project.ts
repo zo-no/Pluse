@@ -8,10 +8,11 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2))
 }
 
-function printProject(project: { id: string; name: string; workDir: string; goal?: string; archived?: boolean; pinned?: boolean }): void {
+function printProject(project: { id: string; name: string; workDir: string; goal?: string; domainId?: string; archived?: boolean; pinned?: boolean }): void {
   console.log(`${project.id}  ${project.name}`)
   console.log(`  workDir: ${project.workDir}`)
   if (project.goal) console.log(`  goal: ${project.goal}`)
+  if (project.domainId) console.log(`  domainId: ${project.domainId}`)
   console.log(`  pinned: ${project.pinned ? 'yes' : 'no'}  archived: ${project.archived ? 'yes' : 'no'}`)
 }
 
@@ -84,15 +85,17 @@ projectCommand
   .option('--name <name>', 'Project name')
   .option('--goal <goal>', 'Project goal')
   .option('--system-prompt <prompt>', 'Project system prompt')
+  .option('--domain-id <id>', 'Assign project to a domain')
   .option('--pin', 'Pin the project', false)
   .option('--json', 'Output as JSON', false)
-  .action(async (opts: { workDir: string; name?: string; goal?: string; systemPrompt?: string; pin: boolean; json: boolean }) => {
+  .action(async (opts: { workDir: string; name?: string; goal?: string; systemPrompt?: string; domainId?: string; pin: boolean; json: boolean }) => {
     const mode = getCliMode()
     const input: OpenProjectInput = {
       workDir: opts.workDir,
       name: opts.name,
       goal: opts.goal,
       systemPrompt: opts.systemPrompt,
+      domainId: opts.domainId,
       pinned: opts.pin || undefined,
     }
     const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
@@ -107,15 +110,21 @@ projectCommand
   .option('--name <name>', 'New name')
   .option('--goal <goal>', 'New goal')
   .option('--system-prompt <prompt>', 'New project system prompt')
+  .option('--domain-id <id>', 'Assign project to a domain')
+  .option('--clear-domain', 'Remove project from its domain')
   .option('--pin', 'Pin the project')
   .option('--unpin', 'Unpin the project')
   .option('--archive', 'Archive the project')
   .option('--json', 'Output as JSON', false)
-  .action(async (id: string, opts: { name?: string; goal?: string; systemPrompt?: string; pin?: boolean; unpin?: boolean; archive?: boolean; json: boolean }) => {
+  .action(async (
+    id: string,
+    opts: { name?: string; goal?: string; systemPrompt?: string; domainId?: string; clearDomain?: boolean; pin?: boolean; unpin?: boolean; archive?: boolean; json: boolean },
+  ) => {
     const patch: UpdateProjectInput = {
       name: opts.name,
       goal: opts.goal,
       systemPrompt: opts.systemPrompt,
+      domainId: opts.clearDomain ? null : opts.domainId,
       pinned: opts.pin ? true : opts.unpin ? false : undefined,
       archived: opts.archive ? true : undefined,
     }

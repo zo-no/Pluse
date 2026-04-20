@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
+import { getDomain } from '../models/domain'
 import { listProjectActivity } from '../models/project-activity'
 import {
   createProjectRecord,
@@ -55,6 +56,14 @@ function manifestFromProject(project: Project): ProjectManifest {
     workDir: project.workDir,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt,
+  }
+}
+
+function assertDomainAssignable(domainId: string | null | undefined): void {
+  if (domainId === undefined || domainId === null) return
+  const domain = getDomain(domainId)
+  if (!domain) {
+    throw new Error(`Domain not found: ${domainId}`)
   }
 }
 
@@ -128,6 +137,7 @@ function alignProjectToManifest(projectId: string, manifest: ProjectManifest, se
     goal: seed?.goal ?? manifest.goal ?? null,
     workDir: manifest.workDir,
     systemPrompt: seed?.systemPrompt,
+    domainId: seed?.domainId,
     pinned: seed?.pinned,
     archived: false,
   })
@@ -143,6 +153,7 @@ function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<Open
     goal: seed?.goal ?? manifest.goal,
     workDir: manifest.workDir,
     systemPrompt: seed?.systemPrompt,
+    domainId: seed?.domainId,
     pinned: seed?.pinned ?? false,
     createdAt: manifest.createdAt,
     updatedAt: manifest.updatedAt,
@@ -191,6 +202,7 @@ export function openProject(input: OpenProjectInput): Project {
   const workDir = resolveWorkDir(input.workDir)
   const manifest = readManifest(workDir)
   const byWorkDir = getProjectByWorkDir(workDir)
+  assertDomainAssignable(input.domainId)
 
   if (!manifest && !byWorkDir) {
     const created = createProjectRecord({
@@ -198,6 +210,7 @@ export function openProject(input: OpenProjectInput): Project {
       goal: input.goal,
       workDir,
       systemPrompt: input.systemPrompt,
+      domainId: input.domainId,
       pinned: input.pinned,
     })
     writeManifest(manifestFromProject(created))
@@ -210,6 +223,7 @@ export function openProject(input: OpenProjectInput): Project {
       name: input.name || byWorkDir.name,
       goal: input.goal === undefined ? byWorkDir.goal ?? null : input.goal ?? null,
       systemPrompt: input.systemPrompt === undefined ? byWorkDir.systemPrompt ?? null : input.systemPrompt ?? null,
+      domainId: input.domainId !== undefined ? input.domainId : byWorkDir.domainId ?? undefined,
       pinned: input.pinned ?? byWorkDir.pinned,
       archived: false,
     })
@@ -240,6 +254,7 @@ export function openProject(input: OpenProjectInput): Project {
           goal: input.goal === undefined ? manifest.goal : input.goal,
           workDir,
           systemPrompt: input.systemPrompt,
+          domainId: input.domainId,
           pinned: input.pinned,
         })
         writeManifest(manifestFromProject(copied))
@@ -303,6 +318,7 @@ export function updateProject(id: string, input: UpdateProjectInput): Project {
   if (project.id === SYSTEM_PROJECT_ID && input.archived) {
     throw new Error('System project cannot be archived')
   }
+  assertDomainAssignable(input.domainId)
   const updated = updateProjectRecord(id, input)
   if (updated.visibility === 'user') {
     writeManifest(manifestFromProject(updated))

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
-import type { AuthMe, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
+import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
 import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
@@ -468,6 +468,7 @@ function ProjectPage({
   const navigate = useNavigate()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary | null>(null)
+  const [domains, setDomains] = useState<Domain[]>([])
   const [tab, setTab] = useState<'overview' | 'settings'>('overview')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -478,6 +479,7 @@ function ProjectPage({
   const [name, setName] = useState('')
   const [goal, setGoal] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [domainId, setDomainId] = useState('')
 
   async function loadOverview() {
     const result = await api.getProjectOverview(projectId)
@@ -489,20 +491,51 @@ function ProjectPage({
     setName(result.data.project.name)
     setGoal(result.data.project.goal ?? '')
     setSystemPrompt(result.data.project.systemPrompt ?? '')
+    setDomainId(result.data.project.domainId ?? '')
     setError(null)
     onProjectLoaded(result.data)
   }
 
+  async function loadDomains() {
+    const result = await api.getDomains()
+    if (result.ok) setDomains(result.data)
+  }
+
   useEffect(() => {
     void loadOverview()
+    void loadDomains()
     void api.getProjectTokenSummary(projectId).then((result) => {
       if (result.ok) setTokenSummary(result.data)
     })
   }, [projectId])
 
+  useEffect(() => {
+    const source = new EventSource('/api/events')
+    let reloadTimer: number | null = null
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+
+      const shouldReloadOverview = event.type === 'project_updated' && event.data.projectId === projectId
+      const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
+      if (!shouldReloadOverview && !shouldReloadDomains) return
+
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => {
+        if (shouldReloadOverview) void loadOverview()
+        if (shouldReloadDomains) void loadDomains()
+      }, 120)
+    }
+    source.onerror = () => source.close()
+    return () => {
+      source.close()
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+    }
+  }, [projectId])
+
   async function saveProject() {
     setSaving(true)
-    const result = await api.updateProject(projectId, { name, goal, systemPrompt })
+    const result = await api.updateProject(projectId, { name, goal, systemPrompt, domainId: domainId || null })
     setSaving(false)
     if (!result.ok) {
       setError(result.error)
@@ -539,6 +572,8 @@ function ProjectPage({
     return <div className="pluse-page pluse-page-loading">{t('正在加载项目…')}</div>
   }
 
+  const activeDomainName = domains.find((domain) => domain.id === overview.project.domainId)?.name ?? null
+
   return (
     <div className="pluse-page pluse-project-page">
       <div className="pluse-detail-shell">
@@ -561,6 +596,7 @@ function ProjectPage({
           </div>
           <div className="pluse-project-tab-meta">
             <span className="pluse-info-path-sm">{shortPath(overview.project.workDir)}</span>
+            {activeDomainName ? <span className="pluse-inline-pill">{activeDomainName}</span> : null}
             {overview.project.pinned ? <span className="pluse-inline-pill">{t('固定')}</span> : null}
           </div>
         </div>
@@ -600,6 +636,15 @@ function ProjectPage({
               <label>
                 <span>{t('项目名称')}</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
+              </label>
+              <label>
+                <span>{t('领域')}</span>
+                <select value={domainId} onChange={(event) => setDomainId(event.target.value)}>
+                  <option value="">{t('未分组')}</option>
+                  {domains.map((domain) => (
+                    <option key={domain.id} value={domain.id}>{domain.name}</option>
+                  ))}
+                </select>
               </label>
               <label className="pluse-form-span">
                 <span>{t('项目目标')}</span>
@@ -984,8 +1029,7 @@ function Shell({
   }, [])
 
   useEffect(() => {
-    if (!activeProjectId) return
-    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
+    const source = new EventSource('/api/events')
     let reloadTimer: number | null = null
     source.onmessage = (message) => {
       const event = parseSseMessage(message.data)
@@ -1001,7 +1045,7 @@ function Shell({
       source.close()
       if (reloadTimer) window.clearTimeout(reloadTimer)
     }
-  }, [activeProjectId, loadProjects])
+  }, [loadProjects])
 
   if (!auth.setupRequired && !auth.authenticated) {
     return <Navigate to="/login" replace />

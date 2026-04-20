@@ -277,7 +277,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'domain', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')

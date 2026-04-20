@@ -153,13 +153,13 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'project open',
-            cli: 'pluse project open --work-dir <path> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--pin] [--json]',
+            cli: 'pluse project open --work-dir <path> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--domain-id <id>] [--pin] [--json]',
             api: 'POST /api/projects/open',
             description: '打开或创建项目',
           },
           {
             name: 'project update',
-            cli: 'pluse project update <id> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--pin] [--unpin] [--archive] [--json]',
+            cli: 'pluse project update <id> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--domain-id <id>|--clear-domain] [--pin] [--unpin] [--archive] [--json]',
             api: 'PATCH /api/projects/<id>',
             description: '更新项目属性',
           },
@@ -174,6 +174,42 @@ export function getCommandCatalog(): CommandCatalog {
             cli: 'pluse project delete <id> --confirm [--json]',
             api: 'DELETE /api/projects/<id>',
             description: '归档项目及其数据',
+          },
+        ],
+      },
+      {
+        name: 'domain',
+        description: 'Domain 管理',
+        commands: [
+          {
+            name: 'domain list',
+            cli: 'pluse domain list [--json]',
+            api: 'GET /api/domains',
+            description: '列出所有 Domain',
+          },
+          {
+            name: 'domain defaults',
+            cli: 'pluse domain defaults [--json]',
+            api: 'POST /api/domains/defaults',
+            description: '创建默认 Domain 模板（自动跳过重复项）',
+          },
+          {
+            name: 'domain create',
+            cli: 'pluse domain create --name <name> [--description <text>] [--json]',
+            api: 'POST /api/domains',
+            description: '创建新的 Domain',
+          },
+          {
+            name: 'domain update',
+            cli: 'pluse domain update <id> [--name <name>] [--description <text>] [--json]',
+            api: 'PATCH /api/domains/<id>',
+            description: '更新 Domain 内容',
+          },
+          {
+            name: 'domain delete',
+            cli: 'pluse domain delete <id> --confirm [--json]',
+            api: 'DELETE /api/domains/<id>',
+            description: '归档 Domain，并将其下项目移回未分组',
           },
         ],
       },

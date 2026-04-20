@@ -274,6 +274,64 @@ describe('pluse cli', () => {
     }
   })
 
+  it('covers domain commands and project domain assignment', () => {
+    const sandbox = createSandbox()
+    try {
+      const createdDomain = parseJson<{ id: string; name: string }>(
+        runCli(sandbox, ['domain', 'create', '--name', '事业', '--description', 'Primary work', '--json']),
+      )
+      expect(createdDomain.name).toBe('事业')
+
+      const project = parseJson<{ id: string; domainId?: string }>(
+        runCli(sandbox, [
+          'project',
+          'open',
+          '--work-dir',
+          sandbox.workDir,
+          '--name',
+          'Alpha',
+          '--domain-id',
+          createdDomain.id,
+          '--json',
+        ]),
+      )
+      expect(project.domainId).toBe(createdDomain.id)
+
+      const reopened = parseJson<{ id: string; domainId?: string }>(
+        runCli(sandbox, ['project', 'open', '--work-dir', sandbox.workDir, '--name', 'Reloaded', '--json']),
+      )
+      expect(reopened.domainId).toBe(createdDomain.id)
+
+      const defaults = parseJson<Array<{ name: string }>>(
+        runCli(sandbox, ['domain', 'defaults', '--json']),
+      )
+      expect(defaults.some((domain) => domain.name === '财富')).toBe(true)
+      expect(defaults.some((domain) => domain.name === '事业')).toBe(false)
+
+      const updatedProject = parseJson<{ domainId?: string }>(
+        runCli(sandbox, ['project', 'update', project.id, '--clear-domain', '--json']),
+      )
+      expect(updatedProject.domainId).toBeUndefined()
+
+      const reassignedProject = parseJson<{ domainId?: string }>(
+        runCli(sandbox, ['project', 'update', project.id, '--domain-id', createdDomain.id, '--json']),
+      )
+      expect(reassignedProject.domainId).toBe(createdDomain.id)
+
+      const deleted = parseJson<{ deleted: boolean }>(
+        runCli(sandbox, ['domain', 'delete', createdDomain.id, '--confirm', '--json']),
+      )
+      expect(deleted.deleted).toBe(true)
+
+      const afterDelete = parseJson<{ domainId?: string }>(
+        runCli(sandbox, ['project', 'get', project.id, '--json']),
+      )
+      expect(afterDelete.domainId).toBeUndefined()
+    } finally {
+      cleanupSandbox(sandbox)
+    }
+  })
+
   it('shows the full task quest CLI surface in help output', () => {
     const sandbox = createSandbox()
     try {

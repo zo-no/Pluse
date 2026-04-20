@@ -15,6 +15,7 @@ export interface Project {
   goal?: string
   workDir: string
   systemPrompt?: string
+  domainId?: string
   archived: boolean
   pinned: boolean
   visibility: ProjectVisibility
@@ -27,6 +28,7 @@ export interface CreateProjectInput {
   workDir: string
   goal?: string
   systemPrompt?: string
+  domainId?: string | null
   pinned?: boolean
 }
 
@@ -35,6 +37,7 @@ export interface OpenProjectInput {
   name?: string
   goal?: string
   systemPrompt?: string
+  domainId?: string | null
   pinned?: boolean
 }
 
@@ -42,6 +45,7 @@ export interface UpdateProjectInput {
   name?: string
   goal?: string | null
   systemPrompt?: string | null
+  domainId?: string | null
   pinned?: boolean
   archived?: boolean
 }

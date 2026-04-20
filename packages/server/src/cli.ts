@@ -2,6 +2,7 @@
 import { Command } from 'commander'
 import { authCommand } from './controllers/cli/auth'
 import { commandsCommand } from './controllers/cli/commands'
+import { domainCommand } from './controllers/cli/domain'
 import { projectCommand } from './controllers/cli/project'
 import { questCommand } from './controllers/cli/quest'
 import { runCommand } from './controllers/cli/run'
@@ -16,6 +17,7 @@ program
 
 program.addCommand(authCommand)
 program.addCommand(commandsCommand)
+program.addCommand(domainCommand)
 program.addCommand(projectCommand)
 program.addCommand(questCommand)
 program.addCommand(runCommand)

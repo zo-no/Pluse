@@ -18,12 +18,28 @@ function initSchema(db: Database): void {
   db.run('PRAGMA foreign_keys = ON')
   db.run('PRAGMA busy_timeout = 5000')
 
+  db.run(`CREATE TABLE IF NOT EXISTS domains (
+    id           TEXT PRIMARY KEY NOT NULL,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    icon         TEXT,
+    color        TEXT,
+    order_index  INTEGER NOT NULL DEFAULT 0,
+    deleted      INTEGER NOT NULL DEFAULT 0,
+    deleted_at   TEXT,
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_domains_active
+    ON domains (deleted, order_index, updated_at DESC)`)
+
   db.run(`CREATE TABLE IF NOT EXISTS projects (
     id            TEXT PRIMARY KEY NOT NULL,
     name          TEXT NOT NULL,
     work_dir      TEXT NOT NULL,
     goal          TEXT,
     system_prompt TEXT,
+    domain_id     TEXT REFERENCES domains(id),
     archived      INTEGER NOT NULL DEFAULT 0,
     pinned        INTEGER NOT NULL DEFAULT 0,
     visibility    TEXT NOT NULL DEFAULT 'user',
@@ -33,11 +49,15 @@ function initSchema(db: Database): void {
     updated_at    TEXT NOT NULL
   ) STRICT`)
 
+  ensureColumn(db, 'projects', 'domain_id', 'ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)')
+
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_work_dir
     ON projects (work_dir)
     WHERE work_dir IS NOT NULL AND visibility = 'user'`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_projects_updated
     ON projects (visibility, archived, pinned DESC, updated_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_projects_domain
+    ON projects (domain_id, updated_at DESC)`)
 
   db.run(`CREATE TABLE IF NOT EXISTS quests (
     id                   TEXT PRIMARY KEY NOT NULL,

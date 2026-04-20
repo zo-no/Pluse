@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Project, Quest } from '@pluse/types'
+import type { Domain, Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { displayQuestName } from '@/views/utils/display'
 import { parseSseMessage } from '@/views/utils/sse'
-import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SettingsIcon, SlidersIcon } from './icons'
+import { DomainSidebar } from './DomainSidebar'
+import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, SlidersIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
@@ -91,11 +92,14 @@ export function SessionList({
   const [sessions, setSessions] = useState<Quest[]>([])
   const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('sessions')
+  const [domains, setDomains] = useState<Domain[]>([])
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDir, setProjectDir] = useState('')
   const [projectGoal, setProjectGoal] = useState('')
+  const [projectDomainId, setProjectDomainId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -135,9 +139,18 @@ export function SessionList({
     if (archivedSessionResult.ok) setArchivedSessions(archivedSessionResult.data)
   }, [activeProjectId])
 
+  const loadDomains = useCallback(async () => {
+    const result = await api.getDomains()
+    if (result.ok) setDomains(result.data)
+  }, [])
+
   useEffect(() => {
     void loadQuests()
   }, [loadQuests])
+
+  useEffect(() => {
+    void loadDomains()
+  }, [loadDomains])
 
   useEffect(() => {
     if (!activeProjectId) return
@@ -158,6 +171,25 @@ export function SessionList({
       if (reloadTimer) window.clearTimeout(reloadTimer)
     }
   }, [activeProjectId, loadQuests])
+
+  useEffect(() => {
+    const source = new EventSource('/api/events')
+    let reloadTimer: number | null = null
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+      if (event.type !== 'domain_updated' && event.type !== 'domain_deleted') return
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => {
+        void loadDomains()
+      }, 120)
+    }
+    source.onerror = () => source.close()
+    return () => {
+      source.close()
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+    }
+  }, [loadDomains])
 
   useEffect(() => {
     if (!projectPickerOpen) return
@@ -184,6 +216,7 @@ export function SessionList({
       name: projectName || undefined,
       workDir: projectDir,
       goal: projectGoal || undefined,
+      domainId: projectDomainId || null,
     })
     if (!result.ok) {
       setError(result.error)
@@ -193,6 +226,7 @@ export function SessionList({
     setProjectName('')
     setProjectDir('')
     setProjectGoal('')
+    setProjectDomainId('')
     setNewProjectOpen(false)
     setProjectPickerOpen(false)
     await onProjectsChanged()
@@ -479,6 +513,15 @@ export function SessionList({
                           placeholder={t('项目目标（可选）')}
                           rows={2}
                         />
+                        <label>
+                          <span className="pluse-sidebar-context-label">{t('领域')}</span>
+                          <select value={projectDomainId} onChange={(event) => setProjectDomainId(event.target.value)}>
+                            <option value="">{t('未分组')}</option>
+                            {domains.map((domain) => (
+                              <option key={domain.id} value={domain.id}>{domain.name}</option>
+                            ))}
+                          </select>
+                        </label>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button type="button" className="pluse-button pluse-button-ghost" onClick={() => setNewProjectOpen(false)}>
                             {t('取消')}
@@ -518,7 +561,26 @@ export function SessionList({
           </div>
         </section>
 
-        {sessions.length > 0 ? (
+        <section className="pluse-sidebar-section pluse-sidebar-section-project">
+          <div className="pluse-sidebar-tabs" role="tablist" aria-label={t('侧栏视图')}>
+            <button
+              type="button"
+              className={`pluse-sidebar-tab${sidebarTab === 'sessions' ? ' is-active' : ''}`}
+              onClick={() => setSidebarTab('sessions')}
+            >
+              {t('会话')}
+            </button>
+            <button
+              type="button"
+              className={`pluse-sidebar-tab${sidebarTab === 'domains' ? ' is-active' : ''}`}
+              onClick={() => setSidebarTab('domains')}
+            >
+              {t('领域')}
+            </button>
+          </div>
+        </section>
+
+        {sidebarTab === 'sessions' && sessions.length > 0 ? (
           <div className="pluse-sidebar-search">
             <input
               type="search"
@@ -530,59 +592,73 @@ export function SessionList({
           </div>
         ) : null}
 
-        <div className="pluse-sidebar-scroll-pane">
-          <section className="pluse-sidebar-section pluse-sidebar-section-list">
-            <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-              {pinnedSessions.length > 0 ? (
-                <>
-                  <div className="pluse-sidebar-section-label">{t('固定')}</div>
-                  {pinnedSessions.map((quest) => renderQuest(quest))}
-                  {unpinnedSessions.length > 0 ? <div className="pluse-sidebar-section-label">{t('最近')}</div> : null}
-                </>
-              ) : null}
-              {unpinnedSessions.map((quest) => renderQuest(quest))}
-              {sessions.length === 0 ? (
-                <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
-              ) : filteredSessions.length === 0 ? (
-                <div className="pluse-empty-state pluse-sidebar-empty">{t('无搜索结果')}</div>
-              ) : null}
-              {archivedSessions.length > 0 ? (
-                <div className="pluse-sidebar-archive-group">
-                  <button
-                    type="button"
-                    className="pluse-sidebar-archive-toggle"
-                    onClick={() => setArchivedSessionsExpanded((value) => !value)}
-                  >
-                    <span>{archivedSessionsExpanded ? '▾' : '▸'} {t('归档')} ({archivedSessions.length})</span>
-                  </button>
-                  {archivedSessionsExpanded ? (
-                    <div className="pluse-sidebar-archive-list">
-                      {archivedSessionsByDate.map(({ date, quests }) => (
-                        <div key={date} className="pluse-sidebar-archive-date-group">
-                          <div className="pluse-sidebar-archive-date-label">{formatArchiveDateLabel(date === 'unknown' ? undefined : date, locale, t)}</div>
-                          {quests.map((quest) => renderQuest(quest, true))}
+        {sidebarTab === 'sessions' ? (
+          <>
+            <div className="pluse-sidebar-scroll-pane">
+              <section className="pluse-sidebar-section pluse-sidebar-section-list">
+                <div className="pluse-sidebar-list pluse-sidebar-list-dense">
+                  {pinnedSessions.length > 0 ? (
+                    <>
+                      <div className="pluse-sidebar-section-label">{t('固定')}</div>
+                      {pinnedSessions.map((quest) => renderQuest(quest))}
+                      {unpinnedSessions.length > 0 ? <div className="pluse-sidebar-section-label">{t('最近')}</div> : null}
+                    </>
+                  ) : null}
+                  {unpinnedSessions.map((quest) => renderQuest(quest))}
+                  {sessions.length === 0 ? (
+                    <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
+                  ) : filteredSessions.length === 0 ? (
+                    <div className="pluse-empty-state pluse-sidebar-empty">{t('无搜索结果')}</div>
+                  ) : null}
+                  {archivedSessions.length > 0 ? (
+                    <div className="pluse-sidebar-archive-group">
+                      <button
+                        type="button"
+                        className="pluse-sidebar-archive-toggle"
+                        onClick={() => setArchivedSessionsExpanded((value) => !value)}
+                      >
+                        <span>{archivedSessionsExpanded ? '▾' : '▸'} {t('归档')} ({archivedSessions.length})</span>
+                      </button>
+                      {archivedSessionsExpanded ? (
+                        <div className="pluse-sidebar-archive-list">
+                          {archivedSessionsByDate.map(({ date, quests }) => (
+                            <div key={date} className="pluse-sidebar-archive-date-group">
+                              <div className="pluse-sidebar-archive-date-label">{formatArchiveDateLabel(date === 'unknown' ? undefined : date, locale, t)}</div>
+                              {quests.map((quest) => renderQuest(quest, true))}
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
-              ) : null}
+              </section>
             </div>
-          </section>
-        </div>
 
-        <section className="pluse-sidebar-section-new-session">
-          <button
-            type="button"
-            className="pluse-sidebar-chip-link pluse-sidebar-new-session-card"
-            aria-label={t('新建会话')}
-            onClick={() => void handleCreateQuest('session')}
-            disabled={!activeProjectId}
-          >
-            <PlusIcon className="pluse-icon" />
-            <span>{t('新建会话')}</span>
-          </button>
-        </section>
+            <section className="pluse-sidebar-section-new-session">
+              <button
+                type="button"
+                className="pluse-sidebar-chip-link pluse-sidebar-new-session-card"
+                aria-label={t('新建会话')}
+                onClick={() => void handleCreateQuest('session')}
+                disabled={!activeProjectId}
+              >
+                <PlusIcon className="pluse-icon" />
+                <span>{t('新建会话')}</span>
+              </button>
+            </section>
+          </>
+        ) : (
+          <DomainSidebar
+            domains={domains}
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onSelectProject={handleSelectProject}
+            onProjectsChanged={onProjectsChanged}
+            onDomainsChanged={loadDomains}
+            onNavigate={onNavigate}
+          />
+        )}
 
         {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
       </div>
