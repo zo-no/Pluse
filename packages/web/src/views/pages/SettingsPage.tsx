@@ -28,7 +28,10 @@ export function SettingsPage() {
     setHookLoading(true)
     const result = await api.getHooks()
     setHookLoading(false)
-    if (!result.ok) return
+    if (!result.ok) {
+      console.error('[hooks] Failed to load hooks config:', result.error)
+      return
+    }
     const hook = result.data.hooks.find((h) => h.id === NOTIFY_HOOK_ID)
     setNotifyOnComplete(hook ? hook.enabled !== false : true)
   }

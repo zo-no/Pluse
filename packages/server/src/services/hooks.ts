@@ -60,7 +60,8 @@ function loadHooksFile(path: string): Hook[] {
     const raw = readFileSync(path, 'utf-8')
     const config = JSON.parse(raw) as HooksConfig
     return Array.isArray(config.hooks) ? config.hooks : []
-  } catch {
+  } catch (error) {
+    console.error(`[hooks] Failed to load hooks file at ${path}:`, error)
     return []
   }
 }
@@ -110,9 +111,8 @@ export function saveGlobalHooksConfig(config: HooksConfig): void {
 export function patchHook(id: string, patch: Partial<Pick<Hook, 'enabled'>>): HooksConfig {
   const config = loadGlobalHooksConfig()
   const idx = config.hooks.findIndex((h) => h.id === id)
-  if (idx >= 0) {
-    config.hooks[idx] = { ...config.hooks[idx], ...patch }
-  }
+  if (idx < 0) throw new Error(`Hook not found: ${id}`)
+  config.hooks[idx] = { ...config.hooks[idx], ...patch }
   saveGlobalHooksConfig(config)
   return config
 }

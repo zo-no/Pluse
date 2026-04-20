@@ -851,7 +851,13 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
     const hookEvent = state === 'completed' ? 'run_completed' : 'run_failed'
     const runSnapshot = getRun(runId)
     if (runSnapshot) {
-      queueMicrotask(() => { runHooks(hookEvent, { quest, run: runSnapshot }) })
+      queueMicrotask(() => {
+        try {
+          runHooks(hookEvent, { quest, run: runSnapshot })
+        } catch (error) {
+          console.error('[hooks] runHooks failed:', error)
+        }
+      })
     }
   }
 }
