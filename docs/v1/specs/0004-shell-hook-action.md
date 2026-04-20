@@ -237,10 +237,10 @@ curl -X PATCH http://localhost:PORT/api/hooks/speak-on-session-complete \
 - [x] shell action 使用 `detached: true` + `unref()`，不阻塞主流程
 - [x] spawn 失败时 console.warn，不影响其他 action 执行
 - [x] 默认配置包含 `enabled: false` 的 speak 示例 hook
-- [ ] 单元测试全部通过（hooks.test.ts 已创建，待补全）
-- [ ] 集成测试阶段一：echo 写文件验证 hook 触发
-- [ ] 集成测试阶段二：PATCH API 写入文件后 hook 生效
-- [ ] 集成测试阶段三：含单引号 Quest name 不导致 shell 报错
+- [x] 单元测试全部通过（16 个测试）
+- [x] 集成测试阶段一：echo 写文件验证 hook 触发
+- [x] 集成测试阶段二：PATCH API 写入文件后 hook 生效
+- [x] 集成测试阶段三：含单引号 Quest name 不导致 shell 报错
 
 ## 备注
 
