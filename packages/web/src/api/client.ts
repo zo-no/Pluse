@@ -16,6 +16,7 @@ import type {
   SendMessageInput,
   AppSettings,
   Todo,
+  TokenUsageSummary,
   UpdateProjectInput,
   UpdateQuestInput,
   UpdateTodoInput,
@@ -35,7 +36,12 @@ function getCookie(name: string): string | null {
   return null
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
+interface RequestOptions {
+  /** Request timeout in milliseconds. If exceeded, returns an error result. */
+  timeout?: number
+}
+
+async function request<T>(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<ApiResult<T>> {
   const headers = new Headers()
   if (body !== undefined) {
     headers.set('Content-Type', 'application/json')
@@ -45,6 +51,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
   }
 
+  const controller = options?.timeout != null ? new AbortController() : undefined
+  const timer = controller != null
+    ? setTimeout(() => controller.abort(), options!.timeout!)
+    : undefined
+
   let res: Response
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -52,9 +63,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       credentials: 'include',
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller?.signal,
     })
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return { ok: false, error: 'Request timed out' }
+    }
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    if (timer != null) clearTimeout(timer)
   }
 
   let json: unknown
@@ -103,6 +120,10 @@ export function getProject(id: string): Promise<ApiResult<Project>> {
 
 export function getProjectOverview(id: string): Promise<ApiResult<ProjectOverview>> {
   return request<ProjectOverview>('GET', `/projects/${id}/overview`)
+}
+
+export function getProjectTokenSummary(id: string): Promise<ApiResult<TokenUsageSummary>> {
+  return request<TokenUsageSummary>('GET', `/projects/${id}/token-summary`)
 }
 
 export function updateProject(id: string, input: UpdateProjectInput): Promise<ApiResult<Project>> {
@@ -234,6 +255,10 @@ export function deleteTodo(id: string): Promise<ApiResult<{ deleted: boolean }>>
   return request<{ deleted: boolean }>('DELETE', `/todos/${id}`)
 }
 
+export function getProjectTags(projectId: string): Promise<ApiResult<{ tags: string[] }>> {
+  return request<{ tags: string[] }>('GET', `/todos/tags?projectId=${encodeURIComponent(projectId)}`)
+}
+
 export async function uploadAsset(questId: string, file: File): Promise<ApiResult<UploadedAsset>> {
   const form = new FormData()
   form.append('questId', questId)
@@ -256,4 +281,17 @@ export function getRuntimeTools(): Promise<ApiResult<RuntimeTool[]>> {
 
 export function getRuntimeModelCatalog(tool: string): Promise<ApiResult<RuntimeModelCatalog>> {
   return request<RuntimeModelCatalog>('GET', `/models?tool=${encodeURIComponent(tool)}`)
+}
+
+export interface KairosStatus {
+  installed: boolean
+  path: string | null
+}
+
+export function getKairosStatus(): Promise<ApiResult<KairosStatus>> {
+  return request<KairosStatus>('GET', '/tools/kairos')
+}
+
+export function installKairos(): Promise<ApiResult<{ path: string }>> {
+  return request<{ path: string }>('POST', '/tools/kairos/install', undefined, { timeout: 60000 })
 }

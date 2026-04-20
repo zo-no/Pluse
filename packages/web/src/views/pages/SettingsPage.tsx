@@ -4,6 +4,7 @@ import { useI18n } from '@/i18n'
 
 const NOTIFY_HOOK_ID = 'notify-on-session-complete'
 const NOTIFY_FAILED_HOOK_ID = 'notify-on-session-failed'
+const SPEAK_HOOK_ID = 'speak-on-session-complete'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -16,6 +17,11 @@ export function SettingsPage() {
   const [notifyOnFailed, setNotifyOnFailed] = useState(true)
   const [hookLoading, setHookLoading] = useState(true)
   const [hookSaving, setHookSaving] = useState(false)
+
+  const [kairosInstalled, setKairosInstalled] = useState<boolean | null>(null)
+  const [kairosInstalling, setKairosInstalling] = useState(false)
+  const [kairosError, setKairosError] = useState<string | null>(null)
+  const [speakOnComplete, setSpeakOnComplete] = useState(false)
 
   async function loadSettings() {
     setLoading(true)
@@ -38,11 +44,20 @@ export function SettingsPage() {
     setNotifyOnComplete(hook ? hook.enabled !== false : true)
     const failedHook = result.data.hooks.find((h) => h.id === NOTIFY_FAILED_HOOK_ID)
     setNotifyOnFailed(failedHook ? failedHook.enabled !== false : true)
+    const speakHook = result.data.hooks.find((h) => h.id === SPEAK_HOOK_ID)
+    setSpeakOnComplete(speakHook ? speakHook.enabled === true : false)
+  }
+
+  async function loadKairosStatus() {
+    const result = await api.getKairosStatus()
+    if (!result.ok) { setKairosInstalled(false); return }
+    setKairosInstalled(result.data.installed)
   }
 
   useEffect(() => {
     void loadSettings()
     void loadHooks()
+    void loadKairosStatus()
   }, [])
 
   async function handleSave() {
@@ -65,6 +80,25 @@ export function SettingsPage() {
     setNotifyOnFailed(enabled)
     setHookSaving(true)
     await api.updateHook(NOTIFY_FAILED_HOOK_ID, enabled)
+    setHookSaving(false)
+  }
+
+  async function handleInstallKairos() {
+    setKairosInstalling(true)
+    setKairosError(null)
+    const result = await api.installKairos()
+    setKairosInstalling(false)
+    if (!result.ok) {
+      setKairosError(result.error ?? '安装失败')
+      return
+    }
+    setKairosInstalled(true)
+  }
+
+  async function handleToggleSpeak(enabled: boolean) {
+    setSpeakOnComplete(enabled)
+    setHookSaving(true)
+    await api.updateHook(SPEAK_HOOK_ID, enabled)
     setHookSaving(false)
   }
 
@@ -122,6 +156,43 @@ export function SettingsPage() {
               >
                 <span className="pluse-settings-toggle-thumb" />
               </button>
+            </div>
+            <div className="pluse-settings-toggle-row">
+              <div className="pluse-settings-toggle-info">
+                <span className="pluse-settings-toggle-label">{t('会话完成后语音播报')}</span>
+                <span className="pluse-settings-toggle-desc">
+                  {kairosInstalled === null
+                    ? t('检测中…')
+                    : kairosInstalled
+                    ? t('由 kairos 驱动，可用 kairos config set voice Tingting 切换音色')
+                    : kairosError
+                    ? kairosError
+                    : t('需要先安装 kairos')}
+                </span>
+              </div>
+              {kairosInstalled === null ? (
+                <span className="pluse-settings-toggle-loading">…</span>
+              ) : kairosInstalled ? (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={speakOnComplete}
+                  className={`pluse-settings-toggle${speakOnComplete ? ' is-on' : ''}`}
+                  onClick={() => void handleToggleSpeak(!speakOnComplete)}
+                  disabled={hookLoading || hookSaving}
+                >
+                  <span className="pluse-settings-toggle-thumb" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="pluse-button pluse-button-sm"
+                  onClick={() => void handleInstallKairos()}
+                  disabled={kairosInstalling}
+                >
+                  {kairosInstalling ? t('安装中…') : t('一键安装')}
+                </button>
+              )}
             </div>
           </section>
 

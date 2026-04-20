@@ -13,6 +13,7 @@ import { questsRouter } from './controllers/http/quests'
 import { runsRouter } from './controllers/http/runs'
 import { todosRouter } from './controllers/http/todos'
 import { runtimeRouter } from './controllers/http/runtime'
+import { toolsRouter } from './controllers/http/tools'
 import { getDb } from './db'
 import { requireAuth } from './middleware/auth'
 import { ensureBuiltinProjects } from './services/projects'
@@ -36,6 +37,7 @@ app.route('/api', todosRouter)
 app.route('/api', settingsRouter)
 app.route('/api', hooksRouter)
 app.route('/api', runtimeRouter)
+app.route('/api', toolsRouter)
 app.route('/api', eventsRouter)
 app.route('/api', commandsRouter)
 app.route('/api', assetsRouter)
