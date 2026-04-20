@@ -20,7 +20,7 @@ interface TodoPanelProps {
 }
 
 type ScopeTab = 'global' | 'project' | 'session'
-type SourceTab = 'human' | 'ai'
+type SourceTab = 'human' | 'ai' | 'all'
 
 type RailTaskItem =
   | { entityType: 'quest'; quest: Quest; archived: boolean }
@@ -151,6 +151,7 @@ function formatScopeEmptyMessage(
   source: SourceTab,
   t?: (key: string) => string,
 ): string {
+  if (source === 'all') return t ? t('当前范围暂无任务。') : '当前范围暂无任务。'
   if (scope === 'session' && source === 'ai') return t ? t('当前会话暂无 AI 任务。') : '当前会话暂无 AI 任务。'
   if (scope === 'session' && source === 'human') return t ? t('当前会话暂无待办。') : '当前会话暂无待办。'
   return source === 'ai'
@@ -179,9 +180,9 @@ export function TodoPanel({
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
   const [scopeTab, setScopeTab] = useState<ScopeTab>('project')
   const [scopeModes, setScopeModes] = useState<Record<ScopeTab, SourceTab>>({
-    global: 'human',
-    project: 'human',
-    session: 'human',
+    global: 'all',
+    project: 'all',
+    session: 'all',
   })
   const [historyExpandedByView, setHistoryExpandedByView] = useState<Record<string, boolean>>({})
   const [archivedExpanded, setArchivedExpanded] = useState(false)
@@ -424,6 +425,16 @@ export function TodoPanel({
     [scopeData.archivedTodos, sourceTab],
   )
 
+  const humanCount = useMemo(
+    () => scopeData.todos.filter((t) => t.status === 'pending').length,
+    [scopeData.todos],
+  )
+
+  const aiCount = useMemo(
+    () => scopeData.tasks.filter((q) => !isClosedQuest(q)).length,
+    [scopeData.tasks],
+  )
+
   const openHumanTodos = useMemo(
     () => sortOpenTodos(visibleTodos.filter((todo) => todo.status === 'pending')),
     [visibleTodos],
@@ -470,13 +481,13 @@ export function TodoPanel({
 
   const scopeCounts = useMemo(
     () => ({
-      global: globalTasks.length + globalTodos.length,
-      project: tasks.length + todos.length,
-      session: (activeQuest?.kind === 'task' ? 1 : 0) + (activeQuestId ? globalTodos.filter((todo) => todo.originQuestId === activeQuestId).length : 0),
+      global: globalTasks.filter((q) => !isClosedQuest(q)).length + globalTodos.filter((t) => t.status === 'pending').length,
+      project: tasks.filter((q) => !isClosedQuest(q)).length + todos.filter((t) => t.status === 'pending').length,
+      session: (activeQuest?.kind === 'task' && !isClosedQuest(activeQuest) ? 1 : 0) + (activeQuestId ? globalTodos.filter((todo) => todo.originQuestId === activeQuestId && todo.status === 'pending').length : 0),
       pending: openHumanTodos.length + openAiTasks.length,
       done: historyHumanTodos.length + historyAiTasks.length,
     }),
-    [activeQuest?.kind, activeQuestId, globalTasks.length, globalTodos.length, tasks.length, todos.length, openHumanTodos.length, openAiTasks.length, historyHumanTodos.length, historyAiTasks.length],
+    [activeQuest, activeQuestId, globalTasks, globalTodos, tasks, todos, openHumanTodos.length, openAiTasks.length, historyHumanTodos.length, historyAiTasks.length],
   )
   const allKnownTodos = useMemo(() => {
     const deduped = new Map<string, Todo>()
@@ -731,24 +742,29 @@ export function TodoPanel({
             <div className="pluse-rail-tabs pluse-rail-tabs-compact pluse-rail-scope-tabs">
               <button type="button" className={`pluse-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
                 {t('全局')}
-                <span className="pluse-tab-count">{scopeCounts.global}</span>
               </button>
               <button type="button" className={`pluse-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
                 {t('项目')}
-                <span className="pluse-tab-count">{scopeCounts.project}</span>
               </button>
               <button type="button" className={`pluse-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
                 {t('会话')}
-                <span className="pluse-tab-count">{scopeCounts.session}</span>
               </button>
             </div>
             <div className="pluse-rail-source-switch" role="tablist" aria-label={t('任务类型')}>
+              <button
+                type="button"
+                className={`pluse-tab pluse-rail-source-tab${sourceTab === 'all' ? ' is-active' : ''}`}
+                onClick={() => setSourceTab(scopeTab, 'all')}
+              >
+                {t('全部')}
+              </button>
               <button
                 type="button"
                 className={`pluse-tab pluse-rail-source-tab${sourceTab === 'human' ? ' is-active' : ''}`}
                 onClick={() => setSourceTab(scopeTab, 'human')}
               >
                 {t('人类')}
+                {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
               </button>
               <button
                 type="button"
@@ -756,6 +772,7 @@ export function TodoPanel({
                 onClick={() => setSourceTab(scopeTab, 'ai')}
               >
                 {t('AI')}
+                {aiCount > 0 ? <span className="pluse-tab-count">{aiCount}</span> : null}
               </button>
             </div>
           </div>
@@ -829,7 +846,7 @@ export function TodoPanel({
           <button
             type="button"
             className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
-            onClick={() => openCreateModal(sourceTab)}
+            onClick={() => openCreateModal(sourceTab === 'all' ? 'human' : sourceTab)}
             aria-label={t('新建任务')}
             disabled={!projectId}
           >

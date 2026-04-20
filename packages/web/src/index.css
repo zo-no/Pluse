@@ -876,11 +876,11 @@ select {
 }
 
 .pluse-sidebar-item.is-unread {
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-left: 3px solid var(--accent) !important;
 }
 
 :root[data-theme='dark'] .pluse-sidebar-item.is-unread {
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-left: 3px solid var(--accent) !important;
 }
 
 :root[data-theme='dark'] .pluse-sidebar-item,
@@ -3039,6 +3039,25 @@ select {
   opacity: 0.7;
 }
 
+/* ── Pinned sidebar item ──────────────────────────────────────────────────── */
+
+.pluse-sidebar-item.is-pinned .pluse-sidebar-action-btn.is-active {
+  opacity: 1;
+  color: var(--accent);
+}
+
+/* ── Sidebar section label ────────────────────────────────────────────────── */
+
+.pluse-sidebar-section-label {
+  padding: 8px 12px 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  user-select: none;
+}
+
 /* ── Bottom creation buttons ─────────────────────────────────────────────── */
 
 .pluse-sidebar-section-new-session,
@@ -4313,7 +4332,7 @@ select {
 
 .pluse-rail-source-switch {
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(48px, 1fr));
+  grid-template-columns: repeat(3, minmax(40px, 1fr));
   gap: 4px;
   flex: 0 0 auto;
   padding: 3px;

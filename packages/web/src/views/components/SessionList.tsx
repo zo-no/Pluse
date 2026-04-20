@@ -353,7 +353,7 @@ export function SessionList({
     return (
       <div
         key={quest.id}
-        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}${quest.unread ? ' is-unread' : ''}`}
+        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}${quest.unread ? ' is-unread' : ''}${quest.pinned && !archived ? ' is-pinned' : ''}`}
       >
         <Link
           className="pluse-sidebar-item-main"
@@ -533,7 +533,13 @@ export function SessionList({
         <div className="pluse-sidebar-scroll-pane">
           <section className="pluse-sidebar-section pluse-sidebar-section-list">
             <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-              {pinnedSessions.map((quest) => renderQuest(quest))}
+              {pinnedSessions.length > 0 ? (
+                <>
+                  <div className="pluse-sidebar-section-label">{t('固定')}</div>
+                  {pinnedSessions.map((quest) => renderQuest(quest))}
+                  {unpinnedSessions.length > 0 ? <div className="pluse-sidebar-section-label">{t('最近')}</div> : null}
+                </>
+              ) : null}
               {unpinnedSessions.map((quest) => renderQuest(quest))}
               {sessions.length === 0 ? (
                 <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>

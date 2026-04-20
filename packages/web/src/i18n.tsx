@@ -23,6 +23,7 @@ const EN_MESSAGES: Record<string, string> = {
   '暂无周期触发': 'No schedule',
   '下次 {{time}}': 'Next {{time}}',
   '最近 {{time}}': 'Last {{time}}',
+  '最近': 'Recent',
   '已配置，未触发': 'Configured, not triggered',
   '运行已完成': 'Completed run',
   运行: 'Session',

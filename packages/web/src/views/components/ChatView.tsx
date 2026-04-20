@@ -260,42 +260,23 @@ function MetaEventEntry({
   t: (key: string) => string
 }) {
   const meta = describeMetaEvent(event, t)
-  if (event.type === 'status') {
+  if (!meta.content) {
     return (
-      <details className={`pluse-status-detail${meta.isError ? ' is-error' : ''}`}>
-        <summary className="pluse-status-line">
-          <span className="pluse-status-line-label">{meta.label}</span>
-          <span className="pluse-status-line-content">{compactText(meta.content, 120)}</span>
-        </summary>
-        <pre>{meta.content}</pre>
-      </details>
-    )
-  }
-
-  if (event.type === 'tool_use') {
-    return (
-      <div className="pluse-meta-event is-tool-use">
-        <div className="pluse-meta-event-header">
-          <span className="pluse-tool-label">
-            <span className="pluse-tool-icon">{meta.icon}</span>
-            {meta.label}
-          </span>
-        </div>
-        <pre>{meta.content}</pre>
+      <div className={`pluse-meta-chip${meta.isError ? ' is-error' : ''}`}>
+        <span className="pluse-meta-chip-icon">{meta.icon}</span>
+        <span className="pluse-meta-chip-title">{meta.label}</span>
       </div>
     )
   }
-
   return (
-    <div className={`pluse-meta-event${meta.isError ? ' is-error' : ''}`}>
-      <div className="pluse-meta-event-header">
-        <span className="pluse-tool-label">
-          <span className="pluse-tool-icon">{meta.icon}</span>
-          {meta.label}
-        </span>
-      </div>
-      <pre>{meta.content}</pre>
-    </div>
+    <details className={`pluse-meta-chip is-expandable${meta.isError ? ' is-error' : ''}`}>
+      <summary className="pluse-meta-chip-summary">
+        <span className="pluse-meta-chip-icon">{meta.icon}</span>
+        <span className="pluse-meta-chip-title">{meta.label}</span>
+        <span className="pluse-meta-chip-content">{compactText(meta.content, 80)}</span>
+      </summary>
+      <pre className="pluse-meta-chip-detail">{meta.content}</pre>
+    </details>
   )
 }
 
