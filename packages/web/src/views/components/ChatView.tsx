@@ -395,13 +395,18 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     onQuestLoaded?.(result.data)
   }
 
-  async function refreshThread() {
+  async function refreshThread(scrollToEnd = false) {
     const [eventsResult, runsResult] = await Promise.all([
       api.getQuestEvents(questId),
       api.getQuestRuns(questId),
     ])
     if (eventsResult.ok) setEvents(eventsResult.data.items)
     if (runsResult.ok) setRuns(runsResult.data)
+    if (scrollToEnd) {
+      requestAnimationFrame(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+      })
+    }
   }
 
   useEffect(() => {
@@ -409,7 +414,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     setEvents([])
     setRuns([])
     void refreshQuest()
-    void refreshThread()
+    void refreshThread(true)
   }, [questId])
 
   useEffect(() => {
