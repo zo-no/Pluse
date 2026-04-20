@@ -1176,6 +1176,7 @@ function Shell({
             <TodoPanel
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
+              projectWorkDir={activeProject?.workDir ?? null}
               activeQuestId={activeQuestId}
               activeQuest={activeQuest}
               onRequestClose={() => setMobileRailOpen(false)}
