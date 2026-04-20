@@ -121,6 +121,23 @@ export function updateSettings(input: UpdateAppSettingsInput): Promise<ApiResult
   return request<AppSettings>('PATCH', '/settings', input)
 }
 
+export interface HookItem {
+  id: string
+  enabled?: boolean
+}
+
+export interface HooksConfig {
+  hooks: HookItem[]
+}
+
+export function getHooks(): Promise<ApiResult<HooksConfig>> {
+  return request<HooksConfig>('GET', '/hooks')
+}
+
+export function updateHook(id: string, enabled: boolean): Promise<ApiResult<HooksConfig>> {
+  return request<HooksConfig>('PATCH', `/hooks/${encodeURIComponent(id)}`, { enabled })
+}
+
 export function getQuests(params: {
   projectId?: string
   kind?: Quest['kind']

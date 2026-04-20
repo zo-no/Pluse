@@ -2,12 +2,19 @@ import { useEffect, useState } from 'react'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 
+const NOTIFY_HOOK_ID = 'notify-on-session-complete'
+
 export function SettingsPage() {
   const { t } = useI18n()
   const [globalSystemPrompt, setGlobalSystemPrompt] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // 通知设置
+  const [notifyOnComplete, setNotifyOnComplete] = useState(true)
+  const [hookLoading, setHookLoading] = useState(true)
+  const [hookSaving, setHookSaving] = useState(false)
 
   async function loadSettings() {
     setLoading(true)
@@ -21,8 +28,19 @@ export function SettingsPage() {
     setError(null)
   }
 
+  async function loadHooks() {
+    setHookLoading(true)
+    const result = await api.getHooks()
+    setHookLoading(false)
+    if (!result.ok) return
+    const hook = result.data.hooks.find((h) => h.id === NOTIFY_HOOK_ID)
+    // enabled 默认为 true，undefined 也视为开启
+    setNotifyOnComplete(hook ? hook.enabled !== false : true)
+  }
+
   useEffect(() => {
     void loadSettings()
+    void loadHooks()
   }, [])
 
   async function handleSave() {
@@ -35,6 +53,13 @@ export function SettingsPage() {
     }
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
     setError(null)
+  }
+
+  async function handleToggleNotify(enabled: boolean) {
+    setNotifyOnComplete(enabled)
+    setHookSaving(true)
+    await api.updateHook(NOTIFY_HOOK_ID, enabled)
+    setHookSaving(false)
   }
 
   return (
@@ -53,6 +78,35 @@ export function SettingsPage() {
         </div>
 
         <div className="pluse-detail-grid pluse-settings-grid">
+          {/* 通知设置 */}
+          <section className="pluse-detail-section">
+            <header className="pluse-detail-section-head">
+              <div>
+                <h2>{t('通知')}</h2>
+                <p>{t('控制 AI 完成任务后的自动提醒行为。')}</p>
+              </div>
+            </header>
+            <div className="pluse-settings-toggle-row">
+              <div className="pluse-settings-toggle-info">
+                <span className="pluse-settings-toggle-label">{t('会话完成后创建待办')}</span>
+                <span className="pluse-settings-toggle-desc">
+                  {t('AI 完成一轮会话后，自动在待办列表创建提醒')}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={notifyOnComplete}
+                className={`pluse-settings-toggle${notifyOnComplete ? ' is-on' : ''}`}
+                onClick={() => void handleToggleNotify(!notifyOnComplete)}
+                disabled={hookLoading || hookSaving}
+              >
+                <span className="pluse-settings-toggle-thumb" />
+              </button>
+            </div>
+          </section>
+
+          {/* 系统 Prompt */}
           <section className="pluse-detail-section">
             <header className="pluse-detail-section-head">
               <div>

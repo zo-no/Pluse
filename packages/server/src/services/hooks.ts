@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { Quest } from '@pluse/types'
 import type { Run } from '@pluse/types'
 import { getGlobalHooksPath, getProjectHooksPath } from '../support/paths'
@@ -25,15 +26,32 @@ interface CreateTodoAction {
 
 type HookAction = HighlightQuestAction | CreateTodoAction
 
-interface Hook {
+export interface Hook {
   id: string
   event: HookEvent
+  enabled?: boolean
   filter?: HookFilter
   actions: HookAction[]
 }
 
-interface HooksConfig {
+export interface HooksConfig {
   hooks: Hook[]
+}
+
+// 内置默认配置：文件不存在时返回此配置
+const DEFAULT_HOOKS_CONFIG: HooksConfig = {
+  hooks: [
+    {
+      id: 'notify-on-session-complete',
+      event: 'run_completed',
+      enabled: true,
+      filter: { kind: 'session', triggeredBy: ['human'] },
+      actions: [
+        { type: 'highlight_quest' },
+        { type: 'create_todo', title: '查看会话：{{quest.name}}' },
+      ],
+    },
+  ],
 }
 
 function loadHooksFile(path: string): Hook[] {
@@ -62,12 +80,41 @@ function renderTemplate(template: string, ctx: { quest: Quest; run: Run }): stri
 }
 
 function matchesFilter(hook: Hook, event: HookEvent, quest: Quest, run: Run): boolean {
+  if (hook.enabled === false) return false
   if (hook.event !== event) return false
   const f = hook.filter
   if (!f) return true
   if (f.kind && f.kind !== quest.kind) return false
   if (f.triggeredBy && !f.triggeredBy.includes(run.triggeredBy)) return false
   return true
+}
+
+// 公开 API：读写全局 hooks.json
+export function loadGlobalHooksConfig(): HooksConfig {
+  const path = getGlobalHooksPath()
+  if (!existsSync(path)) return DEFAULT_HOOKS_CONFIG
+  try {
+    const raw = readFileSync(path, 'utf-8')
+    return JSON.parse(raw) as HooksConfig
+  } catch {
+    return DEFAULT_HOOKS_CONFIG
+  }
+}
+
+export function saveGlobalHooksConfig(config: HooksConfig): void {
+  const path = getGlobalHooksPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, JSON.stringify(config, null, 2), 'utf-8')
+}
+
+export function patchHook(id: string, patch: Partial<Pick<Hook, 'enabled'>>): HooksConfig {
+  const config = loadGlobalHooksConfig()
+  const idx = config.hooks.findIndex((h) => h.id === id)
+  if (idx >= 0) {
+    config.hooks[idx] = { ...config.hooks[idx], ...patch }
+  }
+  saveGlobalHooksConfig(config)
+  return config
 }
 
 export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): void {
