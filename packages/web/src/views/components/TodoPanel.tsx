@@ -13,6 +13,7 @@ import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
 interface TodoPanelProps {
   projectId: string | null
   projectName?: string | null
+  projectWorkDir?: string | null
   activeQuestId?: string | null
   activeQuest?: Quest | null
   onRequestClose?: () => void
@@ -30,6 +31,15 @@ function taskOverlayState(location: RouterLocation): { backgroundLocation: Route
   // If already in an overlay, reuse the existing background to avoid nesting overlays
   const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
   return { backgroundLocation: existingBackground ?? location }
+}
+
+function shortPath(value?: string | null): string {
+  if (!value) return ''
+  const normalized = value.replace(/^\/Users\/[^/]+/, '~')
+  const isHome = normalized.startsWith('~/')
+  const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
+  if (parts.length <= 3) return normalized
+  return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
 function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => string): string {
@@ -164,6 +174,7 @@ function formatScopeEmptyMessage(
 export function TodoPanel({
   projectId,
   projectName,
+  projectWorkDir,
   activeQuestId,
   activeQuest,
   onRequestClose,
@@ -765,6 +776,7 @@ export function TodoPanel({
           <div className="pluse-rail-head-identity">
             <div className="pluse-rail-head-copy">
               <strong>{projectName || t('当前项目')}</strong>
+              <span>{projectWorkDir ? shortPath(projectWorkDir) : t('任务视图')}</span>
             </div>
           </div>
           <div className="pluse-rail-tabs-row">

@@ -40,7 +40,7 @@
   --modal-backdrop: rgba(32, 24, 8, 0.18);
   --header-height: 48px;
   --sidebar-width: 300px;
-  --rail-width: clamp(320px, 28vw, 420px);
+  --rail-width: var(--sidebar-width);
   --content-max: 100%;
   --drawer-width: min(85vw, 360px);
   --safe-top: env(safe-area-inset-top, 0px);
@@ -2119,7 +2119,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 16px 16px;
+  padding: 0 16px 0;
   overflow: hidden;
   min-height: 0;
 }
@@ -3076,7 +3076,7 @@ select {
   display: flex;
   justify-content: stretch;
   margin-top: auto;
-  padding: 18px 6px max(16px, var(--safe-bottom));
+  padding: 18px 10px max(16px, var(--safe-bottom));
   border-top: 0;
   background:
     linear-gradient(
@@ -3092,10 +3092,12 @@ select {
 .pluse-sidebar-new-session-card,
 .pluse-rail-new-task-card {
   width: 100%;
-  min-height: 42px;
-  padding: 11px 14px;
-  justify-content: flex-start;
-  gap: 9px;
+  min-height: 48px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  align-items: center;
+  column-gap: 10px;
   border: 0;
   border-radius: 15px;
   background: color-mix(in srgb, var(--accent-soft) 18%, var(--bg));
@@ -3110,6 +3112,23 @@ select {
 .pluse-rail-new-task-card .pluse-icon {
   width: 16px;
   height: 16px;
+  justify-self: center;
+}
+
+.pluse-sidebar-new-session-card::after,
+.pluse-rail-new-task-card::after {
+  content: '';
+  width: 16px;
+  height: 16px;
+}
+
+.pluse-sidebar-new-session-card span,
+.pluse-rail-new-task-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .pluse-sidebar-new-session-card:hover:not(:disabled),
@@ -4306,8 +4325,8 @@ select {
 
 .pluse-rail-head-rich {
   display: grid;
-  gap: 6px;
-  padding: 4px 0 8px;
+  gap: 10px;
+  padding: 6px 0 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
@@ -4388,19 +4407,16 @@ select {
 }
 
 .pluse-rail-tabs-row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  display: grid;
   gap: 10px;
-  flex-wrap: wrap;
   min-width: 0;
 }
 
 .pluse-rail-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 18px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
   width: 100%;
   padding-bottom: 2px;
 }
@@ -4416,14 +4432,16 @@ select {
 }
 
 .pluse-rail-tabs-compact {
-  gap: 14px;
+  gap: 8px;
   padding-bottom: 0;
 }
 
 .pluse-rail-tabs-compact .pluse-tab {
-  min-height: 24px;
-  padding-bottom: 8px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 0 8px;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .pluse-rail-tabs-compact .pluse-tab-count {
@@ -4431,15 +4449,14 @@ select {
 }
 
 .pluse-rail-scope-tabs {
-  flex: 1 1 0;
   min-width: 0;
 }
 
 .pluse-rail-source-switch {
-  display: inline-grid;
-  grid-template-columns: repeat(3, minmax(40px, 1fr));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  flex: 0 0 auto;
+  width: 100%;
   padding: 3px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 999px;
@@ -4448,7 +4465,7 @@ select {
 
 .pluse-rail-source-tab {
   justify-content: center;
-  min-height: 24px;
+  min-height: 34px;
   padding: 0 10px;
   border: 0;
   border-bottom: 0;
@@ -4458,6 +4475,7 @@ select {
   font-weight: 700;
   line-height: 1;
   text-align: center;
+  white-space: nowrap;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
@@ -4807,8 +4825,8 @@ select {
   .pluse-task-detail-head,
   .pluse-task-detail-toolbar,
   .pluse-task-detail-body {
-    padding-left: 18px;
-    padding-right: 18px;
+    padding-left: 20px;
+    padding-right: 20px;
   }
 
   .pluse-task-detail-config-grid,
@@ -4823,6 +4841,7 @@ select {
 
   .pluse-task-detail-toolbar-group {
     width: 100%;
+    flex: 1 1 auto;
   }
 
   .pluse-task-detail-toolbar-group .pluse-button {
@@ -5173,14 +5192,26 @@ select {
 /* ── Tag filter bar ── */
 .pluse-todo-tag-filter {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 8px 12px 4px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 0 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
+
+.pluse-todo-tag-filter::-webkit-scrollbar {
+  display: none;
+}
+
 .pluse-todo-tag-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
@@ -5278,10 +5309,10 @@ select {
 
 .pluse-task-detail-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 24px 28px 18px;
+  padding: 24px 32px 18px;
   border-bottom: 0;
 }
 
@@ -5304,6 +5335,7 @@ select {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .pluse-task-detail-title-row h2 {
@@ -5311,6 +5343,10 @@ select {
   font-size: 30px;
   line-height: 1.02;
   letter-spacing: -0.05em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pluse-task-detail-meta {
@@ -5340,25 +5376,42 @@ select {
 }
 
 .pluse-task-detail-toolbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 28px;
+  column-gap: 16px;
+  padding: 18px 32px 16px;
   border-bottom: 0;
 }
 
 .pluse-task-detail-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.pluse-task-detail-toolbar-group:first-child {
+  justify-content: flex-start;
+  justify-self: start;
+}
+
+.pluse-task-detail-toolbar-group:last-child {
+  justify-content: flex-end;
+  justify-self: end;
+}
+
+.pluse-task-detail-toolbar-group .pluse-button,
+.pluse-task-detail-toolbar-group .pluse-icon-button {
+  flex-shrink: 0;
 }
 
 .pluse-task-detail-body {
   min-height: 0;
   overflow: auto;
-  padding: 0 28px 24px;
+  padding: 0 32px 24px;
   display: grid;
   align-content: start;
 }
@@ -6487,15 +6540,26 @@ select {
 /* Tag filter bar above list */
 .pluse-todo-tag-filter {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 8px 12px 4px;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 38px;
+  padding: 8px 0 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.pluse-todo-tag-filter::-webkit-scrollbar {
+  display: none;
 }
 
 .pluse-todo-tag-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
