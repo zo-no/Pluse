@@ -27,7 +27,9 @@ type RailTaskItem =
   | { entityType: 'todo'; todo: Todo; archived: boolean }
 
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
-  return { backgroundLocation: location }
+  // If already in an overlay, reuse the existing background to avoid nesting overlays
+  const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
+  return { backgroundLocation: existingBackground ?? location }
 }
 
 function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => string): string {
@@ -683,7 +685,6 @@ export function TodoPanel({
             <Link
               className={`pluse-sidebar-action-btn pluse-task-source-link${isActive ? ' is-active' : ''}`}
               to={`/quests/${todo.originQuestId}`}
-              state={questLinkState}
               onClick={() => {
                 setSelectedTodoId(null)
                 onRequestClose?.()
@@ -985,7 +986,6 @@ export function TodoPanel({
                       <Link
                         className="pluse-sidebar-chip-link"
                         to={`/quests/${selectedTodo.originQuestId}`}
-                        state={questLinkState}
                         onClick={() => {
                           setSelectedTodoId(null)
                           onRequestClose?.()

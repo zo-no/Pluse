@@ -1458,7 +1458,7 @@ select {
 }
 
 .pluse-scroll-bottom-btn {
-  position: absolute;
+  position: fixed;
   right: max(16px, var(--safe-right));
   bottom: calc(max(12px, var(--safe-bottom)) + var(--chat-composer-height) + 12px);
   min-height: 34px;
@@ -2656,6 +2656,10 @@ select {
     min-height: 30px;
     padding: 0 10px;
     font-size: 11px;
+  }
+
+  body:has(.pluse-workspace:not(.is-project-route) .pluse-rail-shell:not(.is-hidden)) .pluse-scroll-bottom-btn {
+    right: calc(var(--rail-width) + 20px);
   }
 
   .pluse-sidebar-item,

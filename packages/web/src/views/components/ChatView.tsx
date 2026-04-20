@@ -405,6 +405,9 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }
 
   useEffect(() => {
+    setQuest(null)
+    setEvents([])
+    setRuns([])
     void refreshQuest()
     void refreshThread()
   }, [questId])

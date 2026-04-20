@@ -80,7 +80,8 @@ function questLabel(quest: Quest, t?: (key: string) => string): string {
 }
 
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
-  return { backgroundLocation: location }
+  const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
+  return { backgroundLocation: existingBackground ?? location }
 }
 
 function WorkspaceSection(props: {
@@ -426,7 +427,6 @@ function WaitingTodoRow({
           <Link
             className="pluse-sidebar-action-btn pluse-task-source-link"
             to={`/quests/${todo.originQuestId}`}
-            state={taskOverlayState(location)}
             aria-label={t('来源会话')}
             title={t('来源会话')}
           >
@@ -659,7 +659,8 @@ function QuestRoute({
   const { questId } = useParams()
   const [quest, setQuest] = useState<Quest | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const isOverlay = Boolean((location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation)
+  const routeState = location.state as { backgroundLocation?: RouterLocation } | null
+  const isOverlay = Boolean(routeState?.backgroundLocation)
 
   useEffect(() => {
     if (!questId) return
@@ -716,6 +717,11 @@ function QuestRoute({
       </section>
     </div>
   ) : <RouteLoading message={t('正在加载内容…')} />
+
+  // Sessions don't support overlay mode — navigate directly as a full page
+  if (isOverlay && quest.kind === 'session') {
+    return <Navigate to={`/quests/${questId}`} replace state={null} />
+  }
 
   return (
     <Suspense fallback={fallback}>

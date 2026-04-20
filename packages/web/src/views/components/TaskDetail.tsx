@@ -403,6 +403,9 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
   }
 
   useEffect(() => {
+    setQuest(null)
+    setRuns([])
+    setOps([])
     void loadData()
   }, [questId])
 
