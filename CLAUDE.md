@@ -11,11 +11,16 @@
 
 **规则：没有 spec 文件，不得开始编写功能代码。**
 
-Spec 文件模板见 `docs/specs/0000-template.md`。
+Spec 文件模板见 `docs/v1/0000-template.md`。
 
 ## 功能优先级列表
 
-见 `docs/specs/ROADMAP.md`。
+见 `docs/v1/ROADMAP.md`。
+
+## 版本说明
+
+- `docs/mvp/` — MVP 阶段的架构文档和 specs（已归档，只读参考）
+- `docs/v1/` — v1 迭代的 specs 和 roadmap（当前开发阶段）
 
 ## 项目结构
 
