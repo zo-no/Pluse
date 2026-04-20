@@ -2,19 +2,22 @@
 
 ## 背景
 
-Quest 单轮执行完成后，人类需要知道"有事要看了"。但这个行为（高亮、创建 Todo、发通知）不应该硬编码，而应该是可配置的——Agent 自己可以根据任务性质决定注册什么 hook。
-
-参考 Claude Code 的 hooks 设计：事件触发 → 执行预定义动作。
+Quest 单轮执行完成后，人类需要知道"有事要看了"，而不是一直盯着屏幕。
+这个行为（高亮、创建 Todo）应该可配置——Agent 可以根据任务性质自主写入 hook。
 
 ## 目标
 
-- Agent 可以在执行过程中自主写入 hooks 配置
-- 人类可以在 `.pluse/hooks.json` 里手动配置
+- Agent / 人类可以在 hooks.json 里配置事件触发动作
 - 第一批 action：`highlight_quest`（会话高亮）、`create_todo`（创建人类待办）
+- 满足"单轮完成 → 高亮 + Human Todo"这个核心场景
 
 ## 配置文件
 
-位置：`.pluse/hooks.json`（项目级，跟随项目，可被 Agent 读写）
+**两级加载，项目级优先：**
+- 全局：`~/.pluse/hooks.json`（或 `$PLUSE_ROOT/hooks.json`）
+- 项目级：`{project.workDir}/.pluse/hooks.json`
+
+> `getProjectManifestDir(workDir)` 已有现成实现，返回 `{workDir}/.pluse`，直接复用。
 
 ```json
 {
@@ -30,8 +33,7 @@ Quest 单轮执行完成后，人类需要知道"有事要看了"。但这个行
         { "type": "highlight_quest" },
         {
           "type": "create_todo",
-          "title": "查看会话：{{quest.name}}",
-          "description": "单轮执行完成，请查看结果。"
+          "title": "查看会话：{{quest.name}}"
         }
       ]
     }
@@ -39,14 +41,14 @@ Quest 单轮执行完成后，人类需要知道"有事要看了"。但这个行
 }
 ```
 
-## 事件类型（Events）
+## 事件类型（仅实现需要的）
 
 | 事件 | 触发时机 | 可用上下文 |
 |------|---------|-----------|
-| `run_completed` | `finalizeRun()` 执行完成时 | `quest`, `run`, `project` |
-| `run_failed` | `finalizeRun()` 执行失败时 | `quest`, `run`, `error` |
-| `quest_created` | `createQuestWithEffects()` 时 | `quest`, `project` |
-| `todo_completed` | Todo 标记为 done 时 | `todo`, `quest?` |
+| `run_completed` | `finalizeRun()` state=`completed` | `quest`, `run` |
+| `run_failed` | `finalizeRun()` state=`failed` | `quest`, `run` |
+
+> `cancelled` 不触发 hook（用户主动取消，不需要通知）。
 
 ## Filter 字段
 
@@ -54,88 +56,92 @@ Quest 单轮执行完成后，人类需要知道"有事要看了"。但这个行
 |------|------|------|
 | `kind` | `'session' \| 'task'` | Quest 类型 |
 | `triggeredBy` | `string[]` | `human`, `scheduler`, `api`, `cli` |
-| `projectId` | `string` | 限定特定项目 |
-| `questId` | `string` | 限定特定 Quest |
 
-## Action 类型（Actions）
+## Action 类型
 
 ### `highlight_quest`
-在会话列表中高亮该 Quest，直到用户打开它。
+Quest 列表中高亮该条目，用户打开后清除。
 
 ```json
 { "type": "highlight_quest" }
 ```
 
-实现：Quest 表新增 `unread: boolean` 字段，前端根据此字段渲染高亮样式。用户打开 Quest 时清除。
+实现：Quest 表新增 `unread INTEGER NOT NULL DEFAULT 0`，前端据此渲染高亮。
 
 ### `create_todo`
-自动创建一个人类待办，关联到当前 Quest。
+自动创建人类待办，关联到当前 Quest。
 
 ```json
 {
   "type": "create_todo",
-  "title": "查看会话：{{quest.name}}",
-  "description": "可选描述，支持模板变量"
+  "title": "查看会话：{{quest.name}}"
 }
 ```
 
-支持的模板变量：`{{quest.name}}`、`{{quest.id}}`、`{{project.name}}`、`{{run.id}}`
-
-### `emit_event`（预留）
-向 SSE 推送自定义事件，供外部系统订阅。
-
-```json
-{
-  "type": "emit_event",
-  "eventType": "custom_event_name",
-  "payload": {}
-}
-```
+模板变量：`{{quest.name}}`（session 用 `name`，task 用 `title`，实现时取 `quest.name ?? quest.title`）、`{{quest.id}}`、`{{run.id}}`
 
 ## 数据模型变更
 
-### Quest 表新增字段
-```sql
-ALTER TABLE quests ADD COLUMN unread INTEGER NOT NULL DEFAULT 0;
+**1. `packages/types/src/quest.ts`**
+- `Quest` 接口加 `unread?: boolean`
+- `UpdateQuestInput` 加 `unread?: boolean`
+
+**2. `packages/server/src/db/index.ts`**
+项目用 `ensureColumn()` 做向后兼容 migration，加：
+```typescript
+ensureColumn(db, 'quests', 'unread', 'ALTER TABLE quests ADD COLUMN unread INTEGER NOT NULL DEFAULT 0')
 ```
 
-### hooks.json 不存 DB
-配置文件走文件系统，不入库。原因：
-- Agent 可以直接读写文件，不需要 API
-- 版本可控（可以 git 追踪）
-- 与 Claude Code 风格一致
+**3. `packages/server/src/models/quest.ts`**
+- `QuestRow` 类型加 `unread: number`
+- `rowToQuest()` 加 `unread: row.unread === 1 ? true : undefined`（同 `pinned` 的模式）
+- `updateQuest()` 加 `if (input.unread !== undefined) setField('unread', input.unread ? 1 : 0)`
+
+**4. `packages/server/src/controllers/http/quests.ts`**
+- `QuestPatchSchema`（zod）加 `unread: z.boolean().optional()`
 
 ## 执行流程
 
 ```
-finalizeRun()
+finalizeRun(runId, state)
   ↓
-loadHooks('.pluse/hooks.json')
+（现有逻辑：updateRun、updateQuest、createQuestOp、autoRename、ensureTaskReviewTodo）
   ↓
-matchHooks(event='run_completed', context={quest, run})
+emitRunUpdated()
+emitQuestUpdated()
+maybeStartNextFollowUp()
   ↓
-for each matched hook:
-  executeActions(hook.actions, context)
-    ├─ highlight_quest → updateQuest({ unread: true })
-    └─ create_todo → createTodoWithEffects({ originQuestId, title })
+queueMicrotask(() => {          ← 插在最末尾，所有现有逻辑完成后
+  runHooks(event, { quest, run })
+})
 ```
+
+`runHooks` 内部：
+1. 读取全局 hooks.json（`getPluseRoot()/hooks.json`）
+2. 读取项目级 hooks.json（`getProjectManifestDir(project.workDir)/hooks.json`），项目级覆盖全局同 id 的 hook
+3. 匹配 event + filter
+4. 执行 actions：`highlight_quest` → `updateQuest({ unread: 1 })`，`create_todo` → `createTodoWithEffects(...)`
 
 ## 前端变更
 
-1. **会话列表高亮**：Quest 卡片在 `unread=true` 时显示高亮样式（左侧色条或背景色）
-2. **进入会话清除高亮**：打开 Quest 时 PATCH `/api/quests/:id` 设置 `unread: false`
-3. **Todo 关联跳转**：Todo 列表中的 `originQuestId` 可点击跳转到对应会话
+1. Quest 卡片：`unread=true` 时显示高亮样式（左侧色条）
+2. 打开 Quest 时清除高亮：在 Quest 详情页 mount 时 `PATCH /api/quests/:id { unread: false }`（统一在详情页处理，覆盖所有入口：SessionList Link、TodoPanel 跳转等）
+3. ~~Todo 关联跳转~~：`TodoPanel.tsx` 已有实现，无需开发
 
 ## 实现顺序
 
-1. DB migration：`quests.unread` 字段
-2. hooks 加载器：读取 `.pluse/hooks.json`，在 `finalizeRun()` 中调用
-3. action 执行器：`highlight_quest` + `create_todo`
-4. 前端高亮 UI
-5. 进入 Quest 时清除 unread
-6. 默认 hooks.json：项目初始化时写入示例配置
+1. 类型层：`Quest` + `UpdateQuestInput` 加 `unread?: boolean`
+2. DB migration：`ensureColumn` 加 `quests.unread`
+3. Model 层：`QuestRow`、`rowToQuest()`、`updateQuest()` 加 `unread`
+4. HTTP 层：`QuestPatchSchema` 加 `unread`
+5. `packages/server/src/services/hooks.ts`（新文件）：加载 + 匹配 + 执行
+6. `finalizeRun()` 最末尾插入 `queueMicrotask(() => runHooks(...))`
+7. 前端高亮 UI + Quest 详情页 mount 时清除 unread
 
-## 待讨论
+## 决策记录
 
-- [ ] hooks.json 是项目级（`.pluse/hooks.json`）还是全局级（`~/.pluse/hooks.json`）？还是两级都支持？
-- [ ] Agent 写入 hooks 时是否需要权限控制？
+- 两级 hooks 都支持，项目级优先
+- Agent 写入无权限控制（v1 阶段）
+- `cancelled` 不触发 hook
+- hooks 执行走 `queueMicrotask`，不阻塞 `finalizeRun` 同步流程
+- `quest.name ?? quest.title` 统一处理 session/task 命名差异

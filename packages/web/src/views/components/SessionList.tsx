@@ -353,7 +353,7 @@ export function SessionList({
     return (
       <div
         key={quest.id}
-        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}`}
+        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}${quest.unread ? ' is-unread' : ''}`}
       >
         <Link
           className="pluse-sidebar-item-main"

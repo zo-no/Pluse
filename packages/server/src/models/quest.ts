@@ -50,6 +50,7 @@ type QuestRow = {
   completion_output: string | null
   review_on_complete: number
   order_index: number | null
+  unread: number
   deleted: number
   deleted_at: string | null
   created_at: string
@@ -104,6 +105,7 @@ function rowToQuest(row: QuestRow): Quest {
     completionOutput: row.completion_output ?? undefined,
     reviewOnComplete: row.review_on_complete === 1,
     order: row.order_index ?? undefined,
+    unread: row.unread === 1 ? true : undefined,
     deleted: row.deleted === 1 ? true : undefined,
     deletedAt: row.deleted_at ?? undefined,
     createdAt: row.created_at,
@@ -263,6 +265,7 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
   if ('completionOutput' in input) setField('completion_output', input.completionOutput ?? null)
   if (input.reviewOnComplete !== undefined) setField('review_on_complete', input.reviewOnComplete ? 1 : 0)
   if ('order' in input) setField('order_index', input.order ?? null)
+  if (input.unread !== undefined) setField('unread', input.unread ? 1 : 0)
   if ('codexThreadId' in input) setField('codex_thread_id', input.codexThreadId ?? null)
   if ('claudeSessionId' in input) setField('claude_session_id', input.claudeSessionId ?? null)
 

@@ -100,6 +100,7 @@ function initSchema(db: Database): void {
     created_at           TEXT NOT NULL,
     updated_at           TEXT NOT NULL
   ) STRICT`)
+  ensureColumn(db, 'quests', 'unread', 'ALTER TABLE quests ADD COLUMN unread INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'todos', 'deleted', 'ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
   ensureColumn(db, 'todos', 'due_at', 'ALTER TABLE todos ADD COLUMN due_at TEXT')

@@ -672,6 +672,9 @@ function QuestRoute({
       setQuest(result.data)
       onQuestResolved(result.data)
       setError(null)
+      if (result.data.unread) {
+        void api.updateQuest(questId, { unread: false })
+      }
     })
   }, [questId, onQuestResolved])
 

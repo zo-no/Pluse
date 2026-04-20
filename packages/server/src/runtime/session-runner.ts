@@ -37,6 +37,7 @@ import {
 import { emit } from '../services/events'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { createTodoWithEffects } from '../services/todos'
+import { runHooks } from '../services/hooks'
 import { getManagedCodexHome } from '../support/paths'
 import { getRuntimeModelCatalog, normalizeCodexModelId } from './catalog'
 
@@ -845,6 +846,14 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
   emitRunUpdated(runId)
   emitQuestUpdated(quest.id)
   if (quest.kind === 'session') maybeStartNextFollowUp(quest.id)
+
+  if (state === 'completed' || state === 'failed') {
+    const hookEvent = state === 'completed' ? 'run_completed' : 'run_failed'
+    const runSnapshot = getRun(runId)
+    if (runSnapshot) {
+      queueMicrotask(() => { runHooks(hookEvent, { quest, run: runSnapshot }) })
+    }
+  }
 }
 
 function createAcceptedRun(

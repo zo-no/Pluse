@@ -88,6 +88,7 @@ export interface Quest {
   completionOutput?: string
   reviewOnComplete?: boolean
   order?: number
+  unread?: boolean
 }
 
 export interface CreateQuestInput {
@@ -142,6 +143,7 @@ export interface UpdateQuestInput {
   order?: number | null
   codexThreadId?: string | null
   claudeSessionId?: string | null
+  unread?: boolean
 }
 
 export interface MoveQuestInput {

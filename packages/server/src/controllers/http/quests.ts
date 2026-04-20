@@ -90,6 +90,7 @@ const QuestPatchSchema = z.object({
   order: z.number().nullable().optional(),
   codexThreadId: z.string().nullable().optional(),
   claudeSessionId: z.string().nullable().optional(),
+  unread: z.boolean().optional(),
 })
 
 const SendMessageSchema = z.object({

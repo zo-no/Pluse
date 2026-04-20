@@ -64,6 +64,14 @@ export function getProjectManifestDir(workDir: string): string {
   return join(resolveWorkDir(workDir), '.pluse')
 }
 
+export function getGlobalHooksPath(): string {
+  return join(getPluseRoot(), 'hooks.json')
+}
+
+export function getProjectHooksPath(workDir: string): string {
+  return join(getProjectManifestDir(workDir), 'hooks.json')
+}
+
 export function getProjectManifestPath(workDir: string): string {
   return join(getProjectManifestDir(workDir), 'project.json')
 }
