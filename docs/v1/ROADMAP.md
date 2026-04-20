@@ -8,8 +8,9 @@ v1 的核心目标：**让 Agent 可以自主配置自己的工作环境**，人
 
 | # | 功能 | 状态 | Spec |
 |---|------|------|------|
-| 0001 | Hooks 机制 — 事件驱动的自动化配置系统 | 讨论中 | [0001-hooks.md](./specs/0001-hooks.md) |
-| 0002 | Quest 未读高亮 + Human Todo 自动创建 | 依赖 0001 | — |
+| 0001 | Hooks 机制 — 事件驱动的自动化配置系统 | ✅ 已完成 | [0001-hooks.md](./specs/0001-hooks.md) |
+| 0002 | Hooks 设置 — 用户可控的 Todo 推送开关 | ✅ 已完成 | [0002-hooks-settings.md](./specs/0002-hooks-settings.md) |
+| 0003 | 成本可见性 — token 采集、价格估算、多层级展示 | draft | [0003-cost-visibility.md](./specs/0003-cost-visibility.md) |
 
 ## 设计原则
 
