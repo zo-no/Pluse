@@ -10,7 +10,9 @@ v1 的核心目标：**让 Agent 可以自主配置自己的工作环境**，人
 |---|------|------|------|
 | 0001 | Hooks 机制 — 事件驱动的自动化配置系统 | ✅ 已完成 | [0001-hooks.md](./specs/0001-hooks.md) |
 | 0002 | Hooks 设置 — 用户可控的 Todo 推送开关 | ✅ 已完成 | [0002-hooks-settings.md](./specs/0002-hooks-settings.md) |
+| 0005 | 会话失败 Todo 通知 — run_failed 触发高亮与待办 | ✅ 已完成 | [0005-session-failed-todo.md](./specs/0005-session-failed-todo.md) |
 | 0003 | 成本可见性 — token 采集、价格估算、多层级展示 | draft | [0003-cost-visibility.md](./specs/0003-cost-visibility.md) |
+| 0004 | Todo 优先级与标签 — priority 排序、tags 分类与过滤 | ✅ 已完成 | [0004-todo-priority-tags.md](./specs/0004-todo-priority-tags.md) |
 
 ## 设计原则
 

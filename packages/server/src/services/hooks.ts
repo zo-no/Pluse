@@ -24,7 +24,12 @@ interface CreateTodoAction {
   description?: string
 }
 
-type HookAction = HighlightQuestAction | CreateTodoAction
+interface ShellAction {
+  type: 'shell'
+  command: string
+}
+
+type HookAction = HighlightQuestAction | CreateTodoAction | ShellAction
 
 export interface Hook {
   id: string
@@ -51,6 +56,28 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
         { type: 'create_todo', title: '查看会话：{{quest.name}}' },
       ],
     },
+    {
+      id: 'notify-on-session-failed',
+      event: 'run_failed',
+      enabled: true,
+      filter: { kind: 'session', triggeredBy: ['human'] },
+      actions: [
+        { type: 'highlight_quest' },
+        { type: 'create_todo', title: '查看失败会话：{{quest.name}}' },
+      ],
+    },
+    {
+      id: 'speak-on-session-complete',
+      event: 'run_completed',
+      enabled: false,
+      filter: { kind: 'session', triggeredBy: ['human'] },
+      actions: [
+        {
+          type: 'shell',
+          command: "kairos {{project.name.shell}}，{{quest.name.shell}}完成了",
+        },
+      ],
+    },
   ],
 }
 
@@ -73,9 +100,23 @@ function mergeHooks(global: Hook[], project: Hook[]): Hook[] {
   return Array.from(map.values())
 }
 
-function renderTemplate(template: string, ctx: { quest: Quest; run: Run }): string {
+export function shellEscape(value: string): string {
+  return "'" + value.replace(/'/g, "'\\''") + "'"
+}
+
+export function renderTemplate(
+  template: string,
+  ctx: { quest: Quest; run: Run; project: ReturnType<typeof getProject> }
+): string {
+  const projectName = ctx.project?.name ?? ''
+  const questName = ctx.quest.name ?? ctx.quest.title ?? ctx.quest.id
   return template
-    .replace(/\{\{quest\.name\}\}/g, ctx.quest.name ?? ctx.quest.title ?? ctx.quest.id)
+    .replace(/\{\{project\.name\.shell\}\}/g, shellEscape(projectName))
+    .replace(/\{\{quest\.name\.shell\}\}/g, shellEscape(questName))
+    .replace(/\{\{quest\.id\.shell\}\}/g, shellEscape(ctx.quest.id))
+    .replace(/\{\{run\.id\.shell\}\}/g, shellEscape(ctx.run.id))
+    .replace(/\{\{project\.name\}\}/g, projectName)
+    .replace(/\{\{quest\.name\}\}/g, questName)
     .replace(/\{\{quest\.id\}\}/g, ctx.quest.id)
     .replace(/\{\{run\.id\}\}/g, ctx.run.id)
 }
@@ -111,8 +152,14 @@ export function saveGlobalHooksConfig(config: HooksConfig): void {
 export function patchHook(id: string, patch: Partial<Pick<Hook, 'enabled'>>): HooksConfig {
   const config = loadGlobalHooksConfig()
   const idx = config.hooks.findIndex((h) => h.id === id)
-  if (idx < 0) throw new Error(`Hook not found: ${id}`)
-  config.hooks[idx] = { ...config.hooks[idx], ...patch }
+  if (idx < 0) {
+    // hook 不在文件里，从默认配置里找模板插入
+    const defaultHook = DEFAULT_HOOKS_CONFIG.hooks.find((h) => h.id === id)
+    if (!defaultHook) throw new Error(`Hook not found: ${id}`)
+    config.hooks.push({ ...defaultHook, ...patch })
+  } else {
+    config.hooks[idx] = { ...config.hooks[idx], ...patch }
+  }
   saveGlobalHooksConfig(config)
   return config
 }
@@ -120,6 +167,7 @@ export function patchHook(id: string, patch: Partial<Pick<Hook, 'enabled'>>): Ho
 export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): void {
   const { quest, run } = ctx
   const project = getProject(quest.projectId)
+  const fullCtx = { quest, run, project }
 
   const globalHooks = loadHooksFile(getGlobalHooksPath())
   const projectHooks = project?.workDir ? loadHooksFile(getProjectHooksPath(project.workDir)) : []
@@ -135,9 +183,21 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
           projectId: quest.projectId,
           originQuestId: quest.id,
           createdBy: 'system',
-          title: renderTemplate(action.title, ctx),
-          description: action.description ? renderTemplate(action.description, ctx) : undefined,
+          title: renderTemplate(action.title, fullCtx),
+          description: action.description ? renderTemplate(action.description, fullCtx) : undefined,
         })
+      } else if (action.type === 'shell') {
+        const rendered = renderTemplate(action.command, fullCtx)
+        try {
+          const child = Bun.spawn(['sh', '-c', rendered], {
+            detached: true,
+            stdout: 'ignore',
+            stderr: 'ignore',
+          })
+          child.unref()
+        } catch (error) {
+          console.warn('[hooks] shell action failed to spawn:', error instanceof Error ? error.message : error)
+        }
       }
     }
   }
