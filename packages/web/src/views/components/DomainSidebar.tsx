@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Domain, Project } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
-import { ArchiveIcon, PlusIcon, SettingsIcon } from './icons'
+import { ArchiveIcon, PlusIcon, SettingsIcon, SlidersIcon } from './icons'
 
 interface DomainSidebarProps {
   domains: Domain[]
@@ -12,6 +12,7 @@ interface DomainSidebarProps {
   onSelectProject: (projectId: string) => void
   onProjectsChanged: () => Promise<void>
   onDomainsChanged: () => Promise<void>
+  onCreateProject: () => void
   onNavigate?: () => void
 }
 
@@ -32,6 +33,7 @@ export function DomainSidebar({
   onSelectProject,
   onProjectsChanged,
   onDomainsChanged,
+  onCreateProject,
   onNavigate,
 }: DomainSidebarProps) {
   const navigate = useNavigate()
@@ -159,19 +161,38 @@ export function DomainSidebar({
   }
 
   function renderProject(project: Project) {
+    const isActive = project.id === activeProjectId
     return (
-      <button
+      <div
         key={project.id}
-        type="button"
-        className={`pluse-project-picker-item pluse-domain-project-item${project.id === activeProjectId ? ' is-active' : ''}`}
-        onClick={() => openProject(project.id)}
+        className={`pluse-sidebar-item pluse-sidebar-row pluse-domain-project-item${isActive ? ' is-active' : ''}`}
       >
-        <span className="pluse-sidebar-dot" aria-hidden="true" />
-        <div className="pluse-project-picker-item-text">
-          <strong>{project.name}</strong>
-          <span>{project.workDir.replace(/^\/Users\/[^/]+/, '~')}</span>
+        <button
+          type="button"
+          className="pluse-sidebar-item-main"
+          onClick={() => openProject(project.id)}
+        >
+          <span className="pluse-sidebar-dot" aria-hidden="true" />
+          <div className="pluse-project-picker-item-text">
+            <strong>{project.name}</strong>
+            <span>{project.workDir.replace(/^\/Users\/[^/]+/, '~')}</span>
+          </div>
+        </button>
+        <div className="pluse-sidebar-item-actions">
+          <button
+            type="button"
+            className="pluse-sidebar-more-btn"
+            onClick={() => {
+              onNavigate?.()
+              navigate(`/projects/${project.id}`)
+            }}
+            aria-label={t('项目设置')}
+            title={t('项目设置')}
+          >
+            <SlidersIcon className="pluse-icon" />
+          </button>
         </div>
-      </button>
+      </div>
     )
   }
 
@@ -275,6 +296,15 @@ export function DomainSidebar({
               </div>
             </div>
             <div className="pluse-domain-toolbar">
+              <button
+                type="button"
+                className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+                onClick={onCreateProject}
+                disabled={submitting}
+              >
+                <PlusIcon className="pluse-icon" />
+                <span>{t('新建项目')}</span>
+              </button>
               <button
                 type="button"
                 className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"

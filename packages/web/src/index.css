@@ -681,22 +681,51 @@ select {
   border-bottom: 0;
 }
 
-.pluse-sidebar-section-context {
-  gap: 4px;
-  padding: 6px 0 6px;
-  border-bottom: 0;
-}
-
-.pluse-sidebar-section-project {
-  padding-top: 8px;
-}
-
-.pluse-sidebar-project-header {
-  padding: 0 6px 8px;
-}
-
 .pluse-sidebar-section:last-child {
   border-bottom: 0;
+}
+
+.pluse-sidebar-project-context {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 12px 12px 8px;
+}
+
+.pluse-sidebar-project-context-domain {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+.pluse-sidebar-project-context-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pluse-new-project-modal {
+  width: min(480px, 90vw);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pluse-new-project-modal h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.pluse-form-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
 }
 
 .pluse-sidebar-tabs {
