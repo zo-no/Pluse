@@ -21,6 +21,7 @@ function sc(n: number): ContentfulStatusCode {
 const OpenProjectSchema = z.object({
   workDir: z.string().min(1),
   name: z.string().min(1).optional(),
+  icon: z.string().max(8).optional(),
   goal: z.string().optional(),
   description: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -30,6 +31,7 @@ const OpenProjectSchema = z.object({
 
 const UpdateProjectSchema = z.object({
   name: z.string().min(1).optional(),
+  icon: z.string().max(8).nullable().optional(),
   goal: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   systemPrompt: z.string().nullable().optional(),

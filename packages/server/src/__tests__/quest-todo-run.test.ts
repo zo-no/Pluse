@@ -24,7 +24,11 @@ import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTest
 
 const RUNTIME_ENV_KEYS = [
   'CODEX_HOME',
+  'PLUSE_CLAUDE_COMMAND',
   'PLUSE_CODEX_COMMAND',
+  'PLUSE_FAKE_CLAUDE_ARGS_LOG',
+  'PLUSE_FAKE_CLAUDE_REPLY',
+  'PLUSE_FAKE_CLAUDE_SESSION_ID',
   'PLUSE_FAKE_CODEX_ARGS_LOG',
   'PLUSE_FAKE_CODEX_HOME_LOG',
   'PLUSE_FAKE_CODEX_AUTO_RENAME_FAIL',
@@ -119,6 +123,42 @@ printf '{"thread_id":"%s","type":"message","role":"assistant","content":"%s"}\\n
   delete process.env['PLUSE_FAKE_CODEX_DELAY_SECONDS']
 
   return { commandPath, argsLogPath, homeLogPath }
+}
+
+function installFakeClaude(): { commandPath: string; argsLogPath: string } {
+  const binDir = join(getTestRoot(), 'bin')
+  const commandPath = join(binDir, 'fake-claude.sh')
+  const argsLogPath = join(getTestRoot(), 'fake-claude-args.log')
+
+  mkdirSync(binDir, { recursive: true })
+  writeFileSync(commandPath, `#!/bin/sh
+set -eu
+if [ -n "\${PLUSE_FAKE_CLAUDE_ARGS_LOG:-}" ]; then
+  printf '%s\\n' "$*" >> "$PLUSE_FAKE_CLAUDE_ARGS_LOG"
+fi
+case " $* " in
+  *" --print "*)
+    ;;
+  *)
+    printf '%s\\n' '{"type":"error","message":"missing --print"}'
+    exit 1
+    ;;
+esac
+session_id="\${PLUSE_FAKE_CLAUDE_SESSION_ID:-claude_session_fake}"
+reply="\${PLUSE_FAKE_CLAUDE_REPLY:-Fake Claude reply}"
+printf '%s\\n' "{\\"type\\":\\"system\\",\\"session_id\\":\\"$session_id\\"}"
+printf '%s\\n' "{\\"type\\":\\"assistant\\",\\"message\\":{\\"content\\":[{\\"type\\":\\"thinking\\",\\"thinking\\":\\"Thinking trace\\"},{\\"type\\":\\"text\\",\\"text\\":\\"$reply\\"}]}}"
+printf '%s\\n' '{"type":"result","usage":{"input_tokens":12,"output_tokens":34}}'
+`)
+  chmodSync(commandPath, 0o755)
+  writeFileSync(argsLogPath, '')
+
+  process.env['PLUSE_CLAUDE_COMMAND'] = commandPath
+  process.env['PLUSE_FAKE_CLAUDE_ARGS_LOG'] = argsLogPath
+  process.env['PLUSE_FAKE_CLAUDE_REPLY'] = 'Fake Claude reply'
+  process.env['PLUSE_FAKE_CLAUDE_SESSION_ID'] = 'claude_session_fake'
+
+  return { commandPath, argsLogPath }
 }
 
 beforeAll(() => setupTestDb())
@@ -636,6 +676,50 @@ describe('quest/todo/run APIs', () => {
     const loggedHome = readFileSync(homeLogPath, 'utf8').split('\n').map((line) => line.trim()).find(Boolean)
     expect(loggedHome).toBe(managedHome)
     expect(readFileSync(join(managedHome, 'auth.json'), 'utf8')).toBe('{"token":"abc"}')
+  })
+
+  it('runs Claude chat messages in print stream-json mode and persists think sessions', async () => {
+    const { argsLogPath } = installFakeClaude()
+
+    const project = await openProject('claude-chat')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Claude Chat Session',
+      tool: 'claude',
+      model: 'sonnet',
+      thinking: true,
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Explain the deployment issue',
+      requestId: 'claude-chat-1',
+      tool: 'claude',
+      model: 'sonnet',
+      thinking: true,
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    const freshQuest = getQuest(quest.id)
+    expect(freshQuest?.claudeSessionId).toBe('claude_session_fake')
+
+    const argsLog = readFileSync(argsLogPath, 'utf8')
+    expect(argsLog).toContain('--print')
+    expect(argsLog).toContain('--output-format stream-json')
+    expect(argsLog).toContain('--effort high')
+
+    const events = await GET<PagedResult<QuestEvent>>(`/api/quests/${quest.id}/events`)
+    expect(events.status).toBe(200)
+    const eventItems = mustOk(events).items
+    expect(eventItems.some((event) => event.type === 'reasoning' && event.content === 'Thinking trace')).toBe(true)
+    expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Fake Claude reply')).toBe(true)
   })
 
   it('enforces manual task run conflicts, skips overlapping automation runs, and records review todos', async () => {

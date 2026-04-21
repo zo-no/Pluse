@@ -1415,7 +1415,7 @@ select {
 .pluse-composer-mainline {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   flex: 1 0 auto;
   flex-wrap: nowrap;
@@ -1452,9 +1452,38 @@ select {
   flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 3px;
   margin-left: 0;
   flex: 0 0 auto;
+}
+
+.pluse-composer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pluse-composer-toggle.is-on {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent-soft) 28%, white);
+}
+
+.pluse-composer-toggle-label {
+  line-height: 1;
+}
+
+.pluse-composer-toggle .pluse-toggle {
+  pointer-events: none;
+  flex-shrink: 0;
 }
 
 .pluse-transfer-action {
@@ -2152,7 +2181,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0 16px 0;
+  padding: 0 6px 0;
   overflow: hidden;
   min-height: 0;
 }
@@ -4626,20 +4655,39 @@ select {
 .pluse-rail-head-sidebar {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  gap: 0;
+  padding: 0;
+  border-bottom: 0;
 }
 
 .pluse-rail-head-sidebar .pluse-sidebar-project-context {
-  padding: 6px 0 4px;
+  padding: 12px 12px 8px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .pluse-rail-head-sidebar .pluse-sidebar-tabs {
-  margin: 0 -16px;
+  margin: 0;
   padding: 0 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pluse-task-panel-tabs {
+  width: 100%;
+  justify-content: stretch;
+  gap: 0;
+}
+
+.pluse-task-panel-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 10px;
+  text-align: center;
 }
 
 .pluse-todo-tag-filter-row {
-  padding: 6px 0 2px;
+  padding: 6px 8px 2px;
 }
 
 .pluse-rail-kicker {
@@ -4837,12 +4885,12 @@ select {
 .pluse-task-history,
 .pluse-task-archive {
   margin-top: 12px;
-  padding-top: 4px;
+  padding-top: 0;
   border-top: 0;
 }
 
 .pluse-task-history-list {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .pluse-task-empty-state {
@@ -4989,7 +5037,7 @@ select {
   .pluse-composer {
     border-top: 0;
     border-radius: 0;
-    padding: 8px 12px max(10px, var(--safe-bottom));
+    padding: 8px 8px max(10px, var(--safe-bottom));
     background: var(--bg);
     flex-shrink: 0;
   }
@@ -5012,7 +5060,8 @@ select {
 
   .pluse-runtime-controls-composer-compact {
     width: auto;
-    grid-template-columns: repeat(3, minmax(72px, max-content));
+    gap: 2px;
+    grid-template-columns: repeat(3, minmax(64px, max-content));
   }
 
   .pluse-inline-status-compact {
@@ -5020,14 +5069,33 @@ select {
   }
 
   .pluse-runtime-controls-composer-compact select {
-    min-height: 26px;
-    font-size: 10px;
-    padding: 0 22px 0 6px;
+    min-height: 24px;
+    max-width: 112px;
+    font-size: 9px;
+    padding: 0 18px 0 5px;
   }
 
   .pluse-composer-quick-actions {
     width: auto;
     justify-content: flex-end;
+    gap: 1px;
+  }
+
+  .pluse-composer-toggle {
+    min-height: 24px;
+    gap: 3px;
+    padding: 0 4px 0 6px;
+    font-size: 9px;
+  }
+
+  .pluse-composer-toggle .pluse-toggle {
+    transform: scale(0.82);
+    transform-origin: center;
+  }
+
+  .pluse-transfer-action {
+    min-height: 24px;
+    padding: 0 4px;
   }
 
   .pluse-rail-head-row {

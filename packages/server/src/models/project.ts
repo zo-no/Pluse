@@ -13,6 +13,7 @@ function now(): string {
 type ProjectRow = {
   id: string
   name: string
+  icon: string | null
   goal: string | null
   description: string | null
   work_dir: string | null
@@ -29,6 +30,7 @@ function rowToProject(row: ProjectRow): Project {
   return {
     id: row.id,
     name: row.name,
+    icon: row.icon ?? undefined,
     goal: row.goal ?? undefined,
     description: row.description ?? undefined,
     workDir: row.work_dir ?? '',
@@ -97,11 +99,12 @@ export function createProjectRecord(
 
   db.run(
     `INSERT INTO projects (
-      id, name, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     [
       id,
       input.name,
+      input.icon ?? null,
       input.goal ?? null,
       input.description ?? null,
       input.workDir,
@@ -121,10 +124,11 @@ export function upsertProjectRecord(project: Project): Project {
   const db = getDb()
   db.run(
     `INSERT INTO projects (
-      id, name, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
+      icon = excluded.icon,
       goal = excluded.goal,
       description = excluded.description,
       work_dir = excluded.work_dir,
@@ -137,6 +141,7 @@ export function upsertProjectRecord(project: Project): Project {
     [
       project.id,
       project.name,
+      project.icon ?? null,
       project.goal ?? null,
       project.description ?? null,
       project.workDir,
@@ -164,6 +169,10 @@ export function updateProject(id: string, input: UpdateProjectInput & { workDir?
   if ('name' in input && input.name !== undefined) {
     sets.push('name = ?')
     params.push(input.name)
+  }
+  if ('icon' in input) {
+    sets.push('icon = ?')
+    params.push(input.icon ?? null)
   }
   if ('goal' in input) {
     sets.push('goal = ?')

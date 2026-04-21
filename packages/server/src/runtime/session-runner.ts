@@ -400,7 +400,7 @@ function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePrefer
   return {
     tool,
     model: overrides?.model ?? resolveModel(tool, quest.model),
-    effort: overrides?.effort ?? (tool === 'codex' ? quest.effort ?? 'low' : null),
+    effort: overrides?.effort ?? quest.effort ?? (tool === 'codex' ? 'low' : null),
     thinking: overrides?.thinking ?? (tool === 'claude' ? quest.thinking === true : false),
   }
 }
@@ -573,10 +573,11 @@ function parseProviderLine(tool: ToolName, line: string): ProviderParseResult {
   return tool === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
 }
 
-function buildClaudeArgs(prompt: string, options: { model?: string; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
+function buildClaudeArgs(prompt: string, options: { model?: string; effort?: string | null; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
+  const args = ['--print', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
   if (options.model) args.push('--model', options.model)
-  if (options.thinking) args.push('--effort', 'high')
+  const effort = options.effort?.trim() || (options.thinking ? 'high' : '')
+  if (effort) args.push('--effort', effort)
   if (options.systemPrompt?.trim()) args.push('--system-prompt', options.systemPrompt.trim())
   if (options.resumeSessionId?.trim()) args.push('--resume', options.resumeSessionId.trim())
   return args
@@ -696,14 +697,15 @@ async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameS
   const tool = runtime.tool
   const command = resolveToolCommand(tool)
   const args = tool === 'claude'
-    ? buildClaudeArgs(
-      buildAutoRenamePrompt(snapshot),
-      {
-        model: runtime.model,
-        thinking: false,
-        systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
-      },
-    )
+      ? buildClaudeArgs(
+        buildAutoRenamePrompt(snapshot),
+        {
+          model: runtime.model,
+          effort: runtime.effort,
+          thinking: false,
+          systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
+        },
+      )
     : buildCodexArgs(
       buildAutoRenamePrompt(snapshot),
       {
@@ -1049,6 +1051,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         prompt,
         {
           model: currentRun.model,
+          effort: currentRun.effort,
           thinking: currentRun.thinking,
           systemPrompt: systemPromptForQuest(currentQuest),
           resumeSessionId: nativeResume ? currentRun.claudeSessionId : undefined,

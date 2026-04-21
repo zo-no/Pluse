@@ -1195,8 +1195,10 @@ function Shell({
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
               projectWorkDir={activeProject?.workDir ?? null}
+              projects={projects}
               activeQuestId={activeQuestId}
               activeQuest={activeQuest}
+              onSelectProject={handleProjectSelected}
               onRequestClose={() => setMobileRailOpen(false)}
             />
           </div>

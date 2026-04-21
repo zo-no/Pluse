@@ -51,6 +51,7 @@ function initSchema(db: Database): void {
 
   ensureColumn(db, 'projects', 'domain_id', 'ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)')
   ensureColumn(db, 'projects', 'description', 'ALTER TABLE projects ADD COLUMN description TEXT')
+  ensureColumn(db, 'projects', 'icon', 'ALTER TABLE projects ADD COLUMN icon TEXT')
 
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_work_dir
     ON projects (work_dir)

@@ -1,9 +1,10 @@
 import { useMemo, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import type { Domain, Project } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
-import { ArchiveIcon, PlusIcon, SettingsIcon, SlidersIcon } from './icons'
+import { PlusIcon, SettingsIcon, SlidersIcon, TrashIcon } from './icons'
 
 interface DomainSidebarProps {
   domains: Domain[]
@@ -26,6 +27,18 @@ const EMPTY_FORM: DomainFormState = {
   description: '',
 }
 
+function projectAvatar(project: Project): string {
+  const icon = project.icon?.trim()
+  if (icon) return icon
+  const name = project.name.trim()
+  return name ? name[0]!.toUpperCase() : '#'
+}
+
+function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (!project.domainId) return t('未分组')
+  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+}
+
 export function DomainSidebar({
   domains,
   projects,
@@ -45,6 +58,7 @@ export function DomainSidebar({
   const [editForm, setEditForm] = useState<DomainFormState>(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingDeleteDomain, setPendingDeleteDomain] = useState<Domain | null>(null)
 
   const projectsByDomainId = useMemo(() => {
     const grouped = new Map<string, Project[]>()
@@ -77,6 +91,17 @@ export function DomainSidebar({
   function openProject(projectId: string): void {
     onSelectProject(projectId)
     onNavigate?.()
+    navigate(`/projects/${projectId}`)
+  }
+
+  async function openProjectFirstSession(projectId: string): Promise<void> {
+    onSelectProject(projectId)
+    onNavigate?.()
+    const result = await api.getQuests({ projectId, kind: 'session', deleted: false })
+    if (result.ok && result.data.length > 0) {
+      navigate(`/quests/${result.data[0]!.id}`)
+      return
+    }
     navigate(`/projects/${projectId}`)
   }
 
@@ -142,21 +167,26 @@ export function DomainSidebar({
     await onDomainsChanged()
   }
 
-  async function handleDeleteDomain(domain: Domain) {
-    const confirmed = window.confirm(t('归档该领域后，下面的项目会回到未分组。继续吗？'))
-    if (!confirmed) return
+  function requestDeleteDomain(domain: Domain) {
+    setPendingDeleteDomain(domain)
+    setError(null)
+  }
+
+  async function handleDeleteDomain() {
+    if (!pendingDeleteDomain) return
     setSubmitting(true)
     setError(null)
-    const result = await api.deleteDomain(domain.id)
+    const result = await api.deleteDomain(pendingDeleteDomain.id)
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error)
       return
     }
-    if (editingId === domain.id) {
+    if (editingId === pendingDeleteDomain.id) {
       setEditingId(null)
       setEditForm(EMPTY_FORM)
     }
+    setPendingDeleteDomain(null)
     await Promise.all([onDomainsChanged(), onProjectsChanged()])
   }
 
@@ -165,24 +195,33 @@ export function DomainSidebar({
     return (
       <div
         key={project.id}
-        className={`pluse-sidebar-item pluse-sidebar-row pluse-domain-project-item${isActive ? ' is-active' : ''}`}
+        className={`pluse-sidebar-item pluse-domain-project-item${isActive ? ' is-active' : ''}`}
       >
         <button
           type="button"
-          className="pluse-sidebar-item-main"
+          className="pluse-project-avatar pluse-project-avatar-button"
           onClick={() => openProject(project.id)}
+          aria-label={t('打开')}
+          title={t('打开')}
         >
-          <div>
+          {projectAvatar(project)}
+        </button>
+        <button
+          type="button"
+          className="pluse-sidebar-item-main pluse-domain-project-main"
+          onClick={() => void openProjectFirstSession(project.id)}
+        >
+          <div className="pluse-domain-project-copy">
             <div className="pluse-sidebar-item-title">
               <strong>{project.name}</strong>
             </div>
-            <p>{project.workDir.replace(/^\/Users\/[^/]+/, '~')}</p>
+            <p>{projectDomainName(project, domains, t)}</p>
           </div>
         </button>
-        <div className="pluse-sidebar-item-actions">
+        <div className="pluse-sidebar-item-actions pluse-domain-project-actions">
           <button
             type="button"
-            className="pluse-sidebar-more-btn"
+            className="pluse-sidebar-more-btn pluse-domain-project-action"
             onClick={() => {
               onNavigate?.()
               navigate(`/projects/${project.id}`)
@@ -263,11 +302,11 @@ export function DomainSidebar({
                   <button
                     type="button"
                     className="pluse-sidebar-action-btn"
-                    onClick={() => void handleDeleteDomain(options.domain!)}
-                    aria-label={t('归档领域')}
-                    title={t('归档领域')}
+                    onClick={() => requestDeleteDomain(options.domain!)}
+                    aria-label={t('删除领域')}
+                    title={t('删除领域')}
                   >
-                    <ArchiveIcon className="pluse-icon" />
+                    <TrashIcon className="pluse-icon" />
                   </button>
                 </div>
               ) : null}
@@ -289,35 +328,6 @@ export function DomainSidebar({
     <div className="pluse-sidebar-scroll-pane">
       <section className="pluse-sidebar-section pluse-sidebar-section-list">
         <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-          <div className="pluse-domain-toolbar">
-            <button
-              type="button"
-              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-              onClick={onCreateProject}
-              disabled={submitting}
-            >
-              <PlusIcon className="pluse-icon" />
-              <span>{t('新建项目')}</span>
-            </button>
-            <button
-              type="button"
-              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-              onClick={() => setCreating(true)}
-              disabled={submitting}
-            >
-              <PlusIcon className="pluse-icon" />
-              <span>{t('新建领域')}</span>
-            </button>
-            <button
-              type="button"
-              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-              onClick={() => void handleCreateDefaults()}
-              disabled={submitting}
-            >
-              <span>{t('使用默认模板')}</span>
-            </button>
-          </div>
-
           {creating ? (
             <form className="pluse-sidebar-form pluse-domain-form" onSubmit={handleCreateDomain}>
               <input
@@ -361,10 +371,90 @@ export function DomainSidebar({
             projects: projectsByDomainId.grouped.get(domain.id) ?? [],
             domain,
           }))}
+
+          <div className="pluse-domain-toolbar pluse-domain-toolbar-subtle">
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={onCreateProject}
+              disabled={submitting}
+            >
+              <PlusIcon className="pluse-icon" />
+              <span>{t('新建项目')}</span>
+            </button>
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={() => setCreating(true)}
+              disabled={submitting}
+            >
+              <PlusIcon className="pluse-icon" />
+              <span>{t('新建领域')}</span>
+            </button>
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={() => void handleCreateDefaults()}
+              disabled={submitting}
+            >
+              <span>{t('使用默认模板')}</span>
+            </button>
+          </div>
         </div>
 
         {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
       </section>
+
+      {pendingDeleteDomain && typeof document !== 'undefined'
+        ? createPortal(
+          <div className="pluse-modal-backdrop" onClick={() => setPendingDeleteDomain(null)}>
+            <section
+              className="pluse-modal-panel pluse-domain-delete-modal"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="pluse-task-modal-head">
+                <div className="pluse-task-modal-title">
+                  <span className="pluse-task-modal-kicker">{t('危险操作')}</span>
+                  <h2>{t('删除领域')}</h2>
+                </div>
+              </div>
+              <div className="pluse-task-modal-body">
+                <p className="pluse-info-copy">
+                  {t('删除后，下面的项目会回到未分组。此操作不可撤销。')}
+                </p>
+                <div className="pluse-delete-confirm">
+                  <p>
+                    {t('确认删除领域')}
+                    {' '}
+                    <strong>{pendingDeleteDomain.name}</strong>
+                    {' '}
+                    {t('？')}
+                  </p>
+                  <div className="pluse-delete-confirm-actions">
+                    <button
+                      type="button"
+                      className="pluse-button pluse-button-danger"
+                      onClick={() => void handleDeleteDomain()}
+                      disabled={submitting}
+                    >
+                      {submitting ? t('删除中…') : t('确认删除')}
+                    </button>
+                    <button
+                      type="button"
+                      className="pluse-button pluse-button-ghost"
+                      onClick={() => setPendingDeleteDomain(null)}
+                      disabled={submitting}
+                    >
+                      {t('取消')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )
+        : null}
     </div>
   )
 }

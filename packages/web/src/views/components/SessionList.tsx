@@ -61,6 +61,11 @@ function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'r
   return null
 }
 
+function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (!project.domainId) return t('未分组')
+  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+}
+
 export function SessionList({
   projects,
   activeProjectId,
@@ -79,6 +84,7 @@ export function SessionList({
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('domains')
   const [domains, setDomains] = useState<Domain[]>([])
   const [searchQuery, setSearchQuery] = useState('')
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [newProjectModalOpen, setNewProjectModalOpen] = useState(false)
@@ -99,6 +105,10 @@ export function SessionList({
     if (!activeProject?.domainId) return t('未分组')
     return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
   }, [activeProject, domains, t])
+
+  const sidebarContextLabel = useMemo(() => (
+    `${t('会话栏')}-${sidebarTab === 'domains' ? t('领域') : t('会话')}`
+  ), [sidebarTab, t])
 
   const knownQuests = useMemo(
     () => [...sessions, ...archivedSessions],
@@ -209,8 +219,18 @@ export function SessionList({
   }
 
   function handleSelectProject(projectId: string) {
+    void openProjectFirstSession(projectId)
+  }
+
+  async function openProjectFirstSession(projectId: string) {
     onSelectProject(projectId)
+    setProjectPickerOpen(false)
     onNavigate?.()
+    const result = await api.getQuests({ projectId, kind: 'session', deleted: false })
+    if (result.ok && result.data.length > 0) {
+      navigate(`/quests/${result.data[0]!.id}`)
+      return
+    }
     navigate(`/projects/${projectId}`)
   }
 
@@ -427,10 +447,43 @@ export function SessionList({
       <div className="pluse-sidebar-body">
         {/* 当前项目上下文 */}
         <div className="pluse-sidebar-project-context">
-          <span className="pluse-sidebar-project-context-domain">{activeDomainName}</span>
-          <strong className="pluse-sidebar-project-context-name">
-            {activeProject?.name ?? t('选择项目')}
-          </strong>
+          <span className="pluse-sidebar-project-context-domain">{sidebarContextLabel}</span>
+          <div className="pluse-project-switcher">
+            <button
+              type="button"
+              className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+              onClick={() => setProjectPickerOpen((value) => !value)}
+              aria-haspopup="listbox"
+              aria-expanded={projectPickerOpen}
+            >
+              <div className="pluse-project-switcher-label">
+                <strong>{activeProject?.name ?? t('选择项目')}</strong>
+                <span>{activeDomainName}</span>
+              </div>
+              <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
+            </button>
+
+            {projectPickerOpen ? (
+              <div className="pluse-project-picker">
+                <div className="pluse-project-picker-list" role="listbox" aria-label={t('选择项目')}>
+                  {projects.map((project) => (
+                    <button
+                      key={project.id}
+                      type="button"
+                      className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                      onClick={() => handleSelectProject(project.id)}
+                    >
+                      <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
+                      <div className="pluse-project-picker-item-text">
+                        <strong>{project.name}</strong>
+                        <span>{projectDomainName(project, domains, t)}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Domain / Session tabs */}

@@ -80,6 +80,39 @@ function queuedMessageText(item: QueuedMessage): string {
   return item.displayText ?? item.text
 }
 
+function resolveComposerRuntimeState(source?: Pick<Quest, 'tool' | 'model' | 'effort' | 'thinking'> | null) {
+  const tool = source?.tool ?? 'codex'
+  const fallbackCatalog = buildFallbackRuntimeModelCatalog(tool)
+  return {
+    tool,
+    model: resolveRuntimeModelSelection(tool, source?.model, fallbackCatalog),
+    effort: resolveRuntimeEffortSelection(tool, source?.effort, fallbackCatalog),
+    thinking: tool === 'claude' ? source?.thinking === true : false,
+  }
+}
+
+function ComposerToggle({
+  label,
+  active,
+  onToggle,
+}: {
+  label: string
+  active: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      className={`pluse-composer-toggle${active ? ' is-on' : ''}`}
+      aria-pressed={active}
+      onClick={onToggle}
+    >
+      <span className="pluse-composer-toggle-label">{label}</span>
+      <span className={`pluse-toggle${active ? ' is-on' : ''}`} aria-hidden="true" />
+    </button>
+  )
+}
+
 function isDrawingModel(model?: string): boolean {
   if (!model) return false
   const normalized = model.toLowerCase()
@@ -321,6 +354,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   const [cancelling, setCancelling] = useState(false)
   const [runtimeTools, setRuntimeTools] = useState<RuntimeTool[]>([])
   const [catalog, setCatalog] = useState<RuntimeModelCatalog | null>(null)
+  const [runtimeSelection, setRuntimeSelection] = useState(() => resolveComposerRuntimeState(null))
   const [error, setError] = useState<string | null>(null)
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([])
@@ -473,12 +507,33 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }, [])
 
   useEffect(() => {
-    if (!quest?.tool) return
+    if (!quest?.tool) {
+      setCatalog(null)
+      return
+    }
+
+    // Seed the selector immediately so the model dropdown is never blank while the
+    // runtime catalog request is still in flight.
+    setCatalog(buildFallbackRuntimeModelCatalog(quest.tool))
     void api.getRuntimeModelCatalog(quest.tool).then((result) => {
       if (result.ok && result.data.models.length > 0) setCatalog(result.data)
       else setCatalog(buildFallbackRuntimeModelCatalog(quest.tool))
     })
   }, [quest?.tool])
+
+  useEffect(() => {
+    setRuntimeSelection(resolveComposerRuntimeState(quest))
+  }, [quest?.id, quest?.tool, quest?.model, quest?.effort, quest?.thinking])
+
+  useEffect(() => {
+    if (!catalog) return
+    setRuntimeSelection((current) => {
+      const nextModel = resolveRuntimeModelSelection(current.tool, current.model, catalog)
+      const nextEffort = resolveRuntimeEffortSelection(current.tool, current.effort, catalog)
+      if (nextModel === current.model && nextEffort === current.effort) return current
+      return { ...current, model: nextModel, effort: nextEffort }
+    })
+  }, [catalog])
 
   useEffect(() => {
     const source = new EventSource(`/api/events?questId=${encodeURIComponent(questId)}`)
@@ -645,6 +700,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   async function patchQuest(patch: UpdateQuestInput) {
     const result = await api.updateQuest(questId, patch)
     if (!result.ok) {
+      setRuntimeSelection(resolveComposerRuntimeState(quest))
       setError(result.error)
       return
     }
@@ -658,6 +714,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     setSending(true)
     setError(null)
     setUploadError(null)
+
+    const optimisticText = draft.trim() || t('请查看附件')
 
     let attachments: MessageAttachment[] = []
     if (pendingFiles.length > 0) {
@@ -680,11 +738,11 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     }
 
     const result = await api.sendQuestMessage(questId, {
-      text: draft.trim() || t('请查看附件'),
-      tool: quest.tool,
-      model: quest.model ?? null,
-      effort: quest.effort ?? null,
-      thinking: quest.thinking,
+      text: optimisticText,
+      tool: runtimeSelection.tool,
+      model: runtimeSelection.model || null,
+      effort: runtimeSelection.effort || null,
+      thinking: runtimeSelection.tool === 'claude' ? runtimeSelection.thinking : false,
       attachments: attachments.length > 0 ? attachments : undefined,
     })
     setSending(false)
@@ -699,7 +757,34 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
       setQuest(result.data.quest)
       onQuestLoaded?.(result.data.quest)
     }
-    await refreshThread()
+    if (result.data.run) {
+      setRuns((current) => [result.data.run!, ...current.filter((run) => run.id !== result.data.run!.id)])
+    }
+    setEvents((current) => {
+      const lastEvent = current[current.length - 1]
+      if (lastEvent?.type === 'message' && lastEvent.role === 'user' && lastEvent.content === optimisticText) {
+        return current
+      }
+      const nextSeq = current.reduce((max, event) => Math.max(max, event.seq), 0) + 1
+      return [
+        ...current,
+        {
+          seq: nextSeq,
+          timestamp: Date.now(),
+          type: 'message',
+          role: 'user',
+          content: optimisticText,
+        },
+      ]
+    })
+    await Promise.all([
+      refreshQuest(),
+      refreshThread(true),
+    ])
+    window.setTimeout(() => {
+      void refreshQuest()
+      void refreshThread()
+    }, 250)
     await onDataChanged?.()
   }
 
@@ -851,14 +936,23 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                 </div>
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">
                   <select
-                    value={quest.tool ?? 'codex'}
+                    value={runtimeSelection.tool}
                     onChange={(event) => {
                       const tool = event.target.value
-                      setCatalog(buildFallbackRuntimeModelCatalog(tool))
-                      void patchQuest({
+                      const nextCatalog = buildFallbackRuntimeModelCatalog(tool)
+                      const nextSelection = {
                         tool,
                         model: defaultRuntimeModelId(tool),
-                        effort: defaultRuntimeEffortId(tool),
+                        effort: resolveRuntimeEffortSelection(tool, defaultRuntimeEffortId(tool, nextCatalog), nextCatalog),
+                        thinking: tool === 'claude' ? runtimeSelection.thinking : false,
+                      }
+                      setCatalog(nextCatalog)
+                      setRuntimeSelection(nextSelection)
+                      void patchQuest({
+                        tool: nextSelection.tool,
+                        model: nextSelection.model,
+                        effort: nextSelection.effort || null,
+                        thinking: nextSelection.thinking,
                       })
                     }}
                   >
@@ -866,13 +960,27 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                       <option key={tool.id} value={tool.id}>{tool.name}</option>
                     ))}
                   </select>
-                  <select value={resolveRuntimeModelSelection(quest.tool, quest.model, catalog)} onChange={(event) => void patchQuest({ model: event.target.value || null })}>
+                  <select
+                    value={runtimeSelection.model}
+                    onChange={(event) => {
+                      const model = event.target.value || defaultRuntimeModelId(runtimeSelection.tool)
+                      setRuntimeSelection((current) => ({ ...current, model }))
+                      void patchQuest({ model })
+                    }}
+                  >
                     {catalog?.models.map((model) => (
                       <option key={model.id} value={model.id}>{model.label}</option>
                     ))}
                   </select>
                   {!!effortOptions.length ? (
-                    <select value={resolveRuntimeEffortSelection(quest.tool, quest.effort, catalog)} onChange={(event) => void patchQuest({ effort: event.target.value || null })}>
+                    <select
+                      value={runtimeSelection.effort}
+                      onChange={(event) => {
+                        const effort = event.target.value || ''
+                        setRuntimeSelection((current) => ({ ...current, effort }))
+                        void patchQuest({ effort: effort || null })
+                      }}
+                    >
                       {effortOptions.map((effort) => (
                         <option key={effort} value={effort}>{effort}</option>
                       ))}
@@ -880,6 +988,17 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   ) : null}
                 </div>
                 <div className="pluse-composer-quick-actions">
+                  {runtimeSelection.tool === 'claude' ? (
+                    <ComposerToggle
+                      label={t('Think')}
+                      active={runtimeSelection.thinking}
+                      onToggle={() => {
+                        const thinking = !runtimeSelection.thinking
+                        setRuntimeSelection((current) => ({ ...current, thinking }))
+                        void patchQuest({ thinking })
+                      }}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="pluse-icon-button pluse-transfer-action"

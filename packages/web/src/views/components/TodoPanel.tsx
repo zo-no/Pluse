@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
-import type { Quest, Todo, UpdateTodoInput } from '@pluse/types'
+import type { Domain, Project, Quest, Todo, UpdateTodoInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { displayTaskName } from '@/views/utils/display'
@@ -14,8 +14,10 @@ interface TodoPanelProps {
   projectId: string | null
   projectName?: string | null
   projectWorkDir?: string | null
+  projects: Project[]
   activeQuestId?: string | null
   activeQuest?: Quest | null
+  onSelectProject?: (projectId: string) => void
   onRequestClose?: () => void
   onDataChanged?: () => Promise<void> | void
 }
@@ -162,12 +164,19 @@ function formatScopeEmptyMessage(
     : (t ? t('当前范围暂无待办。') : '当前范围暂无待办。')
 }
 
+function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (!project.domainId) return t('未分组')
+  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+}
+
 export function TodoPanel({
   projectId,
   projectName,
   projectWorkDir,
+  projects,
   activeQuestId,
   activeQuest,
+  onSelectProject,
   onRequestClose,
   onDataChanged,
 }: TodoPanelProps) {
@@ -182,6 +191,7 @@ export function TodoPanel({
   const [globalArchivedTasks, setGlobalArchivedTasks] = useState<Quest[]>([])
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
   const [scopeTab, setScopeTab] = useState<ScopeTab>('project')
   const [scopeModes, setScopeModes] = useState<Record<ScopeTab, SourceTab>>({
     global: 'all',
@@ -209,6 +219,11 @@ export function TodoPanel({
   const [reloadTick, setReloadTick] = useState(0)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [projectTags, setProjectTags] = useState<string[]>([])
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === projectId) ?? null,
+    [projects, projectId],
+  )
 
   async function loadData() {
     const [globalTaskResult, globalArchivedTaskResult, globalTodoResult, globalArchivedTodoResult] = await Promise.all([
@@ -287,8 +302,14 @@ export function TodoPanel({
     setScopeModes((current) => ({ ...current, [tab]: source }))
   }
 
+  async function loadDomains() {
+    const result = await api.getDomains()
+    if (result.ok) setDomains(result.data)
+  }
+
   useEffect(() => {
     void loadData()
+    void loadDomains()
   }, [projectId, reloadTick])
 
   useEffect(() => {
@@ -314,6 +335,25 @@ export function TodoPanel({
       if (reloadTimer) window.clearTimeout(reloadTimer)
     }
   }, [projectId])
+
+  useEffect(() => {
+    const source = new EventSource('/api/events')
+    let reloadTimer: number | null = null
+    source.onmessage = (message) => {
+      const event = parseSseMessage(message.data)
+      if (!event) return
+      if (event.type !== 'domain_updated' && event.type !== 'domain_deleted') return
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+      reloadTimer = window.setTimeout(() => {
+        void loadDomains()
+      }, 120)
+    }
+    source.onerror = () => source.close()
+    return () => {
+      source.close()
+      if (reloadTimer) window.clearTimeout(reloadTimer)
+    }
+  }, [])
 
   async function handleUpdateTodo(todo: Todo, patch: UpdateTodoInput): Promise<boolean> {
     const result = await api.updateTodo(todo.id, {
@@ -575,6 +615,32 @@ export function TodoPanel({
     setCreateModalOpen(true)
   }
 
+  const railContextLabel = useMemo(() => {
+    const scopeLabel = scopeTab === 'global'
+      ? t('全局')
+      : scopeTab === 'project'
+        ? t('项目')
+        : t('会话')
+    return `${t('任务栏')}-${scopeLabel}`
+  }, [scopeTab, t])
+
+  const activeProjectDomainLabel = useMemo(
+    () => activeProject ? projectDomainName(activeProject, domains, t) : t('未分组'),
+    [activeProject, domains, t],
+  )
+
+  async function openProjectFirstSession(nextProjectId: string) {
+    onSelectProject?.(nextProjectId)
+    setProjectPickerOpen(false)
+    onRequestClose?.()
+    const result = await api.getQuests({ projectId: nextProjectId, kind: 'session', deleted: false })
+    if (result.ok && result.data.length > 0) {
+      navigate(`/quests/${result.data[0]!.id}`)
+      return
+    }
+    navigate(`/projects/${nextProjectId}`)
+  }
+
   async function handleSaveSelectedTodo() {
     if (!selectedTodo) return
     const nextTitle = todoDraft.title.trim()
@@ -758,17 +824,52 @@ export function TodoPanel({
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
           <div className="pluse-sidebar-project-context">
-            <span className="pluse-sidebar-project-context-domain">{t('任务')}</span>
-            <strong className="pluse-sidebar-project-context-name">{projectName || t('当前项目')}</strong>
+            <span className="pluse-sidebar-project-context-domain">{railContextLabel}</span>
+            <div className="pluse-project-switcher">
+              <button
+                type="button"
+                className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+                onClick={() => setProjectPickerOpen((value) => !value)}
+                aria-haspopup="listbox"
+                aria-expanded={projectPickerOpen}
+              >
+                <div className="pluse-project-switcher-label">
+                  <strong>{projectName || t('当前项目')}</strong>
+                  <span>{activeProjectDomainLabel}</span>
+                </div>
+                <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
+              </button>
+
+              {projectPickerOpen ? (
+                <div className="pluse-project-picker">
+                  <div className="pluse-project-picker-list" role="listbox" aria-label={t('选择项目')}>
+                    {projects.map((project) => (
+                      <button
+                        key={project.id}
+                        type="button"
+                        className={`pluse-project-picker-item${project.id === projectId ? ' is-active' : ''}`}
+                        onClick={() => void openProjectFirstSession(project.id)}
+                      >
+                        <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
+                        <div className="pluse-project-picker-item-text">
+                          <strong>{project.name}</strong>
+                          <span>{projectDomainName(project, domains, t)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <div className="pluse-sidebar-tabs" role="tablist" aria-label={t('任务视图')}>
-            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
+          <div className="pluse-sidebar-tabs pluse-task-panel-tabs" role="tablist" aria-label={t('任务视图')}>
+            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
               {t('全局')}
             </button>
-            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
+            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
               {t('项目')}
             </button>
-            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
+            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
               {t('会话')}
             </button>
           </div>
@@ -804,17 +905,23 @@ export function TodoPanel({
           ) : null}
 
           {historyItems.length > 0 ? (
-            <section className="pluse-task-history">
-              <button
-                type="button"
-                className="pluse-sidebar-archive-toggle"
-                onClick={() => setHistoryExpandedByView((current) => ({
-                  ...current,
-                  [historySectionKey]: !historyExpanded,
-                }))}
-              >
-                <span>{historyExpanded ? '▾' : '▸'} {historySectionLabel} ({historyItems.length})</span>
-              </button>
+            <section className="pluse-domain-group pluse-task-history">
+              <div className="pluse-domain-group-head">
+                <button
+                  type="button"
+                  className="pluse-domain-group-toggle"
+                  onClick={() => setHistoryExpandedByView((current) => ({
+                    ...current,
+                    [historySectionKey]: !historyExpanded,
+                  }))}
+                >
+                  <span className="pluse-domain-group-chevron" aria-hidden="true">{historyExpanded ? '▾' : '▸'}</span>
+                  <div className="pluse-domain-group-copy">
+                    <strong>{historySectionLabel}</strong>
+                    <span>{historyItems.length}</span>
+                  </div>
+                </button>
+              </div>
               {historyExpanded ? (
                 <div className="pluse-note-list pluse-task-history-list">
                   {historyItems.map((item) => (
@@ -835,14 +942,20 @@ export function TodoPanel({
           ) : null}
 
           {visibleArchivedItems.length > 0 ? (
-            <section className="pluse-task-archive">
-              <button
-                type="button"
-                className="pluse-sidebar-archive-toggle"
-                onClick={() => setArchivedExpanded((value) => !value)}
-              >
-                <span>{archivedExpanded ? '▾' : '▸'} {t('归档任务')} ({visibleArchivedItems.length})</span>
-              </button>
+            <section className="pluse-domain-group pluse-task-archive">
+              <div className="pluse-domain-group-head">
+                <button
+                  type="button"
+                  className="pluse-domain-group-toggle"
+                  onClick={() => setArchivedExpanded((value) => !value)}
+                >
+                  <span className="pluse-domain-group-chevron" aria-hidden="true">{archivedExpanded ? '▾' : '▸'}</span>
+                  <div className="pluse-domain-group-copy">
+                    <strong>{t('归档')}</strong>
+                    <span>{visibleArchivedItems.length}</span>
+                  </div>
+                </button>
+              </div>
               {archivedExpanded ? (
                 <div className="pluse-note-list" style={{ marginTop: 8 }}>
                   {visibleArchivedItems.map((item) => (

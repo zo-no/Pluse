@@ -52,6 +52,7 @@ function manifestFromProject(project: Project): ProjectManifest {
   return {
     projectId: project.id,
     name: project.name,
+    icon: project.icon,
     goal: project.goal,
     workDir: project.workDir,
     createdAt: project.createdAt,
@@ -134,6 +135,7 @@ function reassignProjectReferences(fromId: string, toId: string): void {
 function alignProjectToManifest(projectId: string, manifest: ProjectManifest, seed?: Partial<OpenProjectInput>): Project {
   const project = updateProjectRecord(projectId, {
     name: seed?.name ?? manifest.name,
+    icon: seed?.icon ?? manifest.icon ?? null,
     goal: seed?.goal ?? manifest.goal ?? null,
     workDir: manifest.workDir,
     systemPrompt: seed?.systemPrompt,
@@ -150,6 +152,7 @@ function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<Open
   const created = createProjectRecord({
     id: manifest.projectId,
     name: seed?.name ?? manifest.name,
+    icon: seed?.icon ?? manifest.icon,
     goal: seed?.goal ?? manifest.goal,
     workDir: manifest.workDir,
     systemPrompt: seed?.systemPrompt,
@@ -207,6 +210,7 @@ export function openProject(input: OpenProjectInput): Project {
   if (!manifest && !byWorkDir) {
     const created = createProjectRecord({
       name: input.name?.trim() || defaultProjectName(workDir),
+      icon: input.icon,
       goal: input.goal,
       description: input.description,
       workDir,
@@ -222,6 +226,7 @@ export function openProject(input: OpenProjectInput): Project {
   if (!manifest && byWorkDir) {
     const updated = updateProjectRecord(byWorkDir.id, {
       name: input.name || byWorkDir.name,
+      icon: input.icon === undefined ? byWorkDir.icon ?? null : input.icon ?? null,
       goal: input.goal === undefined ? byWorkDir.goal ?? null : input.goal ?? null,
       description: input.description === undefined ? byWorkDir.description ?? null : input.description ?? null,
       systemPrompt: input.systemPrompt === undefined ? byWorkDir.systemPrompt ?? null : input.systemPrompt ?? null,
@@ -253,6 +258,7 @@ export function openProject(input: OpenProjectInput): Project {
       if (existsSync(byManifestId.workDir)) {
         const copied = createProjectRecord({
           name: input.name || manifest.name || defaultProjectName(workDir),
+          icon: input.icon ?? manifest.icon,
           goal: input.goal === undefined ? manifest.goal : input.goal,
           workDir,
           systemPrompt: input.systemPrompt,
