@@ -2,11 +2,11 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
 import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
+import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TodoPanel } from '@/views/components/TodoPanel'
 import { displayQuestName } from '@/views/utils/display'
-import { parseSseMessage } from '@/views/utils/sse'
 import { formatTodoScheduleSummary } from '@/views/utils/todo'
 import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
@@ -178,49 +178,65 @@ function ProjectOverviewHero({
   const queuedCount = overview.sessions.reduce((sum, session) => sum + session.followUpQueue.length, 0)
   const actionablePendingCount = Math.max(pendingTodoCount - waitingCount, 0)
   const completedRecentCount = overview.recentActivity.filter((item) => item.op === 'done').length
-  const metrics = [
-    { label: t('运行中'), value: activeCount, color: 'var(--accent-strong)' },
-    { label: t('待处理'), value: actionablePendingCount, color: 'color-mix(in srgb, var(--warning) 78%, var(--accent-strong))' },
-    { label: t('等待中'), value: waitingCount, color: 'color-mix(in srgb, var(--success) 82%, var(--accent-strong))' },
-    { label: t('排队消息'), value: queuedCount, color: 'color-mix(in srgb, var(--text-muted) 82%, white)' },
-  ]
-  const total = metrics.reduce((sum, metric) => sum + metric.value, 0)
-  const number = new Intl.NumberFormat(locale)
+  const metrics = useMemo(
+    () => [
+      { label: t('运行中'), value: activeCount, color: 'var(--accent-strong)' },
+      { label: t('待处理'), value: actionablePendingCount, color: 'color-mix(in srgb, var(--warning) 78%, var(--accent-strong))' },
+      { label: t('等待中'), value: waitingCount, color: 'color-mix(in srgb, var(--success) 82%, var(--accent-strong))' },
+      { label: t('排队消息'), value: queuedCount, color: 'color-mix(in srgb, var(--text-muted) 82%, white)' },
+    ],
+    [activeCount, actionablePendingCount, queuedCount, t, waitingCount],
+  )
+  const total = useMemo(
+    () => metrics.reduce((sum, metric) => sum + metric.value, 0),
+    [metrics],
+  )
+  const number = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const latestActivityAt = overview.recentActivity[0]?.createdAt
   const topSummary = latestActivityAt
     ? `${t('最近活动')} ${formatDateTime(latestActivityAt, t, locale)}`
     : scheduleSummary(overview.schedule, locale, t)
   const recentActivityCount = overview.recentActivity.length
-  const activityPreview = overview.recentActivity.slice(0, 6)
+  const activityPreview = useMemo(
+    () => overview.recentActivity.slice(0, 6),
+    [overview.recentActivity],
+  )
 
   const radius = 44
   const circumference = 2 * Math.PI * radius
-  const gap = total > 0 ? 5 : 0
-  let offset = 0
-
-  const segments = metrics
-    .filter((metric) => metric.value > 0)
-    .map((metric) => {
-      const rawLength = (metric.value / total) * circumference
-      const visibleLength = Math.max(rawLength - gap, 0)
-      const segment = (
-        <circle
-          key={metric.label}
-          className="pluse-overview-ring-segment"
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={metric.color}
-          strokeWidth="11"
-          strokeLinecap="round"
-          strokeDasharray={`${visibleLength} ${Math.max(circumference - visibleLength, 0)}`}
-          strokeDashoffset={-offset}
-        />
+  const segments = useMemo(() => {
+    if (total === 0) return []
+    const gap = 5
+    return metrics
+      .filter((metric) => metric.value > 0)
+      .reduce<{ offset: number; segments: ReactNode[] }>(
+        (acc, metric) => {
+          const rawLength = (metric.value / total) * circumference
+          const visibleLength = Math.max(rawLength - gap, 0)
+          acc.segments.push(
+            <circle
+              key={metric.label}
+              className="pluse-overview-ring-segment"
+              cx="60"
+              cy="60"
+              r={radius}
+              fill="none"
+              stroke={metric.color}
+              strokeWidth="11"
+              strokeLinecap="round"
+              strokeDasharray={`${visibleLength} ${Math.max(circumference - visibleLength, 0)}`}
+              strokeDashoffset={-acc.offset}
+            />,
+          )
+          return {
+            offset: acc.offset + rawLength,
+            segments: acc.segments,
+          }
+        },
+        { offset: 0, segments: [] },
       )
-      offset += rawLength
-      return segment
-    })
+      .segments
+  }, [circumference, metrics, radius, total])
 
   return (
     <section className="pluse-overview-hero">
@@ -488,9 +504,18 @@ function ProjectPage({
   const [goal, setGoal] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [domainId, setDomainId] = useState('')
+  const overviewReloadTimerRef = useRef<number | null>(null)
+  const pendingOverviewReloadRef = useRef(false)
+  const pendingDomainReloadRef = useRef(false)
+  const overviewRequestSeqRef = useRef(0)
+  const domainsRequestSeqRef = useRef(0)
+  const tokenSummaryRequestSeqRef = useRef(0)
 
-  async function loadOverview() {
+  const loadOverview = useCallback(async () => {
+    const requestId = overviewRequestSeqRef.current + 1
+    overviewRequestSeqRef.current = requestId
     const result = await api.getProjectOverview(projectId)
+    if (requestId !== overviewRequestSeqRef.current) return
     if (!result.ok) {
       setError(result.error)
       return
@@ -503,44 +528,73 @@ function ProjectPage({
     setDomainId(result.data.project.domainId ?? '')
     setError(null)
     onProjectLoaded(result.data)
-  }
+  }, [onProjectLoaded, projectId])
 
-  async function loadDomains() {
+  const loadDomains = useCallback(async () => {
+    const requestId = domainsRequestSeqRef.current + 1
+    domainsRequestSeqRef.current = requestId
     const result = await api.getDomains()
+    if (requestId !== domainsRequestSeqRef.current) return
     if (result.ok) setDomains(result.data)
-  }
+  }, [])
+
+  const loadTokenSummary = useCallback(async () => {
+    const requestId = tokenSummaryRequestSeqRef.current + 1
+    tokenSummaryRequestSeqRef.current = requestId
+    const result = await api.getProjectTokenSummary(projectId)
+    if (requestId !== tokenSummaryRequestSeqRef.current) return
+    if (result.ok) setTokenSummary(result.data)
+  }, [projectId])
 
   useEffect(() => {
     void loadOverview()
     void loadDomains()
-    void api.getProjectTokenSummary(projectId).then((result) => {
-      if (result.ok) setTokenSummary(result.data)
-    })
-  }, [projectId])
+    void loadTokenSummary()
+    return () => {
+      overviewRequestSeqRef.current += 1
+      domainsRequestSeqRef.current += 1
+      tokenSummaryRequestSeqRef.current += 1
+      if (overviewReloadTimerRef.current) {
+        window.clearTimeout(overviewReloadTimerRef.current)
+        overviewReloadTimerRef.current = null
+      }
+      pendingOverviewReloadRef.current = false
+      pendingDomainReloadRef.current = false
+    }
+  }, [loadDomains, loadOverview, loadTokenSummary])
 
-  useEffect(() => {
-    const source = new EventSource('/api/events')
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-
+  useSseEvent(
+    (event) => {
       const shouldReloadOverview = event.type === 'project_updated' && event.data.projectId === projectId
       const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
       if (!shouldReloadOverview && !shouldReloadDomains) return
 
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
-        if (shouldReloadOverview) void loadOverview()
-        if (shouldReloadDomains) void loadDomains()
-      }, 120)
-    }
-    source.onerror = () => source.close()
-    return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-    }
-  }, [projectId])
+      if (shouldReloadOverview) pendingOverviewReloadRef.current = true
+      if (shouldReloadDomains) pendingDomainReloadRef.current = true
+      if (overviewReloadTimerRef.current) window.clearTimeout(overviewReloadTimerRef.current)
+      overviewReloadTimerRef.current = window.setTimeout(() => {
+        const nextOverviewReload = pendingOverviewReloadRef.current
+        const nextDomainReload = pendingDomainReloadRef.current
+        pendingOverviewReloadRef.current = false
+        pendingDomainReloadRef.current = false
+
+        if (nextOverviewReload) void loadOverview()
+        if (nextDomainReload) void loadDomains()
+      }, 300)
+    },
+    {
+      onReconnect: () => {
+        pendingOverviewReloadRef.current = false
+        pendingDomainReloadRef.current = false
+        if (overviewReloadTimerRef.current) {
+          window.clearTimeout(overviewReloadTimerRef.current)
+          overviewReloadTimerRef.current = null
+        }
+        void loadOverview()
+        void loadDomains()
+      },
+    },
+  )
 
   async function saveProject() {
     setSaving(true)
@@ -763,6 +817,11 @@ function QuestRoute({
     })
   }, [questId, onQuestResolved])
 
+  const handleQuestLoaded = useCallback((nextQuest: Quest) => {
+    setQuest(nextQuest)
+    onQuestResolved(nextQuest)
+  }, [onQuestResolved])
+
   if (!questId) return <Navigate to="/" replace />
   if (error) {
     return isOverlay ? (
@@ -785,11 +844,6 @@ function QuestRoute({
         </section>
       </div>
     ) : <div className="pluse-page pluse-page-loading">{t('正在加载内容…')}</div>
-  }
-
-  const handleQuestLoaded = (nextQuest: Quest) => {
-    setQuest(nextQuest)
-    onQuestResolved(nextQuest)
   }
 
   const fallback = isOverlay ? (
@@ -958,6 +1012,7 @@ function Shell({
   const [desktopRailVisible, setDesktopRailVisible] = useState(true)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [mobileRailOpen, setMobileRailOpen] = useState(false)
+  const projectsReloadTimerRef = useRef<number | null>(null)
 
   const activeQuestId = activeQuest?.id ?? (location.pathname.startsWith('/quests/') ? location.pathname.split('/')[2] : null)
   const activeProject = useMemo(
@@ -1047,23 +1102,32 @@ function Shell({
   }, [])
 
   useEffect(() => {
-    const source = new EventSource('/api/events')
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-      if (event.type !== 'project_opened' && event.type !== 'project_updated') return
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
-        void loadProjects()
-      }, 120)
-    }
-    source.onerror = () => source.close()
     return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
+      if (projectsReloadTimerRef.current) {
+        window.clearTimeout(projectsReloadTimerRef.current)
+        projectsReloadTimerRef.current = null
+      }
     }
-  }, [loadProjects])
+  }, [])
+
+  useSseEvent(
+    (event) => {
+      if (event.type !== 'project_opened' && event.type !== 'project_updated') return
+      if (projectsReloadTimerRef.current) window.clearTimeout(projectsReloadTimerRef.current)
+      projectsReloadTimerRef.current = window.setTimeout(() => {
+        void loadProjects()
+      }, 300)
+    },
+    {
+      onReconnect: () => {
+        if (projectsReloadTimerRef.current) {
+          window.clearTimeout(projectsReloadTimerRef.current)
+          projectsReloadTimerRef.current = null
+        }
+        void loadProjects()
+      },
+    },
+  )
 
   if (!auth.setupRequired && !auth.authenticated) {
     return <Navigate to="/login" replace />

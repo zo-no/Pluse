@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
 import type { Domain, Project, Quest, Todo, UpdateTodoInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
+import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayTaskName } from '@/views/utils/display'
-import { parseSseMessage } from '@/views/utils/sse'
-import { formatTodoDueAt, formatTodoRepeat, formatTodoScheduleSummary, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
+import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
 import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
 
@@ -169,6 +169,196 @@ function projectDomainName(project: Project, domains: Domain[], t: (key: string,
   return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
 }
 
+const QuestRailItem = memo(function QuestRailItem({
+  quest,
+  archived,
+  activeQuestId,
+  locale,
+  t,
+  questLinkState,
+  onRequestClose,
+  onTriggerQuest,
+  onArchiveQuest,
+}: {
+  quest: Quest
+  archived: boolean
+  activeQuestId?: string | null
+  locale: string
+  t: (key: string, values?: Record<string, string | number>) => string
+  questLinkState: { backgroundLocation: RouterLocation }
+  onRequestClose?: () => void
+  onTriggerQuest: (quest: Quest) => void
+  onArchiveQuest: (questId: string, archived: boolean) => void
+}) {
+  const isActive = activeQuestId === quest.id
+  const canTrigger = !archived && !quest.activeRunId && quest.enabled !== false
+
+  return (
+    <article
+      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}`}
+    >
+      <Link
+        className="pluse-sidebar-item-main pluse-task-list-main"
+        to={`/quests/${quest.id}`}
+        state={questLinkState}
+        onClick={() => onRequestClose?.()}
+      >
+        <div className="pluse-task-list-copy">
+          <div className="pluse-sidebar-item-title">
+            <span className="pluse-task-kind-badge" aria-label={t('AI 任务')} title={t('AI 任务')}>
+              <SparkIcon className="pluse-icon" />
+            </span>
+            <strong>{taskLabel(quest, t)}</strong>
+          </div>
+          <div className="pluse-task-list-meta" title={formatDateTime(quest.updatedAt, locale, t)}>
+            <span className={`pluse-task-list-state is-${quest.activeRunId ? 'running' : quest.status ?? 'pending'}`}>
+              {quest.activeRunId ? t('运行中') : taskStatusLabel(quest.status, t)}
+            </span>
+            <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+            <span className="pluse-meta-inline">
+              <ClockIcon className="pluse-icon pluse-inline-icon" />
+              {formatSidebarTime(quest.updatedAt, t)}
+            </span>
+          </div>
+        </div>
+      </Link>
+      <div className="pluse-sidebar-item-actions">
+        {canTrigger ? (
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={(event) => {
+              event.preventDefault()
+              onTriggerQuest(quest)
+            }}
+            aria-label={t('立即触发')}
+            title={t('立即触发')}
+          >
+            <PlayIcon className="pluse-icon" />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="pluse-sidebar-action-btn"
+          onClick={(event) => {
+            event.preventDefault()
+            onArchiveQuest(quest.id, !archived)
+          }}
+          aria-label={archived ? t('恢复任务') : t('归档任务')}
+          title={archived ? t('恢复任务') : t('归档任务')}
+        >
+          <ArchiveIcon className="pluse-icon" />
+        </button>
+      </div>
+    </article>
+  )
+})
+
+const TodoRailItem = memo(function TodoRailItem({
+  todo,
+  archived,
+  activeQuestId,
+  locale,
+  t,
+  onOpenTodo,
+  onToggleTodoStatus,
+  onArchiveTodo,
+  onOpenTodoSource,
+  onRequestClose,
+}: {
+  todo: Todo
+  archived: boolean
+  activeQuestId?: string | null
+  locale: string
+  t: (key: string, values?: Record<string, string | number>) => string
+  onOpenTodo: (todoId: string) => void
+  onToggleTodoStatus: (todo: Todo, nextStatus: Todo['status']) => void
+  onArchiveTodo: (todo: Todo, archived: boolean) => void
+  onOpenTodoSource: () => void
+  onRequestClose?: () => void
+}) {
+  const hasSource = Boolean(todo.originQuestId)
+  const isActive = hasSource && todo.originQuestId === activeQuestId
+  const isDone = todo.status === 'done'
+  const isRecurring = todo.repeat !== 'none'
+  const canToggle = !archived && todo.status !== 'cancelled'
+
+  return (
+    <article
+      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-todo${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}${isDone ? ' is-done' : ''}`}
+    >
+      <button
+        type="button"
+        className={`pluse-todo-toggle${isDone ? ' is-done' : ''}`}
+        onClick={() => onToggleTodoStatus(todo, isDone ? 'pending' : 'done')}
+        aria-label={isDone ? t('恢复任务') : isRecurring ? t('完成本次') : t('完成任务')}
+        title={isDone ? t('恢复任务') : isRecurring ? t('完成本次') : t('完成任务')}
+        disabled={!canToggle}
+      >
+        {isDone ? <CheckIcon className="pluse-icon" /> : null}
+      </button>
+      <button
+        type="button"
+        className="pluse-task-list-main pluse-sidebar-item-main-button pluse-task-list-detail-trigger"
+        onClick={() => onOpenTodo(todo.id)}
+        aria-label={`${t('任务详情')} · ${todo.title}`}
+      >
+        <div className="pluse-task-list-copy">
+          <div className="pluse-sidebar-item-title">
+            {todo.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${todo.priority}`} aria-label={todo.priority} /> : null}
+            <strong>{todo.title}</strong>
+          </div>
+          <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
+            <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
+            <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+            <span className="pluse-meta-inline">
+              <ClockIcon className="pluse-icon pluse-inline-icon" />
+              {formatSidebarTime(todo.updatedAt, t)}
+            </span>
+          </div>
+        </div>
+      </button>
+      <div className="pluse-sidebar-item-actions">
+        {todo.originQuestId ? (
+          <Link
+            className={`pluse-sidebar-action-btn pluse-task-source-link${isActive ? ' is-active' : ''}`}
+            to={`/quests/${todo.originQuestId}`}
+            onClick={() => {
+              onOpenTodoSource()
+              onRequestClose?.()
+            }}
+            aria-label={t('来源会话')}
+            title={t('来源会话')}
+          >
+            <RouteIcon className="pluse-icon" />
+          </Link>
+        ) : null}
+        {archived ? (
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={() => onArchiveTodo(todo, false)}
+            aria-label={t('恢复任务')}
+            title={t('恢复任务')}
+          >
+            <ArchiveIcon className="pluse-icon" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={() => onArchiveTodo(todo, true)}
+            aria-label={t('归档任务')}
+            title={t('归档任务')}
+          >
+            <ArchiveIcon className="pluse-icon" />
+          </button>
+        )}
+      </div>
+    </article>
+  )
+})
+
 export function TodoPanel({
   projectId,
   projectName,
@@ -220,18 +410,26 @@ export function TodoPanel({
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [projectTags, setProjectTags] = useState<string[]>([])
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const reloadTimerRef = useRef<number | null>(null)
+  const pendingDataReloadRef = useRef(false)
+  const pendingDomainReloadRef = useRef(false)
+  const dataRequestSeqRef = useRef(0)
+  const domainsRequestSeqRef = useRef(0)
   const activeProject = useMemo(
     () => projects.find((project) => project.id === projectId) ?? null,
     [projects, projectId],
   )
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
+    const requestId = dataRequestSeqRef.current + 1
+    dataRequestSeqRef.current = requestId
     const [globalTaskResult, globalArchivedTaskResult, globalTodoResult, globalArchivedTodoResult] = await Promise.all([
       api.getQuests({ kind: 'task', deleted: false }),
       api.getQuests({ kind: 'task', deleted: true }),
       api.getTodos({ deleted: false }),
       api.getTodos({ deleted: true }),
     ])
+    if (requestId !== dataRequestSeqRef.current) return
 
     if (!globalTaskResult.ok) {
       setError(globalTaskResult.error)
@@ -260,6 +458,7 @@ export function TodoPanel({
       setArchivedTasks([])
       setTodos([])
       setArchivedTodos([])
+      setProjectTags([])
       setError(null)
       return
     }
@@ -270,6 +469,7 @@ export function TodoPanel({
       api.getTodos({ projectId, deleted: false }),
       api.getTodos({ projectId, deleted: true }),
     ])
+    if (requestId !== dataRequestSeqRef.current) return
 
     if (!taskResult.ok) {
       setError(taskResult.error)
@@ -295,67 +495,90 @@ export function TodoPanel({
     setError(null)
 
     const tagsResult = await api.getProjectTags(projectId)
+    if (requestId !== dataRequestSeqRef.current) return
     if (tagsResult.ok) setProjectTags(tagsResult.data.tags)
-  }
+  }, [projectId])
 
   function setSourceTab(tab: ScopeTab, source: SourceTab) {
     setScopeModes((current) => ({ ...current, [tab]: source }))
   }
 
-  async function loadDomains() {
+  const loadDomains = useCallback(async () => {
+    const requestId = domainsRequestSeqRef.current + 1
+    domainsRequestSeqRef.current = requestId
     const result = await api.getDomains()
+    if (requestId !== domainsRequestSeqRef.current) return
     if (result.ok) setDomains(result.data)
-  }
+  }, [])
 
   useEffect(() => {
     void loadData()
     void loadDomains()
-  }, [projectId, reloadTick])
+    return () => {
+      dataRequestSeqRef.current += 1
+      domainsRequestSeqRef.current += 1
+    }
+  }, [loadData, loadDomains, projectId, reloadTick])
 
   useEffect(() => {
-    if (!projectId) return
-    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(projectId)}`)
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-      if (
-        event.type !== 'quest_updated'
-        && event.type !== 'quest_deleted'
-        && event.type !== 'todo_updated'
-        && event.type !== 'todo_deleted'
-      ) return
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
-        setReloadTick((value) => value + 1)
-      }, 120)
-    }
     return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-    }
-  }, [projectId])
-
-  useEffect(() => {
-    const source = new EventSource('/api/events')
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-      if (event.type !== 'domain_updated' && event.type !== 'domain_deleted') return
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
-        void loadDomains()
-      }, 120)
-    }
-    source.onerror = () => source.close()
-    return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
+      if (reloadTimerRef.current) {
+        window.clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
+      pendingDataReloadRef.current = false
+      pendingDomainReloadRef.current = false
     }
   }, [])
 
-  async function handleUpdateTodo(todo: Todo, patch: UpdateTodoInput): Promise<boolean> {
+  useEffect(() => {
+    pendingDataReloadRef.current = false
+    pendingDomainReloadRef.current = false
+    if (reloadTimerRef.current) {
+      window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = null
+    }
+  }, [projectId])
+
+  useSseEvent(
+    (event) => {
+      const shouldReloadData = (
+        event.type === 'quest_updated'
+        || event.type === 'quest_deleted'
+        || event.type === 'todo_updated'
+        || event.type === 'todo_deleted'
+      ) && (projectId == null || event.data.projectId === projectId)
+      const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
+      if (!shouldReloadData && !shouldReloadDomains) return
+
+      if (shouldReloadData) pendingDataReloadRef.current = true
+      if (shouldReloadDomains) pendingDomainReloadRef.current = true
+      if (reloadTimerRef.current) window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = window.setTimeout(() => {
+        const nextDataReload = pendingDataReloadRef.current
+        const nextDomainReload = pendingDomainReloadRef.current
+        pendingDataReloadRef.current = false
+        pendingDomainReloadRef.current = false
+
+        if (nextDataReload) setReloadTick((value) => value + 1)
+        if (nextDomainReload) void loadDomains()
+      }, 300)
+    },
+    {
+      onReconnect: () => {
+        pendingDataReloadRef.current = false
+        pendingDomainReloadRef.current = false
+        if (reloadTimerRef.current) {
+          window.clearTimeout(reloadTimerRef.current)
+          reloadTimerRef.current = null
+        }
+        void loadData()
+        void loadDomains()
+      },
+    },
+  )
+
+  const handleUpdateTodo = useCallback(async (todo: Todo, patch: UpdateTodoInput): Promise<boolean> => {
     const result = await api.updateTodo(todo.id, {
       title: patch.title,
       description: patch.description === undefined ? undefined : patch.description ?? null,
@@ -374,9 +597,9 @@ export function TodoPanel({
     await loadData()
     await onDataChanged?.()
     return true
-  }
+  }, [loadData, onDataChanged])
 
-  async function handleArchiveTodo(todo: Todo, deleted: boolean) {
+  const handleArchiveTodo = useCallback(async (todo: Todo, deleted: boolean) => {
     const result = await api.updateTodo(todo.id, { deleted })
     if (!result.ok) {
       setError(result.error)
@@ -384,9 +607,9 @@ export function TodoPanel({
     }
     await loadData()
     await onDataChanged?.()
-  }
+  }, [loadData, onDataChanged])
 
-  async function handleTriggerQuest(quest: Quest) {
+  const handleTriggerQuest = useCallback(async (quest: Quest) => {
     const result = await api.startQuestRun(quest.id, { trigger: 'manual', triggeredBy: 'human' })
     if (!result.ok) {
       setError(result.error)
@@ -394,9 +617,9 @@ export function TodoPanel({
     }
     await loadData()
     await onDataChanged?.()
-  }
+  }, [loadData, onDataChanged])
 
-  async function handleArchiveQuest(questId: string, archived: boolean) {
+  const handleArchiveQuest = useCallback(async (questId: string, archived: boolean) => {
     const allKnownTasks = [...tasks, ...archivedTasks, ...globalTasks, ...globalArchivedTasks]
     const unarchivedNavigationPool = [...tasks, ...globalTasks]
       .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
@@ -437,7 +660,7 @@ export function TodoPanel({
     }
     await loadData()
     await onDataChanged?.()
-  }
+  }, [activeQuestId, archivedTasks, globalArchivedTasks, globalTasks, loadData, navigate, onDataChanged, projectId, t, tasks])
 
   const sourceTab = scopeModes[scopeTab]
   const scopeData = useMemo(
@@ -560,7 +783,10 @@ export function TodoPanel({
   )
   const modalRoot = typeof document !== 'undefined' ? document.body : null
 
-  const questLinkState = taskOverlayState(location)
+  const questLinkState = useMemo(
+    () => taskOverlayState(location),
+    [location],
+  )
   const historySectionKey = `${scopeTab}:${sourceTab}`
   const historyExpanded = historyExpandedByView[historySectionKey] ?? false
   const historyDoneCount = useMemo(
@@ -662,156 +888,17 @@ export function TodoPanel({
     if (ok) setTodoEditOpen(false)
   }
 
-  function renderQuestItem(quest: Quest, archived = false) {
-    const isActive = activeQuestId === quest.id
-    const canTrigger = !archived && !quest.activeRunId && quest.enabled !== false
-    return (
-      <article
-        key={quest.id}
-        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}`}
-      >
-        <Link
-          className="pluse-sidebar-item-main pluse-task-list-main"
-          to={`/quests/${quest.id}`}
-          state={questLinkState}
-          onClick={() => onRequestClose?.()}
-        >
-          <div className="pluse-task-list-copy">
-            <div className="pluse-sidebar-item-title">
-              <span className="pluse-task-kind-badge" aria-label={t('AI 任务')} title={t('AI 任务')}>
-                <SparkIcon className="pluse-icon" />
-              </span>
-              <strong>{taskLabel(quest, t)}</strong>
-            </div>
-            <div className="pluse-task-list-meta" title={formatDateTime(quest.updatedAt, locale, t)}>
-              <span className={`pluse-task-list-state is-${quest.activeRunId ? 'running' : quest.status ?? 'pending'}`}>
-                {quest.activeRunId ? t('运行中') : taskStatusLabel(quest.status, t)}
-              </span>
-              <span className="pluse-task-list-dot" aria-hidden="true">·</span>
-              <span className="pluse-meta-inline">
-                <ClockIcon className="pluse-icon pluse-inline-icon" />
-                {formatSidebarTime(quest.updatedAt, t)}
-              </span>
-            </div>
-          </div>
-        </Link>
-        <div className="pluse-sidebar-item-actions">
-          {canTrigger ? (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn"
-              onClick={(event) => {
-                event.preventDefault()
-                void handleTriggerQuest(quest)
-              }}
-              aria-label={t('立即触发')}
-              title={t('立即触发')}
-            >
-              <PlayIcon className="pluse-icon" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="pluse-sidebar-action-btn"
-            onClick={(event) => {
-              event.preventDefault()
-              void handleArchiveQuest(quest.id, !archived)
-            }}
-            aria-label={archived ? t('恢复任务') : t('归档任务')}
-            title={archived ? t('恢复任务') : t('归档任务')}
-          >
-            <ArchiveIcon className="pluse-icon" />
-          </button>
-        </div>
-      </article>
-    )
-  }
+  const handleOpenTodo = useCallback((todoId: string) => {
+    setSelectedTodoId(todoId)
+  }, [])
 
-  function renderTodoItem(todo: Todo, archived = false) {
-    const hasSource = Boolean(todo.originQuestId)
-    const isActive = hasSource && todo.originQuestId === activeQuestId
-    const isDone = todo.status === 'done'
-    const isRecurring = todo.repeat !== 'none'
-    const canToggle = !archived && todo.status !== 'cancelled'
-    const scheduleSummary = formatTodoScheduleSummary(todo, locale, t)
-    return (
-      <article
-        key={todo.id}
-        className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-todo${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}${isDone ? ' is-done' : ''}`}
-      >
-        <button
-          type="button"
-          className={`pluse-todo-toggle${isDone ? ' is-done' : ''}`}
-          onClick={() => void handleUpdateTodo(todo, { status: isDone ? 'pending' : 'done' })}
-          aria-label={isDone ? t('恢复任务') : isRecurring ? t('完成本次') : t('完成任务')}
-          title={isDone ? t('恢复任务') : isRecurring ? t('完成本次') : t('完成任务')}
-          disabled={!canToggle}
-        >
-          {isDone ? <CheckIcon className="pluse-icon" /> : null}
-        </button>
-        <button
-          type="button"
-          className="pluse-task-list-main pluse-sidebar-item-main-button pluse-task-list-detail-trigger"
-          onClick={() => setSelectedTodoId(todo.id)}
-          aria-label={`${t('任务详情')} · ${todo.title}`}
-        >
-          <div className="pluse-task-list-copy">
-            <div className="pluse-sidebar-item-title">
-              {todo.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${todo.priority}`} aria-label={todo.priority} /> : null}
-              <strong>{todo.title}</strong>
-            </div>
-            <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
-              <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
-              <span className="pluse-task-list-dot" aria-hidden="true">·</span>
-              <span className="pluse-meta-inline">
-                <ClockIcon className="pluse-icon pluse-inline-icon" />
-                {formatSidebarTime(todo.updatedAt, t)}
-              </span>
-            </div>
-          </div>
-        </button>
-        <div className="pluse-sidebar-item-actions">
-          {todo.originQuestId ? (
-            <Link
-              className={`pluse-sidebar-action-btn pluse-task-source-link${isActive ? ' is-active' : ''}`}
-              to={`/quests/${todo.originQuestId}`}
-              onClick={() => {
-                setSelectedTodoId(null)
-                onRequestClose?.()
-              }}
-              aria-label={t('来源会话')}
-              title={t('来源会话')}
-            >
-              <RouteIcon className="pluse-icon" />
-            </Link>
-          ) : null}
-          {archived ? (
-            <button
-              type="button"
-              className="pluse-sidebar-action-btn"
-              onClick={() => void handleArchiveTodo(todo, false)}
-              aria-label={t('恢复任务')}
-              title={t('恢复任务')}
-            >
-              <ArchiveIcon className="pluse-icon" />
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="pluse-sidebar-action-btn"
-                onClick={() => void handleArchiveTodo(todo, true)}
-                aria-label={t('归档任务')}
-                title={t('归档任务')}
-              >
-                <ArchiveIcon className="pluse-icon" />
-              </button>
-            </>
-          )}
-        </div>
-      </article>
-    )
-  }
+  const handleToggleTodoStatus = useCallback((todo: Todo, nextStatus: Todo['status']) => {
+    void handleUpdateTodo(todo, { status: nextStatus })
+  }, [handleUpdateTodo])
+
+  const handleOpenTodoSource = useCallback(() => {
+    setSelectedTodoId(null)
+  }, [])
 
   return (
     <>
@@ -898,8 +985,35 @@ export function TodoPanel({
             <div className="pluse-note-list pluse-task-stream">
               {activeItems.map((item) => (
                 item.entityType === 'todo'
-                  ? renderTodoItem(item.todo, item.archived)
-                  : renderQuestItem(item.quest, item.archived)
+                  ? (
+                      <TodoRailItem
+                        key={item.todo.id}
+                        todo={item.todo}
+                        archived={item.archived}
+                        activeQuestId={activeQuestId}
+                        locale={locale}
+                        t={t}
+                        onOpenTodo={handleOpenTodo}
+                        onToggleTodoStatus={handleToggleTodoStatus}
+                        onArchiveTodo={handleArchiveTodo}
+                        onOpenTodoSource={handleOpenTodoSource}
+                        onRequestClose={onRequestClose}
+                      />
+                    )
+                  : (
+                      <QuestRailItem
+                        key={item.quest.id}
+                        quest={item.quest}
+                        archived={item.archived}
+                        activeQuestId={activeQuestId}
+                        locale={locale}
+                        t={t}
+                        questLinkState={questLinkState}
+                        onRequestClose={onRequestClose}
+                        onTriggerQuest={handleTriggerQuest}
+                        onArchiveQuest={handleArchiveQuest}
+                      />
+                    )
               ))}
             </div>
           ) : null}
@@ -926,8 +1040,35 @@ export function TodoPanel({
                 <div className="pluse-note-list pluse-task-history-list">
                   {historyItems.map((item) => (
                     item.entityType === 'todo'
-                      ? renderTodoItem(item.todo, item.archived)
-                      : renderQuestItem(item.quest, item.archived)
+                      ? (
+                          <TodoRailItem
+                            key={item.todo.id}
+                            todo={item.todo}
+                            archived={item.archived}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            onOpenTodo={handleOpenTodo}
+                            onToggleTodoStatus={handleToggleTodoStatus}
+                            onArchiveTodo={handleArchiveTodo}
+                            onOpenTodoSource={handleOpenTodoSource}
+                            onRequestClose={onRequestClose}
+                          />
+                        )
+                      : (
+                          <QuestRailItem
+                            key={item.quest.id}
+                            quest={item.quest}
+                            archived={item.archived}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            questLinkState={questLinkState}
+                            onRequestClose={onRequestClose}
+                            onTriggerQuest={handleTriggerQuest}
+                            onArchiveQuest={handleArchiveQuest}
+                          />
+                        )
                   ))}
                 </div>
               ) : null}
@@ -960,8 +1101,35 @@ export function TodoPanel({
                 <div className="pluse-note-list" style={{ marginTop: 8 }}>
                   {visibleArchivedItems.map((item) => (
                     item.entityType === 'todo'
-                      ? renderTodoItem(item.todo, item.archived)
-                      : renderQuestItem(item.quest, item.archived)
+                      ? (
+                          <TodoRailItem
+                            key={item.todo.id}
+                            todo={item.todo}
+                            archived={item.archived}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            onOpenTodo={handleOpenTodo}
+                            onToggleTodoStatus={handleToggleTodoStatus}
+                            onArchiveTodo={handleArchiveTodo}
+                            onOpenTodoSource={handleOpenTodoSource}
+                            onRequestClose={onRequestClose}
+                          />
+                        )
+                      : (
+                          <QuestRailItem
+                            key={item.quest.id}
+                            quest={item.quest}
+                            archived={item.archived}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            questLinkState={questLinkState}
+                            onRequestClose={onRequestClose}
+                            onTriggerQuest={handleTriggerQuest}
+                            onArchiveQuest={handleArchiveQuest}
+                          />
+                        )
                   ))}
                 </div>
               ) : null}

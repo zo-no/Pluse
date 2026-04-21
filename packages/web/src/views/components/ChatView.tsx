@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { MessageAttachment, Quest, QuestEvent, QueuedMessage, Run, RuntimeModelCatalog, RuntimeTool, UpdateQuestInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
+import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displaySessionName } from '@/views/utils/display'
 import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
-import { parseSseMessage } from '@/views/utils/sse'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -372,6 +372,14 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   const eventCountRef = useRef(0)
   const isAtBottomRef = useRef(true)
   const [showScrollBottom, setShowScrollBottom] = useState(false)
+  const questRequestSeqRef = useRef(0)
+  const threadRequestSeqRef = useRef(0)
+  const pendingQuestRefreshRef = useRef(false)
+  const pendingThreadRefreshRef = useRef(false)
+  const pendingProjectRefreshRef = useRef(false)
+  const emitQuestLoaded = useEffectEvent((nextQuest: Quest) => {
+    onQuestLoaded?.(nextQuest)
+  })
 
   const MAX_ATTACHMENTS = 4
   const MAX_FILE_SIZE = 20 * 1024 * 1024
@@ -434,21 +442,27 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     return 'FILE'
   }
 
-  async function refreshQuest() {
+  const refreshQuest = useCallback(async () => {
+    const requestId = questRequestSeqRef.current + 1
+    questRequestSeqRef.current = requestId
     const result = await api.getQuest(questId)
+    if (requestId !== questRequestSeqRef.current) return
     if (!result.ok) {
       setError(result.error)
       return
     }
     setQuest(result.data)
-    onQuestLoaded?.(result.data)
-  }
+    emitQuestLoaded(result.data)
+  }, [questId])
 
-  async function refreshThread(scrollToEnd = false) {
+  const refreshThread = useCallback(async (scrollToEnd = false) => {
+    const requestId = threadRequestSeqRef.current + 1
+    threadRequestSeqRef.current = requestId
     const [eventsResult, runsResult] = await Promise.all([
       api.getQuestEvents(questId),
       api.getQuestRuns(questId),
     ])
+    if (requestId !== threadRequestSeqRef.current) return
     if (eventsResult.ok) setEvents(eventsResult.data.items)
     if (runsResult.ok) setRuns(runsResult.data)
     if (scrollToEnd) {
@@ -456,7 +470,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
         bottomRef.current?.scrollIntoView({ behavior: 'instant' })
       })
     }
-  }
+  }, [questId])
 
   useEffect(() => {
     setQuest(null)
@@ -464,7 +478,18 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     setRuns([])
     void refreshQuest()
     void refreshThread(true)
-  }, [questId])
+    return () => {
+      questRequestSeqRef.current += 1
+      threadRequestSeqRef.current += 1
+      pendingQuestRefreshRef.current = false
+      pendingThreadRefreshRef.current = false
+      pendingProjectRefreshRef.current = false
+      if (reloadTimer.current) {
+        window.clearTimeout(reloadTimer.current)
+        reloadTimer.current = null
+      }
+    }
+  }, [questId, refreshQuest, refreshThread])
 
   useEffect(() => {
     eventCountRef.current = 0
@@ -535,49 +560,60 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     })
   }, [catalog])
 
-  useEffect(() => {
-    const source = new EventSource(`/api/events?questId=${encodeURIComponent(questId)}`)
-    let pendingQuestRefresh = false
-    let pendingThreadRefresh = false
-    let pendingProjectRefresh = false
-
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
+  useSseEvent(
+    (event) => {
+      if (
+        (event.type === 'quest_updated'
+          || event.type === 'run_updated'
+          || event.type === 'run_line')
+        && event.data.questId !== questId
+      ) return
 
       if (event.type === 'quest_updated') {
-        pendingQuestRefresh = true
-        pendingProjectRefresh = true
+        pendingQuestRefreshRef.current = true
+        pendingProjectRefreshRef.current = true
       }
       if (event.type === 'run_updated') {
-        pendingQuestRefresh = true
-        pendingThreadRefresh = true
+        pendingQuestRefreshRef.current = true
+        pendingThreadRefreshRef.current = true
       }
       if (event.type === 'run_line') {
-        pendingThreadRefresh = true
+        pendingThreadRefreshRef.current = true
       }
-      if (!pendingQuestRefresh && !pendingThreadRefresh && !pendingProjectRefresh) return
+      if (
+        !pendingQuestRefreshRef.current
+        && !pendingThreadRefreshRef.current
+        && !pendingProjectRefreshRef.current
+      ) return
 
       if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
       reloadTimer.current = window.setTimeout(() => {
-        const shouldRefreshQuest = pendingQuestRefresh
-        const shouldRefreshThread = pendingThreadRefresh
-        const shouldRefreshProject = pendingProjectRefresh
-
-        pendingQuestRefresh = false
-        pendingThreadRefresh = false
-        pendingProjectRefresh = false
+        const shouldRefreshQuest = pendingQuestRefreshRef.current
+        const shouldRefreshThread = pendingThreadRefreshRef.current
+        const shouldRefreshProject = pendingProjectRefreshRef.current
+        pendingQuestRefreshRef.current = false
+        pendingThreadRefreshRef.current = false
+        pendingProjectRefreshRef.current = false
 
         if (shouldRefreshQuest) void refreshQuest()
         if (shouldRefreshThread) void refreshThread()
         if (shouldRefreshProject) void onDataChanged?.()
       }, 200)
-    }
-    return () => {
-      source.close()
-      if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
-    }
-  }, [questId, onDataChanged])
+    },
+    {
+      onReconnect: () => {
+        pendingQuestRefreshRef.current = false
+        pendingThreadRefreshRef.current = false
+        pendingProjectRefreshRef.current = false
+        if (reloadTimer.current) {
+          window.clearTimeout(reloadTimer.current)
+          reloadTimer.current = null
+        }
+        void refreshQuest()
+        void refreshThread()
+      },
+    },
+  )
 
   useEffect(() => {
     if (!error) return

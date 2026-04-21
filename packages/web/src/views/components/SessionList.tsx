@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Domain, Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
+import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayQuestName } from '@/views/utils/display'
-import { parseSseMessage } from '@/views/utils/sse'
 import { DomainSidebar } from './DomainSidebar'
 import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon } from './icons'
 
@@ -66,6 +66,87 @@ function projectDomainName(project: Project, domains: Domain[], t: (key: string,
   return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
 }
 
+const QuestItem = memo(function QuestItem({
+  quest,
+  archived,
+  active,
+  locale,
+  presenceState,
+  t,
+  onNavigate,
+  onStartRename,
+  onTogglePin,
+  onToggleArchive,
+}: {
+  quest: Quest
+  archived: boolean
+  active: boolean
+  locale: string
+  presenceState: 'running' | 'complete' | null
+  t: (key: string, values?: Record<string, string | number>) => string
+  onNavigate?: () => void
+  onStartRename: (quest: Quest) => void
+  onTogglePin: (questId: string, pinned: boolean) => void
+  onToggleArchive: (questId: string, archived: boolean) => void
+}) {
+  return (
+    <div
+      className={`pluse-sidebar-item pluse-sidebar-row${active ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}${quest.unread ? ' is-unread' : ''}${quest.pinned && !archived ? ' is-pinned' : ''}`}
+    >
+      <Link
+        className="pluse-sidebar-item-main"
+        to={`/quests/${quest.id}`}
+        onClick={onNavigate}
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          onStartRename(quest)
+        }}
+      >
+        <div className="pluse-sidebar-item-title">
+          {presenceState ? (
+            <span className={`pluse-sidebar-presence-dot is-${presenceState}`} aria-hidden="true" />
+          ) : null}
+          <strong>{displayQuestName(quest, t)}</strong>
+        </div>
+        <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
+          <span className="pluse-meta-inline">
+            <ClockIcon className="pluse-icon pluse-inline-icon" />
+            {formatSidebarTime(quest.updatedAt, t)}
+          </span>
+        </div>
+      </Link>
+      <div className="pluse-sidebar-item-actions">
+        {!archived ? (
+          <button
+            type="button"
+            className={`pluse-sidebar-action-btn${quest.pinned ? ' is-active' : ''}`}
+            onClick={(event) => {
+              event.preventDefault()
+              onTogglePin(quest.id, !quest.pinned)
+            }}
+            aria-label={quest.pinned ? t('取消固定') : t('固定')}
+            title={quest.pinned ? t('取消固定') : t('固定')}
+          >
+            <PinIcon className="pluse-icon" />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="pluse-sidebar-action-btn"
+          onClick={(event) => {
+            event.preventDefault()
+            onToggleArchive(quest.id, !archived)
+          }}
+          aria-label={archived ? t('恢复') : t('归档')}
+          title={archived ? t('恢复') : t('归档')}
+        >
+          <ArchiveIcon className="pluse-icon" />
+        </button>
+      </div>
+    </div>
+  )
+})
+
 export function SessionList({
   projects,
   activeProjectId,
@@ -95,6 +176,9 @@ export function SessionList({
   const [error, setError] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
+  const reloadTimerRef = useRef<number | null>(null)
+  const pendingQuestReloadRef = useRef(false)
+  const pendingDomainReloadRef = useRef(false)
 
   const activeProject = useMemo(
     () => projects.find((project) => project.id === activeProjectId) ?? null,
@@ -150,43 +234,59 @@ export function SessionList({
   }, [loadDomains])
 
   useEffect(() => {
-    if (!activeProjectId) return
-    const source = new EventSource(`/api/events?projectId=${encodeURIComponent(activeProjectId)}`)
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-      if (event.type !== 'quest_updated' && event.type !== 'quest_deleted') return
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
-        void loadQuests()
-      }, 120)
-    }
-    source.onerror = () => source.close()
     return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
+      if (reloadTimerRef.current) {
+        window.clearTimeout(reloadTimerRef.current)
+        reloadTimerRef.current = null
+      }
+      pendingQuestReloadRef.current = false
+      pendingDomainReloadRef.current = false
     }
-  }, [activeProjectId, loadQuests])
+  }, [])
 
   useEffect(() => {
-    const source = new EventSource('/api/events')
-    let reloadTimer: number | null = null
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
-      if (event.type !== 'domain_updated' && event.type !== 'domain_deleted') return
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-      reloadTimer = window.setTimeout(() => {
+    pendingQuestReloadRef.current = false
+    pendingDomainReloadRef.current = false
+    if (reloadTimerRef.current) {
+      window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = null
+    }
+  }, [activeProjectId])
+
+  useSseEvent(
+    (event) => {
+      const shouldReloadQuests = activeProjectId != null
+        && (event.type === 'quest_updated' || event.type === 'quest_deleted')
+        && event.data.projectId === activeProjectId
+      const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
+      if (!shouldReloadQuests && !shouldReloadDomains) return
+
+      if (shouldReloadQuests) pendingQuestReloadRef.current = true
+      if (shouldReloadDomains) pendingDomainReloadRef.current = true
+      if (reloadTimerRef.current) window.clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = window.setTimeout(() => {
+        const nextQuestReload = pendingQuestReloadRef.current
+        const nextDomainReload = pendingDomainReloadRef.current
+        pendingQuestReloadRef.current = false
+        pendingDomainReloadRef.current = false
+
+        if (nextQuestReload) void loadQuests()
+        if (nextDomainReload) void loadDomains()
+      }, 300)
+    },
+    {
+      onReconnect: () => {
+        pendingQuestReloadRef.current = false
+        pendingDomainReloadRef.current = false
+        if (reloadTimerRef.current) {
+          window.clearTimeout(reloadTimerRef.current)
+          reloadTimerRef.current = null
+        }
+        void loadQuests()
         void loadDomains()
-      }, 120)
-    }
-    source.onerror = () => source.close()
-    return () => {
-      source.close()
-      if (reloadTimer) window.clearTimeout(reloadTimer)
-    }
-  }, [loadDomains])
+      },
+    },
+  )
 
   useEffect(() => {
     if (renamingId && renameInputRef.current) {
@@ -194,6 +294,11 @@ export function SessionList({
       renameInputRef.current.select()
     }
   }, [renamingId])
+
+  const handleStartRename = useCallback((quest: Quest) => {
+    setRenamingId(quest.id)
+    setRenameValue(displayQuestName(quest, t))
+  }, [t])
 
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
@@ -270,7 +375,7 @@ export function SessionList({
     navigate(`/quests/${result.data.id}`)
   }
 
-  async function handleRename(questId: string, nextName: string) {
+  const handleRename = useCallback(async (questId: string, nextName: string) => {
     setRenamingId(null)
     const quest = knownQuests.find((item) => item.id === questId)
     if (!quest || !nextName.trim()) return
@@ -283,18 +388,18 @@ export function SessionList({
     }
     await loadQuests()
     await onOverviewChanged?.(activeProjectId ?? undefined)
-  }
+  }, [activeProjectId, knownQuests, loadQuests, onOverviewChanged])
 
-  async function handlePin(questId: string, pinned: boolean) {
+  const handlePin = useCallback(async (questId: string, pinned: boolean) => {
     const result = await api.updateQuest(questId, { pinned })
     if (!result.ok) {
       setError(result.error)
       return
     }
     await loadQuests()
-  }
+  }, [loadQuests])
 
-  async function handleArchive(questId: string, deleted: boolean) {
+  const handleArchive = useCallback(async (questId: string, deleted: boolean) => {
     const quest = knownQuests.find((item) => item.id === questId)
     if (deleted && quest?.activeRunId) {
       const confirmed = window.confirm(t('正在执行中，归档会先取消当前执行。继续吗？'))
@@ -332,7 +437,15 @@ export function SessionList({
     }
     await loadQuests()
     await onOverviewChanged?.(activeProjectId ?? undefined)
-  }
+  }, [activeProjectId, activeQuestId, knownQuests, loadQuests, navigate, nextSessionIdAfterDelete, onOverviewChanged, t])
+
+  const handleTogglePin = useCallback((questId: string, pinned: boolean) => {
+    void handlePin(questId, pinned)
+  }, [handlePin])
+
+  const handleToggleArchive = useCallback((questId: string, archived: boolean) => {
+    void handleArchive(questId, archived)
+  }, [handleArchive])
 
   const filteredSessions = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase()
@@ -376,62 +489,19 @@ export function SessionList({
     }
 
     return (
-      <div
+      <QuestItem
         key={quest.id}
-        className={`pluse-sidebar-item pluse-sidebar-row${quest.id === activeQuestId ? ' is-active' : ''}${archived ? ' pluse-sidebar-archived-item' : ''}${quest.unread ? ' is-unread' : ''}${quest.pinned && !archived ? ' is-pinned' : ''}`}
-      >
-        <Link
-          className="pluse-sidebar-item-main"
-          to={`/quests/${quest.id}`}
-          onClick={onNavigate}
-          onDoubleClick={(event) => {
-            event.preventDefault()
-            setRenamingId(quest.id)
-            setRenameValue(displayQuestName(quest, t))
-          }}
-        >
-          <div className="pluse-sidebar-item-title">
-            {presenceState ? (
-              <span className={`pluse-sidebar-presence-dot is-${presenceState}`} aria-hidden="true" />
-            ) : null}
-            <strong>{displayQuestName(quest, t)}</strong>
-          </div>
-          <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
-            <span className="pluse-meta-inline">
-              <ClockIcon className="pluse-icon pluse-inline-icon" />
-              {formatSidebarTime(quest.updatedAt, t)}
-            </span>
-          </div>
-        </Link>
-        <div className="pluse-sidebar-item-actions">
-          {!archived ? (
-            <button
-              type="button"
-              className={`pluse-sidebar-action-btn${quest.pinned ? ' is-active' : ''}`}
-              onClick={(event) => {
-                event.preventDefault()
-                void handlePin(quest.id, !quest.pinned)
-              }}
-              aria-label={quest.pinned ? t('取消固定') : t('固定')}
-              title={quest.pinned ? t('取消固定') : t('固定')}
-            >
-              <PinIcon className="pluse-icon" />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="pluse-sidebar-action-btn"
-            onClick={(event) => {
-              event.preventDefault()
-              void handleArchive(quest.id, !archived)
-            }}
-            aria-label={archived ? t('恢复') : t('归档')}
-            title={archived ? t('恢复') : t('归档')}
-          >
-            <ArchiveIcon className="pluse-icon" />
-          </button>
-        </div>
-      </div>
+        quest={quest}
+        archived={archived}
+        active={quest.id === activeQuestId}
+        locale={locale}
+        presenceState={presenceState}
+        t={t}
+        onNavigate={onNavigate}
+        onStartRename={handleStartRename}
+        onTogglePin={handleTogglePin}
+        onToggleArchive={handleToggleArchive}
+      />
     )
   }
 

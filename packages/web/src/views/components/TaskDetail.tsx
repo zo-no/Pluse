@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
 import type { Quest, QuestOp, Run, RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
+import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displaySessionName, displayTaskName } from '@/views/utils/display'
 import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
-import { parseSseMessage } from '@/views/utils/sse'
 import { ArchiveIcon, CloseIcon, ConvertIcon, PlayIcon, PlusIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -357,13 +357,22 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     cron: '',
   })
   const reloadTimer = useRef<number | null>(null)
+  const loadRequestSeqRef = useRef(0)
+  const pendingReloadRef = useRef(false)
+  const pendingProjectRefreshRef = useRef(false)
+  const emitQuestLoaded = useEffectEvent((nextQuest: Quest) => {
+    onQuestLoaded?.(nextQuest)
+  })
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
+    const requestId = loadRequestSeqRef.current + 1
+    loadRequestSeqRef.current = requestId
     const [questResult, runsResult, opsResult] = await Promise.all([
       api.getQuest(questId),
       api.getQuestRuns(questId),
       api.getQuestOps(questId),
     ])
+    if (requestId !== loadRequestSeqRef.current) return
     if (!questResult.ok) {
       setError(questResult.error)
       return
@@ -377,7 +386,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       : nextQuest.executorOptions?.timeout
 
     setQuest(nextQuest)
-    onQuestLoaded?.(nextQuest)
+    emitQuestLoaded(nextQuest)
     setRuns(runsResult.ok ? runsResult.data : [])
     setOps(opsResult.ok ? opsResult.data : [])
     setForm({
@@ -404,14 +413,23 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
       cron: recurringSchedule.customCron,
     })
     setError(null)
-  }
+  }, [questId, t])
 
   useEffect(() => {
     setQuest(null)
     setRuns([])
     setOps([])
     void loadData()
-  }, [questId])
+    return () => {
+      loadRequestSeqRef.current += 1
+      pendingReloadRef.current = false
+      pendingProjectRefreshRef.current = false
+      if (reloadTimer.current) {
+        window.clearTimeout(reloadTimer.current)
+        reloadTimer.current = null
+      }
+    }
+  }, [loadData, questId])
 
   useEffect(() => {
     void api.getRuntimeTools().then((result) => {
@@ -426,39 +444,44 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
     })
   }, [form.tool])
 
-  useEffect(() => {
-    const source = new EventSource(`/api/events?questId=${encodeURIComponent(questId)}`)
-    let pendingReload = false
-    let pendingProjectRefresh = false
+  useSseEvent(
+    (event) => {
+      if (
+        (event.type === 'quest_updated' || event.type === 'run_updated')
+        && event.data.questId !== questId
+      ) return
 
-    source.onmessage = (message) => {
-      const event = parseSseMessage(message.data)
-      if (!event) return
       if (event.type === 'quest_updated') {
-        pendingReload = true
-        pendingProjectRefresh = true
+        pendingReloadRef.current = true
+        pendingProjectRefreshRef.current = true
       }
       if (event.type === 'run_updated') {
-        pendingReload = true
+        pendingReloadRef.current = true
       }
-      if (!pendingReload) return
+      if (!pendingReloadRef.current) return
 
       if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
       reloadTimer.current = window.setTimeout(() => {
-        const shouldRefreshProject = pendingProjectRefresh
-
-        pendingReload = false
-        pendingProjectRefresh = false
+        const shouldRefreshProject = pendingProjectRefreshRef.current
+        pendingReloadRef.current = false
+        pendingProjectRefreshRef.current = false
 
         void loadData()
         if (shouldRefreshProject) void onDataChanged?.()
       }, 200)
-    }
-    return () => {
-      source.close()
-      if (reloadTimer.current) window.clearTimeout(reloadTimer.current)
-    }
-  }, [questId, onDataChanged])
+    },
+    {
+      onReconnect: () => {
+        pendingReloadRef.current = false
+        pendingProjectRefreshRef.current = false
+        if (reloadTimer.current) {
+          window.clearTimeout(reloadTimer.current)
+          reloadTimer.current = null
+        }
+        void loadData()
+      },
+    },
+  )
 
   const effortOptions = useMemo(() => catalog?.effortLevels ?? [], [catalog])
   const toolOptions = useMemo<Array<SegmentedOption<string>>>(
