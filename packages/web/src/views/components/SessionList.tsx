@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Domain, Project, Quest } from '@pluse/types'
 import * as api from '@/api/client'
@@ -415,6 +416,7 @@ export function SessionList({
   }
 
   return (
+    <>
     <aside className="pluse-sidebar" ref={sidebarRef}>
       <div className="pluse-mobile-panel-header">
         <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭侧栏')} title={t('关闭侧栏')}>
@@ -537,66 +539,69 @@ export function SessionList({
         {error ? <p className="pluse-error" style={{ padding: '0 8px 8px' }}>{error}</p> : null}
       </div>
 
-      {/* 新建项目 Modal */}
-      {newProjectModalOpen ? (
-        <div className="pluse-modal-backdrop" onClick={() => setNewProjectModalOpen(false)}>
-          <section
-            className="pluse-modal-panel pluse-new-project-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2>{t('新建项目')}</h2>
-            <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
-              <input
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-                placeholder={t('项目名称（可选）')}
-                autoFocus
-              />
-              <input
-                value={projectDir}
-                onChange={(event) => setProjectDir(event.target.value)}
-                placeholder={t('工作目录，如 ~/projects/xxx')}
-                required
-              />
-              <textarea
-                value={projectGoal}
-                onChange={(event) => setProjectGoal(event.target.value)}
-                placeholder={t('项目目标（可选）')}
-                rows={2}
-              />
-              <label>
-                <span className="pluse-form-label">{t('领域')}</span>
-                <select value={projectDomainId} onChange={(event) => setProjectDomainId(event.target.value)}>
-                  <option value="">{t('未分组')}</option>
-                  {domains.map((domain) => (
-                    <option key={domain.id} value={domain.id}>{domain.name}</option>
-                  ))}
-                </select>
-              </label>
-              {error ? <p className="pluse-error">{error}</p> : null}
-              <div className="pluse-domain-form-actions">
-                <button type="submit" className="pluse-button">
-                  {t('创建')}
-                </button>
-                <button
-                  type="button"
-                  className="pluse-button pluse-button-ghost"
-                  onClick={() => {
-                    setNewProjectModalOpen(false)
-                    setProjectName('')
-                    setProjectDir('')
-                    setProjectGoal('')
-                    setProjectDomainId('')
-                    setError(null)
-                  }}
-                >
-                  {t('取消')}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
     </aside>
+
+    {/* 新建项目 Modal — 全局弹窗，渲染到 body */}
+    {newProjectModalOpen ? createPortal(
+      <div className="pluse-modal-backdrop" onClick={() => setNewProjectModalOpen(false)}>
+        <section
+          className="pluse-modal-panel pluse-new-project-modal"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2>{t('新建项目')}</h2>
+          <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
+            <input
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              placeholder={t('项目名称（可选）')}
+              autoFocus
+            />
+            <input
+              value={projectDir}
+              onChange={(event) => setProjectDir(event.target.value)}
+              placeholder={t('工作目录，如 ~/projects/xxx')}
+              required
+            />
+            <textarea
+              value={projectGoal}
+              onChange={(event) => setProjectGoal(event.target.value)}
+              placeholder={t('项目目标（可选）')}
+              rows={2}
+            />
+            <label>
+              <span className="pluse-form-label">{t('领域')}</span>
+              <select value={projectDomainId} onChange={(event) => setProjectDomainId(event.target.value)}>
+                <option value="">{t('未分组')}</option>
+                {domains.map((domain) => (
+                  <option key={domain.id} value={domain.id}>{domain.name}</option>
+                ))}
+              </select>
+            </label>
+            {error ? <p className="pluse-error">{error}</p> : null}
+            <div className="pluse-domain-form-actions">
+              <button type="submit" className="pluse-button">
+                {t('创建')}
+              </button>
+              <button
+                type="button"
+                className="pluse-button pluse-button-ghost"
+                onClick={() => {
+                  setNewProjectModalOpen(false)
+                  setProjectName('')
+                  setProjectDir('')
+                  setProjectGoal('')
+                  setProjectDomainId('')
+                  setError(null)
+                }}
+              >
+                {t('取消')}
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>,
+      document.body,
+    ) : null}
+    </>
   )
 }
