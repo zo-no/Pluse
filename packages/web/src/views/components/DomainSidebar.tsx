@@ -172,10 +172,11 @@ export function DomainSidebar({
           className="pluse-sidebar-item-main"
           onClick={() => openProject(project.id)}
         >
-          <span className="pluse-sidebar-dot" aria-hidden="true" />
-          <div className="pluse-project-picker-item-text">
-            <strong>{project.name}</strong>
-            <span>{project.workDir.replace(/^\/Users\/[^/]+/, '~')}</span>
+          <div>
+            <div className="pluse-sidebar-item-title">
+              <strong>{project.name}</strong>
+            </div>
+            <p>{project.workDir.replace(/^\/Users\/[^/]+/, '~')}</p>
           </div>
         </button>
         <div className="pluse-sidebar-item-actions">
