@@ -7,6 +7,7 @@ import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, Slider
 import { SessionList } from '@/views/components/SessionList'
 import { TodoPanel } from '@/views/components/TodoPanel'
 import { displayQuestName } from '@/views/utils/display'
+import { getPreferredSessionId, rememberLastSession } from '@/views/utils/session-selection'
 import { formatTodoScheduleSummary } from '@/views/utils/todo'
 import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
@@ -1051,7 +1052,10 @@ function Shell({
     })
 
     if (locationPathRef.current === '/' && result.data[0]) {
-      navigate(`/projects/${result.data[0].id}`, { replace: true })
+      const projectId = result.data[0].id
+      const questId = await getPreferredSessionId(projectId)
+      if (locationPathRef.current !== '/') return
+      navigate(questId ? `/quests/${questId}` : `/projects/${projectId}`, { replace: true })
     }
   }, [navigate])
 
@@ -1072,6 +1076,9 @@ function Shell({
   const handleQuestResolved = useCallback((quest: Quest) => {
     setActiveProjectId(quest.projectId)
     setActiveQuest(quest)
+    if (quest.kind === 'session') {
+      rememberLastSession(quest.projectId, quest.id)
+    }
   }, [])
 
   const handleProjectSelected = useCallback((projectId: string) => {
@@ -1168,8 +1175,13 @@ function Shell({
         }}
         onOpenSettings={() => navigate('/settings')}
         onOpenWorkspace={() => {
-          if (activeProjectId) navigate(`/projects/${activeProjectId}`)
-          else navigate('/')
+          if (!activeProjectId) {
+            navigate('/')
+            return
+          }
+          void getPreferredSessionId(activeProjectId).then((questId) => {
+            navigate(questId ? `/quests/${questId}` : `/projects/${activeProjectId}`)
+          })
         }}
       />
 
@@ -1210,7 +1222,7 @@ function Shell({
         <main className="pluse-main-shell">
           <div className="pluse-main">
             <Routes location={backgroundLocation || location}>
-              <Route path="/" element={<Navigate to={projects[0] ? `/projects/${projects[0].id}` : '/login'} replace />} />
+              <Route path="/" element={<RouteLoading message={t('正在加载项目…')} />} />
               <Route
                 path="/projects/:projectId"
                 element={

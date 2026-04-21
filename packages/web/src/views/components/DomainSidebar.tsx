@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { Domain, Project } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
+import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { PlusIcon, SettingsIcon, SlidersIcon, TrashIcon } from './icons'
 
 interface DomainSidebarProps {
@@ -97,9 +98,9 @@ export function DomainSidebar({
   async function openProjectFirstSession(projectId: string): Promise<void> {
     onSelectProject(projectId)
     onNavigate?.()
-    const result = await api.getQuests({ projectId, kind: 'session', deleted: false })
-    if (result.ok && result.data.length > 0) {
-      navigate(`/quests/${result.data[0]!.id}`)
+    const questId = await getPreferredSessionId(projectId)
+    if (questId) {
+      navigate(`/quests/${questId}`)
       return
     }
     navigate(`/projects/${projectId}`)

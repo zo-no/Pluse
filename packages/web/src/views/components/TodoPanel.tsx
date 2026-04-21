@@ -6,6 +6,7 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayTaskName } from '@/views/utils/display'
+import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
 import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
@@ -859,9 +860,9 @@ export function TodoPanel({
     onSelectProject?.(nextProjectId)
     setProjectPickerOpen(false)
     onRequestClose?.()
-    const result = await api.getQuests({ projectId: nextProjectId, kind: 'session', deleted: false })
-    if (result.ok && result.data.length > 0) {
-      navigate(`/quests/${result.data[0]!.id}`)
+    const questId = await getPreferredSessionId(nextProjectId)
+    if (questId) {
+      navigate(`/quests/${questId}`)
       return
     }
     navigate(`/projects/${nextProjectId}`)

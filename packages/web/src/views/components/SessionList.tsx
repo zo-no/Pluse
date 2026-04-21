@@ -6,6 +6,7 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayQuestName } from '@/views/utils/display'
+import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { DomainSidebar } from './DomainSidebar'
 import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon } from './icons'
 
@@ -162,7 +163,7 @@ export function SessionList({
   const [sessions, setSessions] = useState<Quest[]>([])
   const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('domains')
+  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('sessions')
   const [domains, setDomains] = useState<Domain[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
@@ -331,9 +332,9 @@ export function SessionList({
     onSelectProject(projectId)
     setProjectPickerOpen(false)
     onNavigate?.()
-    const result = await api.getQuests({ projectId, kind: 'session', deleted: false })
-    if (result.ok && result.data.length > 0) {
-      navigate(`/quests/${result.data[0]!.id}`)
+    const questId = await getPreferredSessionId(projectId)
+    if (questId) {
+      navigate(`/quests/${questId}`)
       return
     }
     navigate(`/projects/${projectId}`)
