@@ -39,7 +39,7 @@ import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/sys
 import { createTodoWithEffects } from '../services/todos'
 import { runHooks } from '../services/hooks'
 import { getManagedCodexHome } from '../support/paths'
-import { getRuntimeModelCatalog, normalizeCodexModelId } from './catalog'
+import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from './catalog'
 
 type ToolName = 'codex' | 'claude'
 type ProviderEvent = Omit<QuestEvent, 'seq'>
@@ -267,8 +267,8 @@ function resolveTool(tool?: string | null): ToolName {
 
 function resolveModel(tool: ToolName, requested?: string | null): string {
   const next = requested?.trim()
-  if (next) return tool === 'codex' ? normalizeCodexModelId(next) : next
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet' : 'gpt-5.3-codex-spark')
+  if (next) return tool === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
+  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet[1m]' : 'gpt-5.3-codex-spark')
 }
 
 function resolveToolCommand(tool: ToolName): string {
@@ -778,9 +778,11 @@ async function maybeAutoRenameQuest(questId: string, snapshot: AutoRenameSnapsho
 
   const fallbackName = snapshot?.fallbackSource ? fallbackQuestName(snapshot.fallbackSource) : ''
   const generatedName = snapshot ? await generateQuestNameWithProvider(quest, snapshot) : null
+  const freshQuest = getQuest(questId)
+  if (!freshQuest || freshQuest.kind !== 'session' || !freshQuest.autoRenamePending) return
 
   updateQuest(questId, {
-    name: generatedName ?? (fallbackName || quest.name),
+    name: generatedName ?? (fallbackName || freshQuest.name),
     autoRenamePending: false,
   })
   emitQuestUpdated(questId)
@@ -1262,17 +1264,23 @@ export function submitQuestMessage(input: SubmitQuestMessageInput): SubmitQuestM
 
   const recordedText = buildRecordedUserText(input)
   const aiPromptText = buildAttachmentPrompt(input)
+  const nextTool = input.tool ? resolveTool(input.tool) : resolveTool(initialQuest.tool)
+  const nextModel = input.model === undefined
+    ? initialQuest.model ?? null
+    : input.model === null
+      ? null
+      : resolveModel(nextTool, input.model)
 
   const updatedQuest = updateQuest(initialQuest.id, {
-    tool: input.tool ? resolveTool(input.tool) : initialQuest.tool ?? null,
-    model: input.model !== undefined ? input.model : initialQuest.model ?? null,
+    tool: input.tool ? nextTool : initialQuest.tool ?? null,
+    model: nextModel,
     effort: input.effort !== undefined ? input.effort : initialQuest.effort ?? null,
     thinking: input.thinking !== undefined ? input.thinking : initialQuest.thinking === true,
   })
 
   const runtime = questRuntimePreferences(updatedQuest, {
-    tool: input.tool ? resolveTool(input.tool) : undefined,
-    model: input.model ?? undefined,
+    tool: input.tool ? nextTool : undefined,
+    model: nextModel ?? undefined,
     effort: input.effort ?? undefined,
     thinking: input.thinking,
   })

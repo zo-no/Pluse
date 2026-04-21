@@ -7,10 +7,11 @@ type ToolName = 'codex' | 'claude'
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
 const CLAUDE_MODELS = [
-  { id: 'sonnet', label: 'Sonnet 4.6' },
-  { id: 'opus', label: 'Opus 4.6' },
-  { id: 'haiku', label: 'Haiku 4.5' },
+  { id: 'sonnet[1m]', label: 'Sonnet 4.6' },
+  { id: 'opus[1m]', label: 'Opus 4.7' },
+  { id: 'haiku[1m]', label: 'Haiku 4.5' },
 ]
+const DEFAULT_CLAUDE_MODEL = 'sonnet[1m]'
 
 const CODEX_DEFAULT_MODEL = 'gpt-5.3-codex-spark'
 const DEFAULT_CODEX_EFFORT = 'high'
@@ -62,6 +63,44 @@ export function normalizeCodexModelId(value?: string | null): string {
   return CODEX_MODEL_ALIASES[trimmed] ?? trimmed
 }
 
+export function normalizeClaudeModelId(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase()
+  if (!trimmed || trimmed === 'default') return DEFAULT_CLAUDE_MODEL
+
+  if (
+    trimmed === 'sonnet'
+    || trimmed === 'sonnet[1m]'
+    || trimmed === 'claude-sonnet-4-6'
+    || trimmed === 'claude-sonnet-4-6[1m]'
+  ) {
+    return 'sonnet[1m]'
+  }
+
+  if (
+    trimmed === 'opus'
+    || trimmed === 'opus[1m]'
+    || trimmed === 'claude-opus-4-6'
+    || trimmed === 'claude-opus-4-6[1m]'
+    || trimmed === 'claude-opus-4-7'
+    || trimmed === 'claude-opus-4-7[1m]'
+  ) {
+    return 'opus[1m]'
+  }
+
+  if (
+    trimmed === 'haiku'
+    || trimmed === 'haiku[1m]'
+    || trimmed === 'claude-haiku-4-5'
+    || trimmed === 'claude-haiku-4-5[1m]'
+    || trimmed === 'claude-haiku-4-5-20251001'
+    || trimmed === 'claude-haiku-4-5-20251001[1m]'
+  ) {
+    return 'haiku[1m]'
+  }
+
+  return trimmed
+}
+
 function resolveToolCommand(tool: ToolName): string {
   if (tool === 'claude') {
     return process.env['PLUSE_CLAUDE_COMMAND']?.trim()
@@ -99,7 +138,7 @@ function buildClaudeCatalog(): RuntimeModelCatalog {
   return {
     models: CLAUDE_MODELS,
     effortLevels: null,
-    defaultModel: null,
+    defaultModel: DEFAULT_CLAUDE_MODEL,
     reasoning: { kind: 'toggle', label: 'Thinking' },
   }
 }

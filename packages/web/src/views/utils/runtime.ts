@@ -3,7 +3,7 @@ import type { RuntimeModelCatalog } from '@pluse/types'
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
 export const DEFAULT_CODEX_MODEL_ID = 'gpt-5.3-codex-spark'
-export const DEFAULT_CLAUDE_MODEL_ID = 'sonnet'
+export const DEFAULT_CLAUDE_MODEL_ID = 'sonnet[1m]'
 
 const FALLBACK_CODEX_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh']
 const CODEX_MODEL_ALIASES: Record<string, string> = {
@@ -25,9 +25,9 @@ const FALLBACK_CODEX_MODELS: CatalogModel[] = [
 ]
 
 const FALLBACK_CLAUDE_MODELS: RuntimeModelCatalog['models'] = [
-  { id: 'sonnet', label: 'Sonnet 4.6' },
-  { id: 'opus', label: 'Opus 4.6' },
-  { id: 'haiku', label: 'Haiku 4.5' },
+  { id: 'sonnet[1m]', label: 'Sonnet 4.6' },
+  { id: 'opus[1m]', label: 'Opus 4.7' },
+  { id: 'haiku[1m]', label: 'Haiku 4.5' },
 ]
 
 export function defaultRuntimeModelId(tool?: string | null): string {
@@ -47,10 +47,48 @@ export function normalizeCodexModelId(value?: string | null): string {
   return CODEX_MODEL_ALIASES[trimmed] ?? trimmed
 }
 
+export function normalizeClaudeModelId(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase()
+  if (!trimmed || trimmed === 'default') return DEFAULT_CLAUDE_MODEL_ID
+
+  if (
+    trimmed === 'sonnet'
+    || trimmed === 'sonnet[1m]'
+    || trimmed === 'claude-sonnet-4-6'
+    || trimmed === 'claude-sonnet-4-6[1m]'
+  ) {
+    return 'sonnet[1m]'
+  }
+
+  if (
+    trimmed === 'opus'
+    || trimmed === 'opus[1m]'
+    || trimmed === 'claude-opus-4-6'
+    || trimmed === 'claude-opus-4-6[1m]'
+    || trimmed === 'claude-opus-4-7'
+    || trimmed === 'claude-opus-4-7[1m]'
+  ) {
+    return 'opus[1m]'
+  }
+
+  if (
+    trimmed === 'haiku'
+    || trimmed === 'haiku[1m]'
+    || trimmed === 'claude-haiku-4-5'
+    || trimmed === 'claude-haiku-4-5[1m]'
+    || trimmed === 'claude-haiku-4-5-20251001'
+    || trimmed === 'claude-haiku-4-5-20251001[1m]'
+  ) {
+    return 'haiku[1m]'
+  }
+
+  return trimmed
+}
+
 export function resolveRuntimeModelSelection(tool?: string | null, model?: string | null, catalog?: RuntimeModelCatalog | null): string {
   const normalizedTool = tool?.trim().toLowerCase()
   const normalized = normalizedTool === 'claude'
-    ? model?.trim() || DEFAULT_CLAUDE_MODEL_ID
+    ? normalizeClaudeModelId(model)
     : normalizeCodexModelId(model)
 
   if (catalog?.models.some((item) => item.id === normalized)) return normalized
@@ -78,7 +116,7 @@ export function buildFallbackRuntimeModelCatalog(tool?: string | null): RuntimeM
     return {
       models: FALLBACK_CLAUDE_MODELS,
       effortLevels: null,
-      defaultModel: null,
+      defaultModel: DEFAULT_CLAUDE_MODEL_ID,
       reasoning: { kind: 'toggle', label: 'Thinking' },
     }
   }

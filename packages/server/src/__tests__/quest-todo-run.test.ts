@@ -712,6 +712,7 @@ describe('quest/todo/run APIs', () => {
 
     const argsLog = readFileSync(argsLogPath, 'utf8')
     expect(argsLog).toContain('--print')
+    expect(argsLog).toContain('--model sonnet[1m]')
     expect(argsLog).toContain('--output-format stream-json')
     expect(argsLog).toContain('--effort high')
 
