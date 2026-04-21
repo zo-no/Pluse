@@ -760,7 +760,7 @@ export function TodoPanel({
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
           <div className="pluse-sidebar-project-context">
-            <span className="pluse-sidebar-project-context-domain">{projectDomainName ?? t('任务')}</span>
+            <span className="pluse-sidebar-project-context-domain">{projectDomainName ?? t('未分组')}</span>
             <strong className="pluse-sidebar-project-context-name">{projectName || t('当前项目')}</strong>
           </div>
           <div className="pluse-sidebar-tabs" role="tablist" aria-label={t('任务视图')}>
