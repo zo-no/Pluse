@@ -949,7 +949,6 @@ function Shell({
   const navigate = useNavigate()
   const locationPathRef = useRef(location.pathname)
   const [projects, setProjects] = useState<Project[]>([])
-  const [domains, setDomains] = useState<Domain[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(true)
@@ -981,14 +980,13 @@ function Shell({
   }, [location.pathname])
 
   const loadProjects = useCallback(async () => {
-    const [result, domainsResult] = await Promise.all([api.getProjects(), api.getDomains()])
+    const result = await api.getProjects()
     if (!result.ok) {
       setLoadError(result.error)
       return
     }
     setLoadError(null)
     setProjects(result.data)
-    if (domainsResult.ok) setDomains(domainsResult.data)
 
     setActiveProjectId((current) => {
       if (current && result.data.some((project) => project.id === current)) {
@@ -1196,7 +1194,6 @@ function Shell({
             <TodoPanel
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
-              projectDomainName={activeProject?.domainId ? (domains.find((d) => d.id === activeProject.domainId)?.name ?? null) : null}
               projectWorkDir={activeProject?.workDir ?? null}
               activeQuestId={activeQuestId}
               activeQuest={activeQuest}
