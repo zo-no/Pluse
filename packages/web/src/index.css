@@ -3122,6 +3122,11 @@ select {
   z-index: 1;
 }
 
+.pluse-rail-section-new-task {
+  flex-direction: column;
+  gap: 8px;
+}
+
 .pluse-sidebar-new-session-card,
 .pluse-rail-new-task-card {
   width: 100%;
@@ -3391,9 +3396,16 @@ select {
 
 .pluse-domain-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 6px;
   padding: 8px 12px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pluse-domain-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .pluse-session-entry-card {
@@ -3481,12 +3493,168 @@ select {
 .pluse-domain-project-list {
   display: grid;
   margin-top: 0;
+  gap: 4px;
 }
 
 .pluse-domain-project-item {
-  background: transparent;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 6px;
   border-radius: 0;
-  padding: 6px 12px;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.pluse-domain-project-item:hover {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.pluse-domain-project-item.is-active {
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+:root[data-theme='dark'] .pluse-domain-project-item,
+:root[data-theme='dark'] .pluse-domain-project-item:hover,
+:root[data-theme='dark'] .pluse-domain-project-item.is-active {
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.pluse-domain-project-main {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  padding: 6px 4px;
+  gap: 2px;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.pluse-domain-project-main:hover {
+  background: color-mix(in srgb, var(--panel) 18%, transparent);
+}
+
+:root[data-theme='dark'] .pluse-domain-project-main:hover {
+  background: color-mix(in srgb, var(--panel-strong) 30%, transparent);
+}
+
+.pluse-domain-project-main:focus,
+.pluse-domain-project-main:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.pluse-domain-project-copy {
+  min-width: 0;
+}
+
+.pluse-domain-project-copy .pluse-sidebar-item-title {
+  gap: 0;
+}
+
+.pluse-project-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 68%, white);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.pluse-project-avatar.is-compact {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+:root[data-theme='dark'] .pluse-project-avatar {
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--panel-strong));
+}
+
+.pluse-domain-project-copy p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pluse-domain-project-actions {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.pluse-domain-project-action {
+  opacity: 0.6;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.pluse-domain-project-item:hover .pluse-domain-project-action {
+  opacity: 0.9;
+}
+
+.pluse-domain-project-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 22%, transparent);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pluse-domain-project-open:hover {
+  background: color-mix(in srgb, var(--panel) 34%, transparent);
+  color: var(--text);
+}
+
+:root[data-theme='dark'] .pluse-domain-project-open {
+  background: color-mix(in srgb, var(--panel-strong) 40%, transparent);
+}
+
+:root[data-theme='dark'] .pluse-domain-project-open:hover {
+  background: color-mix(in srgb, var(--panel-strong) 62%, transparent);
+}
+
+.pluse-domain-toolbar-subtle {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
+  opacity: 0.8;
+}
+
+.pluse-domain-toolbar-subtle .pluse-sidebar-chip-link {
+  opacity: 0.8;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.pluse-domain-toolbar-subtle .pluse-sidebar-chip-link:hover {
+  opacity: 1;
+}
+
+.pluse-domain-delete-modal {
+  width: min(520px, 100%);
 }
 
 .pluse-project-picker-add {

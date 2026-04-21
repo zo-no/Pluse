@@ -791,31 +791,6 @@ export function TodoPanel({
                 {t('会话')}
               </button>
             </div>
-            <div className="pluse-rail-source-switch" role="tablist" aria-label={t('任务类型')}>
-              <button
-                type="button"
-                className={`pluse-tab pluse-rail-source-tab${sourceTab === 'all' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab(scopeTab, 'all')}
-              >
-                {t('全部')}
-              </button>
-              <button
-                type="button"
-                className={`pluse-tab pluse-rail-source-tab${sourceTab === 'human' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab(scopeTab, 'human')}
-              >
-                {t('人类')}
-                {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
-              </button>
-              <button
-                type="button"
-                className={`pluse-tab pluse-rail-source-tab${sourceTab === 'ai' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab(scopeTab, 'ai')}
-              >
-                {t('AI')}
-                {aiCount > 0 ? <span className="pluse-tab-count">{aiCount}</span> : null}
-              </button>
-            </div>
           </div>
         </div>
 
@@ -901,6 +876,31 @@ export function TodoPanel({
         </div>
 
         <section className="pluse-rail-section-new-task">
+          <div className="pluse-rail-source-switch" role="tablist" aria-label={t('任务类型')}>
+            <button
+              type="button"
+              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'all' ? ' is-active' : ''}`}
+              onClick={() => setSourceTab(scopeTab, 'all')}
+            >
+              {t('全部')}
+            </button>
+            <button
+              type="button"
+              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'human' ? ' is-active' : ''}`}
+              onClick={() => setSourceTab(scopeTab, 'human')}
+            >
+              {t('人类')}
+              {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
+            </button>
+            <button
+              type="button"
+              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'ai' ? ' is-active' : ''}`}
+              onClick={() => setSourceTab(scopeTab, 'ai')}
+            >
+              {t('AI')}
+              {aiCount > 0 ? <span className="pluse-tab-count">{aiCount}</span> : null}
+            </button>
+          </div>
           <button
             type="button"
             className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
