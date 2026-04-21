@@ -3378,19 +3378,22 @@ select {
   border-top: 0;
 }
 
-.pluse-domain-summary,
-.pluse-domain-group,
 .pluse-domain-empty {
-  padding: 12px;
-  border-radius: 16px;
-  background: var(--bg-secondary);
+  padding: 4px 12px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.pluse-domain-group {
+  /* no card style — just a flat section */
 }
 
 .pluse-domain-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  padding: 8px 12px 4px;
 }
 
 .pluse-session-entry-card {
@@ -3421,14 +3424,15 @@ select {
 
 .pluse-domain-group-head {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px 2px;
 }
 
 .pluse-domain-group-toggle {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex: 1;
   min-width: 0;
   padding: 0;
@@ -3440,25 +3444,32 @@ select {
 }
 
 .pluse-domain-group-chevron {
-  padding-top: 2px;
+  font-size: 9px;
   color: var(--text-muted);
 }
 
 .pluse-domain-group-copy {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
 }
 
 .pluse-domain-group-copy strong {
-  font-size: 13px;
-  line-height: 1.3;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pluse-domain-group-copy span {
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: 9px;
   color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .pluse-domain-group-actions {
@@ -3469,12 +3480,11 @@ select {
 
 .pluse-domain-project-list {
   display: grid;
-  gap: 6px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .pluse-domain-project-item {
-  background: var(--bg);
+  background: transparent;
 }
 
 .pluse-project-picker-add {

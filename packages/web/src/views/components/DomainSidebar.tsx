@@ -289,41 +289,33 @@ export function DomainSidebar({
     <div className="pluse-sidebar-scroll-pane">
       <section className="pluse-sidebar-section pluse-sidebar-section-list">
         <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-          <div className="pluse-info-block pluse-domain-summary">
-            <div className="pluse-sidebar-header-row">
-              <div>
-                <h2>{t('全部项目')}</h2>
-                <p>{t('{count} 个项目', { count: projects.length })}</p>
-              </div>
-            </div>
-            <div className="pluse-domain-toolbar">
-              <button
-                type="button"
-                className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-                onClick={onCreateProject}
-                disabled={submitting}
-              >
-                <PlusIcon className="pluse-icon" />
-                <span>{t('新建项目')}</span>
-              </button>
-              <button
-                type="button"
-                className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-                onClick={() => setCreating(true)}
-                disabled={submitting}
-              >
-                <PlusIcon className="pluse-icon" />
-                <span>{t('新建领域')}</span>
-              </button>
-              <button
-                type="button"
-                className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
-                onClick={() => void handleCreateDefaults()}
-                disabled={submitting}
-              >
-                <span>{t('使用默认模板')}</span>
-              </button>
-            </div>
+          <div className="pluse-domain-toolbar">
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={onCreateProject}
+              disabled={submitting}
+            >
+              <PlusIcon className="pluse-icon" />
+              <span>{t('新建项目')}</span>
+            </button>
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={() => setCreating(true)}
+              disabled={submitting}
+            >
+              <PlusIcon className="pluse-icon" />
+              <span>{t('新建领域')}</span>
+            </button>
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-chip-link-sm"
+              onClick={() => void handleCreateDefaults()}
+              disabled={submitting}
+            >
+              <span>{t('使用默认模板')}</span>
+            </button>
           </div>
 
           {creating ? (
@@ -352,14 +344,7 @@ export function DomainSidebar({
           ) : null}
 
           {domains.length === 0 && !creating ? (
-            <div className="pluse-info-block pluse-domain-empty">
-              <div className="pluse-sidebar-header-row">
-                <div>
-                  <h2>{t('还没有领域')}</h2>
-                  <p>{t('先创建一个分组，或者直接套用默认模板。')}</p>
-                </div>
-              </div>
-            </div>
+            <p className="pluse-domain-empty">{t('还没有领域，创建分组或套用默认模板。')}</p>
           ) : null}
 
           {renderGroup({
