@@ -25,6 +25,13 @@ function shortPath(value?: string | null): string {
   return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
+function projectAvatar(project: Pick<Project, 'name' | 'icon'>): string {
+  const icon = project.icon?.trim()
+  if (icon) return icon
+  const name = project.name.trim()
+  return name ? name[0]!.toUpperCase() : '#'
+}
+
 function formatDateTime(value?: string, t?: ((key: string) => string), locale = 'zh-CN'): string {
   if (!value) return t ? t('未记录') : '未记录'
   return new Intl.DateTimeFormat(locale, {
@@ -477,6 +484,7 @@ function ProjectPage({
   const [updatingWaitingTodoId, setUpdatingWaitingTodoId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
+  const [icon, setIcon] = useState('')
   const [goal, setGoal] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [domainId, setDomainId] = useState('')
@@ -489,6 +497,7 @@ function ProjectPage({
     }
     setOverview(result.data)
     setName(result.data.project.name)
+    setIcon(result.data.project.icon ?? '')
     setGoal(result.data.project.goal ?? '')
     setSystemPrompt(result.data.project.systemPrompt ?? '')
     setDomainId(result.data.project.domainId ?? '')
@@ -535,7 +544,7 @@ function ProjectPage({
 
   async function saveProject() {
     setSaving(true)
-    const result = await api.updateProject(projectId, { name, goal, systemPrompt, domainId: domainId || null })
+    const result = await api.updateProject(projectId, { name, icon: icon || null, goal, systemPrompt, domainId: domainId || null })
     setSaving(false)
     if (!result.ok) {
       setError(result.error)
@@ -595,6 +604,7 @@ function ProjectPage({
             </button>
           </div>
           <div className="pluse-project-tab-meta">
+            <span className="pluse-project-avatar is-compact" aria-hidden="true">{projectAvatar(overview.project)}</span>
             <span className="pluse-info-path-sm">{shortPath(overview.project.workDir)}</span>
             {activeDomainName ? <span className="pluse-inline-pill">{activeDomainName}</span> : null}
             {overview.project.pinned ? <span className="pluse-inline-pill">{t('固定')}</span> : null}
@@ -636,6 +646,14 @@ function ProjectPage({
               <label>
                 <span>{t('项目名称')}</span>
                 <input value={name} onChange={(event) => setName(event.target.value)} />
+              </label>
+              <label>
+                <span>{t('项目图标')}</span>
+                <input
+                  value={icon}
+                  onChange={(event) => setIcon(event.target.value.slice(0, 8))}
+                  placeholder={t('输入 emoji 或 1-2 个字符')}
+                />
               </label>
               <label>
                 <span>{t('领域')}</span>
@@ -931,6 +949,7 @@ function Shell({
   const navigate = useNavigate()
   const locationPathRef = useRef(location.pathname)
   const [projects, setProjects] = useState<Project[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
   const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(true)
@@ -962,13 +981,14 @@ function Shell({
   }, [location.pathname])
 
   const loadProjects = useCallback(async () => {
-    const result = await api.getProjects()
+    const [result, domainsResult] = await Promise.all([api.getProjects(), api.getDomains()])
     if (!result.ok) {
       setLoadError(result.error)
       return
     }
     setLoadError(null)
     setProjects(result.data)
+    if (domainsResult.ok) setDomains(domainsResult.data)
 
     setActiveProjectId((current) => {
       if (current && result.data.some((project) => project.id === current)) {
@@ -1176,6 +1196,7 @@ function Shell({
             <TodoPanel
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
+              projectDomainName={activeProject?.domainId ? (domains.find((d) => d.id === activeProject.domainId)?.name ?? null) : null}
               projectWorkDir={activeProject?.workDir ?? null}
               activeQuestId={activeQuestId}
               activeQuest={activeQuest}

@@ -3576,6 +3576,15 @@ select {
   flex-shrink: 0;
 }
 
+.pluse-project-avatar-button {
+  border: 0;
+  cursor: pointer;
+}
+
+.pluse-project-avatar-button:hover {
+  filter: brightness(0.98);
+}
+
 .pluse-project-avatar.is-compact {
   width: 20px;
   height: 20px;
@@ -3606,34 +3615,6 @@ select {
 
 .pluse-domain-project-item:hover .pluse-domain-project-action {
   opacity: 0.9;
-}
-
-.pluse-domain-project-open {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel) 22%, transparent);
-  color: var(--text-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.pluse-domain-project-open:hover {
-  background: color-mix(in srgb, var(--panel) 34%, transparent);
-  color: var(--text);
-}
-
-:root[data-theme='dark'] .pluse-domain-project-open {
-  background: color-mix(in srgb, var(--panel-strong) 40%, transparent);
-}
-
-:root[data-theme='dark'] .pluse-domain-project-open:hover {
-  background: color-mix(in srgb, var(--panel-strong) 62%, transparent);
 }
 
 .pluse-domain-toolbar-subtle {
@@ -4640,6 +4621,24 @@ select {
   gap: 10px;
   padding: 6px 0 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.pluse-rail-head-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.pluse-rail-head-sidebar .pluse-sidebar-project-context {
+  padding: 6px 0 4px;
+}
+
+.pluse-rail-head-sidebar .pluse-sidebar-tabs {
+  padding: 0;
+}
+
+.pluse-todo-tag-filter-row {
+  padding: 6px 0 2px;
 }
 
 .pluse-rail-kicker {

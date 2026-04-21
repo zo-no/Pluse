@@ -13,6 +13,7 @@ import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
 interface TodoPanelProps {
   projectId: string | null
   projectName?: string | null
+  projectDomainName?: string | null
   projectWorkDir?: string | null
   activeQuestId?: string | null
   activeQuest?: Quest | null
@@ -31,15 +32,6 @@ function taskOverlayState(location: RouterLocation): { backgroundLocation: Route
   // If already in an overlay, reuse the existing background to avoid nesting overlays
   const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
   return { backgroundLocation: existingBackground ?? location }
-}
-
-function shortPath(value?: string | null): string {
-  if (!value) return ''
-  const normalized = value.replace(/^\/Users\/[^/]+/, '~')
-  const isHome = normalized.startsWith('~/')
-  const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
-  if (parts.length <= 3) return normalized
-  return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
 function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => string): string {
@@ -174,6 +166,7 @@ function formatScopeEmptyMessage(
 export function TodoPanel({
   projectId,
   projectName,
+  projectDomainName,
   projectWorkDir,
   activeQuestId,
   activeQuest,
@@ -703,12 +696,6 @@ export function TodoPanel({
               {todo.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${todo.priority}`} aria-label={todo.priority} /> : null}
               <strong>{todo.title}</strong>
             </div>
-            {scheduleSummary ? <p className="pluse-task-list-note">{scheduleSummary}</p> : null}
-            {todo.tags.length > 0 ? (
-              <div className="pluse-todo-tags">
-                {todo.tags.map((tag) => <span key={tag} className="pluse-todo-tag">{tag}</span>)}
-              </div>
-            ) : null}
             <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
               <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
               <span className="pluse-task-list-dot" aria-hidden="true">·</span>
@@ -771,46 +758,42 @@ export function TodoPanel({
           </button>
         </div>
 
-        <div className="pluse-rail-head pluse-rail-head-rich">
-          <div className="pluse-rail-kicker">{t('任务')}</div>
-          <div className="pluse-rail-head-identity">
-            <div className="pluse-rail-head-copy">
-              <strong>{projectName || t('当前项目')}</strong>
-              <span>{projectWorkDir ? shortPath(projectWorkDir) : t('任务视图')}</span>
-            </div>
+        <div className="pluse-rail-head pluse-rail-head-sidebar">
+          <div className="pluse-sidebar-project-context">
+            <span className="pluse-sidebar-project-context-domain">{projectDomainName ?? t('任务')}</span>
+            <strong className="pluse-sidebar-project-context-name">{projectName || t('当前项目')}</strong>
           </div>
-          <div className="pluse-rail-tabs-row">
-            <div className="pluse-rail-tabs pluse-rail-tabs-compact pluse-rail-scope-tabs">
-              <button type="button" className={`pluse-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
-                {t('全局')}
-              </button>
-              <button type="button" className={`pluse-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
-                {t('项目')}
-              </button>
-              <button type="button" className={`pluse-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
-                {t('会话')}
-              </button>
-            </div>
+          <div className="pluse-sidebar-tabs" role="tablist" aria-label={t('任务视图')}>
+            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
+              {t('全局')}
+            </button>
+            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
+              {t('项目')}
+            </button>
+            <button type="button" className={`pluse-sidebar-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
+              {t('会话')}
+            </button>
           </div>
         </div>
 
+        {projectTags.length > 0 ? (
+          <div className="pluse-sidebar-search pluse-todo-tag-filter-row">
+            {projectTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                className={`pluse-todo-tag-chip${filterTags.includes(tag) ? ' is-active' : ''}`}
+                onClick={() => setFilterTags((current) =>
+                  current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]
+                )}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="pluse-task-list">
-          {projectTags.length > 0 ? (
-            <div className="pluse-todo-tag-filter">
-              {projectTags.map((tag) => (
-                <button
-                  key={tag}
-                  type="button"
-                  className={`pluse-todo-tag-chip${filterTags.includes(tag) ? ' is-active' : ''}`}
-                  onClick={() => setFilterTags((current) =>
-                    current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]
-                  )}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           {activeItems.length > 0 ? (
             <div className="pluse-note-list pluse-task-stream">
