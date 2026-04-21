@@ -691,6 +691,10 @@ select {
   padding-top: 8px;
 }
 
+.pluse-sidebar-project-header {
+  padding: 0 6px 8px;
+}
+
 .pluse-sidebar-section:last-child {
   border-bottom: 0;
 }
@@ -3358,6 +3362,21 @@ select {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.pluse-session-entry-card {
+  padding: 14px 12px;
+  border-radius: 16px;
+  background: var(--bg-secondary);
+}
+
+.pluse-session-entry-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .pluse-domain-form {

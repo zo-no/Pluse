@@ -21,6 +21,7 @@ Pluse 是一个 **Quest-centric 的远程 AI 工作台**。
 - `Domain` 只组织 `Project`，不承载 `Quest` / `Todo` / `Run`
 - `session` 和 `task` 不是两套主对象，而是同一个 `Quest` 的两种形态
 - 详情页统一走 `/quests/:id`
+- 左侧栏默认优先展示 `Domain` 项目分组；`会话` 视图只保留轻入口，不再重复渲染完整会话切换列表
 - Todo 是独立对象，不挂在 Quest 子表下
 - 不再维护旧的 `/api/sessions/*`、`/api/tasks/*` 边界
 
