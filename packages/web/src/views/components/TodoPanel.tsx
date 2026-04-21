@@ -283,6 +283,8 @@ const TodoRailItem = memo(function TodoRailItem({
   const isDone = todo.status === 'done'
   const isRecurring = todo.repeat !== 'none'
   const canToggle = !archived && todo.status !== 'cancelled'
+  const visibleTags = todo.tags.slice(0, 3)
+  const extraTagCount = Math.max(0, todo.tags.length - visibleTags.length)
 
   return (
     <article
@@ -317,6 +319,20 @@ const TodoRailItem = memo(function TodoRailItem({
               {formatSidebarTime(todo.updatedAt, t)}
             </span>
           </div>
+          {visibleTags.length > 0 ? (
+            <div className="pluse-todo-tags" aria-label={t('标签')}>
+              {visibleTags.map((tag) => (
+                <span key={tag} className="pluse-todo-tag">
+                  {tag}
+                </span>
+              ))}
+              {extraTagCount > 0 ? (
+                <span className="pluse-todo-tag pluse-todo-tag-more">
+                  +{extraTagCount}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </button>
       <div className="pluse-sidebar-item-actions">
