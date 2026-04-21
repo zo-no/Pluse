@@ -13,6 +13,7 @@ export interface Project {
   id: string
   name: string
   goal?: string
+  description?: string
   workDir: string
   systemPrompt?: string
   domainId?: string
@@ -27,6 +28,7 @@ export interface CreateProjectInput {
   name: string
   workDir: string
   goal?: string
+  description?: string
   systemPrompt?: string
   domainId?: string | null
   pinned?: boolean
@@ -36,6 +38,7 @@ export interface OpenProjectInput {
   workDir: string
   name?: string
   goal?: string
+  description?: string
   systemPrompt?: string
   domainId?: string | null
   pinned?: boolean
@@ -44,6 +47,7 @@ export interface OpenProjectInput {
 export interface UpdateProjectInput {
   name?: string
   goal?: string | null
+  description?: string | null
   systemPrompt?: string | null
   domainId?: string | null
   pinned?: boolean

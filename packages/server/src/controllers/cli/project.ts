@@ -8,10 +8,11 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2))
 }
 
-function printProject(project: { id: string; name: string; workDir: string; goal?: string; domainId?: string; archived?: boolean; pinned?: boolean }): void {
+function printProject(project: { id: string; name: string; workDir: string; goal?: string; description?: string; domainId?: string; archived?: boolean; pinned?: boolean }): void {
   console.log(`${project.id}  ${project.name}`)
   console.log(`  workDir: ${project.workDir}`)
   if (project.goal) console.log(`  goal: ${project.goal}`)
+  if (project.description) console.log(`  description: ${project.description}`)
   if (project.domainId) console.log(`  domainId: ${project.domainId}`)
   console.log(`  pinned: ${project.pinned ? 'yes' : 'no'}  archived: ${project.archived ? 'yes' : 'no'}`)
 }
@@ -84,16 +85,18 @@ projectCommand
   .requiredOption('--work-dir <path>', 'Absolute work directory')
   .option('--name <name>', 'Project name')
   .option('--goal <goal>', 'Project goal')
+  .option('--description <description>', 'Project description (for Agent context)')
   .option('--system-prompt <prompt>', 'Project system prompt')
   .option('--domain-id <id>', 'Assign project to a domain')
   .option('--pin', 'Pin the project', false)
   .option('--json', 'Output as JSON', false)
-  .action(async (opts: { workDir: string; name?: string; goal?: string; systemPrompt?: string; domainId?: string; pin: boolean; json: boolean }) => {
+  .action(async (opts: { workDir: string; name?: string; goal?: string; description?: string; systemPrompt?: string; domainId?: string; pin: boolean; json: boolean }) => {
     const mode = getCliMode()
     const input: OpenProjectInput = {
       workDir: opts.workDir,
       name: opts.name,
       goal: opts.goal,
+      description: opts.description,
       systemPrompt: opts.systemPrompt,
       domainId: opts.domainId,
       pinned: opts.pin || undefined,
@@ -109,6 +112,8 @@ projectCommand
   .command('update <id>')
   .option('--name <name>', 'New name')
   .option('--goal <goal>', 'New goal')
+  .option('--description <description>', 'New project description (for Agent context)')
+  .option('--clear-description', 'Remove project description')
   .option('--system-prompt <prompt>', 'New project system prompt')
   .option('--domain-id <id>', 'Assign project to a domain')
   .option('--clear-domain', 'Remove project from its domain')
@@ -118,11 +123,12 @@ projectCommand
   .option('--json', 'Output as JSON', false)
   .action(async (
     id: string,
-    opts: { name?: string; goal?: string; systemPrompt?: string; domainId?: string; clearDomain?: boolean; pin?: boolean; unpin?: boolean; archive?: boolean; json: boolean },
+    opts: { name?: string; goal?: string; description?: string; clearDescription?: boolean; systemPrompt?: string; domainId?: string; clearDomain?: boolean; pin?: boolean; unpin?: boolean; archive?: boolean; json: boolean },
   ) => {
     const patch: UpdateProjectInput = {
       name: opts.name,
       goal: opts.goal,
+      description: opts.clearDescription ? null : opts.description,
       systemPrompt: opts.systemPrompt,
       domainId: opts.clearDomain ? null : opts.domainId,
       pinned: opts.pin ? true : opts.unpin ? false : undefined,

@@ -140,6 +140,45 @@ Domain
 
 ---
 
+## Agent 定位项目
+
+Agent 启动时，用以下流程快速定位目标项目：
+
+```bash
+# 1. 查看所有领域和项目（含项目介绍）
+pluse domain list --with-projects --json
+
+# 2. 查看某个项目的详情和近期活动
+pluse project overview <project-id> --json
+
+# 3. 在确定的项目里新建会话
+pluse quest create --project-id <id> --kind session --name "任务名称"
+```
+
+`domain list --with-projects --json` 返回结构：
+
+```json
+[
+  {
+    "id": "domain_xxx",
+    "name": "产品/事业",
+    "description": "产品研发相关项目",
+    "projects": [
+      { "id": "proj_abc", "name": "Pluse", "workDir": "...", "goal": "...", "description": "..." }
+    ]
+  },
+  {
+    "id": null,
+    "name": "未分组",
+    "projects": [...]
+  }
+]
+```
+
+每个 Project 的 `description` 字段是供 Agent 读取的详细项目介绍（背景、技术栈、当前阶段等），比 `goal` 更详细。用 `pluse project update <id> --description "..."` 设置。
+
+---
+
 ## 参考项目
 
 - 历史仓库：仅用于迁移思路参考

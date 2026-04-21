@@ -1,7 +1,9 @@
 import { Command } from 'commander'
-import type { CreateDomainInput, Domain, UpdateDomainInput } from '@pluse/types'
+import type { CreateDomainInput, Domain, Project, UpdateDomainInput } from '@pluse/types'
 import { listDomains } from '../../models/domain'
 import { createDefaultDomainsWithEffects, createDomainWithEffects, deleteDomainWithEffects, updateDomainWithEffects } from '../../services/domains'
+import { listVisibleProjects } from '../../services/projects'
+import type { DomainWithProjects } from '../http/domains'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
 
 function printJson(value: unknown): void {
@@ -16,15 +18,61 @@ function printDomain(domain: Domain): void {
   console.log(`  orderIndex: ${domain.orderIndex}`)
 }
 
+function printProject(project: Project): void {
+  console.log(`    ${project.id}  ${project.name}`)
+  console.log(`      workDir: ${project.workDir}`)
+  if (project.goal) console.log(`      goal: ${project.goal}`)
+  if (project.description) console.log(`      description: ${project.description}`)
+}
+
+function printDomainWithProjects(entry: DomainWithProjects): void {
+  console.log(`${entry.id ?? '(ungrouped)'}  ${entry.name}`)
+  if (entry.description) console.log(`  description: ${entry.description}`)
+  console.log(`  projects:`)
+  if (entry.projects.length === 0) {
+    console.log(`    (empty)`)
+  } else {
+    entry.projects.forEach(printProject)
+  }
+}
+
+function buildDomainWithProjects(): DomainWithProjects[] {
+  const domains = listDomains()
+  const projects = listVisibleProjects()
+  const byDomainId = new Map<string, Project[]>()
+  const ungrouped: Project[] = []
+  for (const p of projects) {
+    if (p.domainId) {
+      const arr = byDomainId.get(p.domainId) ?? []
+      arr.push(p)
+      byDomainId.set(p.domainId, arr)
+    } else {
+      ungrouped.push(p)
+    }
+  }
+  return [
+    ...domains.map((d) => ({ ...d, projects: byDomainId.get(d.id) ?? [] })),
+    { id: null as unknown as string, name: '未分组', description: undefined, icon: undefined, color: undefined, orderIndex: 9999, deleted: false, deletedAt: undefined, createdAt: '', updatedAt: '', projects: ungrouped },
+  ]
+}
+
 export const domainCommand = new Command('domain')
 domainCommand.description('Manage Domains')
 
 domainCommand
   .command('list')
+  .option('--with-projects', 'Include projects under each domain', false)
   .option('--json', 'Output as JSON', false)
-  .action(async (opts: { json: boolean }) => {
+  .action(async (opts: { withProjects: boolean; json: boolean }) => {
     const mode = getCliMode()
     const baseUrl = await resolveDaemonBaseUrl(mode)
+    if (opts.withProjects) {
+      const entries: DomainWithProjects[] = baseUrl
+        ? await daemonRequest<DomainWithProjects[]>(baseUrl, '/api/domains?withProjects=true')
+        : buildDomainWithProjects()
+      opts.json ? printJson(entries) : entries.forEach(printDomainWithProjects)
+      return
+    }
     const domains = baseUrl
       ? await daemonRequest<Domain[]>(baseUrl, '/api/domains')
       : listDomains()

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
-import type { ApiResult, Domain } from '@pluse/types'
+import type { ApiResult, Domain, Project } from '@pluse/types'
 import {
   createDefaultDomainsWithEffects,
   createDomainWithEffects,
@@ -9,6 +9,7 @@ import {
   listDomainViews,
   updateDomainWithEffects,
 } from '../../services/domains'
+import { listVisibleProjects } from '../../services/projects'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -40,8 +41,31 @@ const DomainPatchSchema = z.object({
 
 export const domainsRouter = new Hono()
 
+export type DomainWithProjects = Domain & { projects: Project[] }
+
 domainsRouter.get('/domains', (c) => {
   try {
+    const withProjects = c.req.query('withProjects') === 'true'
+    if (withProjects) {
+      const domains = listDomainViews({ includeDeleted: c.req.query('deleted') === 'true' })
+      const projects = listVisibleProjects()
+      const byDomainId = new Map<string, Project[]>()
+      const ungrouped: Project[] = []
+      for (const p of projects) {
+        if (p.domainId) {
+          const arr = byDomainId.get(p.domainId) ?? []
+          arr.push(p)
+          byDomainId.set(p.domainId, arr)
+        } else {
+          ungrouped.push(p)
+        }
+      }
+      const result: DomainWithProjects[] = [
+        ...domains.map((d) => ({ ...d, projects: byDomainId.get(d.id) ?? [] })),
+        { id: null as unknown as string, name: '未分组', description: undefined, icon: undefined, color: undefined, orderIndex: 9999, deleted: false, deletedAt: undefined, createdAt: '', updatedAt: '', projects: ungrouped },
+      ]
+      return c.json(ok<DomainWithProjects[]>(result))
+    }
     return c.json(ok<Domain[]>(listDomainViews({ includeDeleted: c.req.query('deleted') === 'true' })))
   } catch (error) {
     return c.json(errBody(String(error)), sc(500))

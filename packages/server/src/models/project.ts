@@ -14,6 +14,7 @@ type ProjectRow = {
   id: string
   name: string
   goal: string | null
+  description: string | null
   work_dir: string | null
   system_prompt: string | null
   domain_id: string | null
@@ -29,6 +30,7 @@ function rowToProject(row: ProjectRow): Project {
     id: row.id,
     name: row.name,
     goal: row.goal ?? undefined,
+    description: row.description ?? undefined,
     workDir: row.work_dir ?? '',
     systemPrompt: row.system_prompt ?? undefined,
     domainId: row.domain_id ?? undefined,
@@ -95,12 +97,13 @@ export function createProjectRecord(
 
   db.run(
     `INSERT INTO projects (
-      id, name, goal, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      id, name, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     [
       id,
       input.name,
       input.goal ?? null,
+      input.description ?? null,
       input.workDir,
       input.systemPrompt ?? null,
       input.domainId ?? null,
@@ -118,11 +121,12 @@ export function upsertProjectRecord(project: Project): Project {
   const db = getDb()
   db.run(
     `INSERT INTO projects (
-      id, name, goal, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, name, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       goal = excluded.goal,
+      description = excluded.description,
       work_dir = excluded.work_dir,
       system_prompt = excluded.system_prompt,
       domain_id = excluded.domain_id,
@@ -134,6 +138,7 @@ export function upsertProjectRecord(project: Project): Project {
       project.id,
       project.name,
       project.goal ?? null,
+      project.description ?? null,
       project.workDir,
       project.systemPrompt ?? null,
       project.domainId ?? null,
@@ -163,6 +168,10 @@ export function updateProject(id: string, input: UpdateProjectInput & { workDir?
   if ('goal' in input) {
     sets.push('goal = ?')
     params.push(input.goal ?? null)
+  }
+  if ('description' in input) {
+    sets.push('description = ?')
+    params.push(input.description ?? null)
   }
   if ('workDir' in input && input.workDir !== undefined) {
     sets.push('work_dir = ?')

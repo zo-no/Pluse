@@ -208,6 +208,7 @@ export function openProject(input: OpenProjectInput): Project {
     const created = createProjectRecord({
       name: input.name?.trim() || defaultProjectName(workDir),
       goal: input.goal,
+      description: input.description,
       workDir,
       systemPrompt: input.systemPrompt,
       domainId: input.domainId,
@@ -222,6 +223,7 @@ export function openProject(input: OpenProjectInput): Project {
     const updated = updateProjectRecord(byWorkDir.id, {
       name: input.name || byWorkDir.name,
       goal: input.goal === undefined ? byWorkDir.goal ?? null : input.goal ?? null,
+      description: input.description === undefined ? byWorkDir.description ?? null : input.description ?? null,
       systemPrompt: input.systemPrompt === undefined ? byWorkDir.systemPrompt ?? null : input.systemPrompt ?? null,
       domainId: input.domainId !== undefined ? input.domainId : byWorkDir.domainId ?? undefined,
       pinned: input.pinned ?? byWorkDir.pinned,
