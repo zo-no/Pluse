@@ -4684,6 +4684,11 @@ select {
   min-width: 0;
   padding: 0 10px;
   text-align: center;
+  border-bottom: 0;
+}
+
+.pluse-task-panel-tab.is-active {
+  border-bottom: 0;
 }
 
 .pluse-todo-tag-filter-row {
