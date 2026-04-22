@@ -25,12 +25,15 @@ const SESSION_CLASSIFY_TIMEOUT_MS = parsePositiveInt(
   process.env['PLUSE_SESSION_CLASSIFY_TIMEOUT_MS'] ?? process.env['PULSE_SESSION_CLASSIFY_TIMEOUT_MS'],
   30_000,
 )
+const FALLBACK_CATEGORY_NAME = '临时探索'
+const FALLBACK_CATEGORY_DESCRIPTION = '首轮会话完成后暂未匹配到稳定主题的会话。'
 const SESSION_CLASSIFY_SYSTEM_PROMPT = [
   'You classify Pluse session quests into reusable project-scoped categories.',
   'Return JSON only.',
   'Prefer reusing an existing category when it is clearly compatible.',
-  'Create a new category only when the topic is durable and likely to recur in navigation.',
-  'If the conversation is too broad, temporary, or unclear, return {"mode":"noop"}.',
+  'For any normal first-round conversation, you must return either assign or create_or_reuse.',
+  `If the topic is broad, temporary, or unclear, classify it into a broad holding category such as ${FALLBACK_CATEGORY_NAME} instead of noop.`,
+  'Use {"mode":"noop"} only when there is no usable user message to classify.',
   'Allowed JSON shapes:',
   '{"mode":"noop"}',
   '{"mode":"assign","sessionCategoryId":"sc_xxx"}',
@@ -312,10 +315,20 @@ function buildClassificationPrompt(quest: Quest): string | null {
     [
       'Return JSON only.',
       'Prefer assign when an existing category fits.',
-      'Use create_or_reuse only for durable recurring topics.',
-      'If the topic is ambiguous or too temporary, return {"mode":"noop"}.',
+      'For normal conversations you must return assign or create_or_reuse.',
+      `If the topic is ambiguous or temporary, use create_or_reuse with a broad holding category such as ${FALLBACK_CATEGORY_NAME}.`,
+      'Only return {"mode":"noop"} when there is no usable user message to classify.',
     ].join('\n'),
   ].join('\n\n')
+}
+
+function assignFallbackCategory(quest: Quest, allowCreateSessionCategory: boolean): void {
+  if (!allowCreateSessionCategory) return
+  const category = createOrReuseSessionCategory(quest.projectId, {
+    name: FALLBACK_CATEGORY_NAME,
+    description: FALLBACK_CATEGORY_DESCRIPTION,
+  })
+  updateQuestWithEffects(quest.id, { sessionCategoryId: category.id })
 }
 
 async function classifySessionWithProvider(quest: Quest): Promise<ClassificationDecision | null> {
@@ -394,22 +407,31 @@ async function classifySessionQuest(questId: string, allowCreateSessionCategory:
   if (!quest || quest.kind !== 'session' || quest.sessionCategoryId) return
 
   const decision = await classifySessionWithProvider(quest)
-  if (!decision || decision.mode === 'noop') return
-
   const freshQuest = getQuest(questId)
   if (!freshQuest || freshQuest.projectId !== quest.projectId || freshQuest.kind !== 'session' || freshQuest.sessionCategoryId) {
     return
   }
 
+  if (!decision || decision.mode === 'noop') {
+    assignFallbackCategory(freshQuest, allowCreateSessionCategory)
+    return
+  }
+
   if (decision.mode === 'assign') {
     const category = getSessionCategory(decision.sessionCategoryId)
-    if (!category || category.projectId !== freshQuest.projectId) return
+    if (!category || category.projectId !== freshQuest.projectId) {
+      assignFallbackCategory(freshQuest, allowCreateSessionCategory)
+      return
+    }
     updateQuestWithEffects(freshQuest.id, { sessionCategoryId: category.id })
     return
   }
 
   if (decision.mode === 'create_or_reuse') {
-    if (!allowCreateSessionCategory) return
+    if (!allowCreateSessionCategory) {
+      assignFallbackCategory(freshQuest, allowCreateSessionCategory)
+      return
+    }
     const category = createOrReuseSessionCategory(freshQuest.projectId, {
       name: decision.name,
       description: decision.description,
@@ -419,7 +441,7 @@ async function classifySessionQuest(questId: string, allowCreateSessionCategory:
   }
 
   if (decision.mode === 'clear') {
-    updateQuestWithEffects(freshQuest.id, { sessionCategoryId: null })
+    assignFallbackCategory(freshQuest, allowCreateSessionCategory)
   }
 }
 

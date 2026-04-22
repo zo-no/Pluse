@@ -202,6 +202,8 @@ Phase 1 推荐的默认自动化不是持续重分类，而是一次性的首轮
 - 如有需要，创建或复用一个 `SessionCategory`
 - 最后写回 `quest.sessionCategoryId`
 
+如果 Agent 没有给出可用分类，系统仍应避免把首轮会话留在未分组区。Phase 1 可以接受一个宽口径 holding category（例如 `临时探索`）作为兜底承接面。
+
 自动命名暂不迁入 hooks，而是继续走现有 auto-rename 链路；后续若需要统一“首轮元数据补全”，再讨论是否抽象出更通用的 Quest metadata action。
 
 #### 4. Agent action 必须后台异步执行
