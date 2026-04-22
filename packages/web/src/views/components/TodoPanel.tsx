@@ -877,6 +877,22 @@ export function TodoPanel({
         </div>
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
+          <div className="pluse-sidebar-project-context">
+            <span className="pluse-sidebar-project-context-domain">{`${t('任务栏')}-${t('项目')}`}</span>
+            <div className="pluse-project-switcher">
+              <button
+                type="button"
+                className="pluse-project-switcher-btn"
+                disabled
+                aria-label={t('当前项目')}
+                title={t('当前项目')}
+              >
+                <div className="pluse-project-switcher-label">
+                  <strong>{projectName || t('当前项目')}</strong>
+                </div>
+              </button>
+            </div>
+          </div>
           <div className="pluse-sidebar-tabs pluse-task-panel-tabs" role="tablist" aria-label={t('任务视图')}>
             <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
               {t('全局')}
