@@ -353,3 +353,14 @@ export function listQuestsWithPendingQueue(): Quest[] {
   ).all()
   return rows.map(rowToQuest)
 }
+
+export function listQuestsPendingAutoRename(): Quest[] {
+  const db = getDb()
+  const rows = db.query<QuestRow, []>(
+    `SELECT * FROM quests
+      WHERE kind = 'session'
+        AND deleted = 0
+        AND auto_rename_pending = 1`
+  ).all()
+  return rows.map(rowToQuest)
+}

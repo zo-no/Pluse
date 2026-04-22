@@ -36,7 +36,11 @@ packages/
 docs/
 ├── mvp/
 │   └── architecture/
-└── v1/
+├── v1/
+│   └── specs/
+└── v2/
+    ├── requirements/
+    ├── designs/
     └── specs/
 ```
 
@@ -49,6 +53,7 @@ docs/
 - `docs/mvp/specs/core/0005-thread-execution-model.md`
 - `docs/mvp/specs/features/0011-thread-centric-ia.md`
 - `docs/v1/specs/0008-domain-project-grouping.md`
+- `docs/v2/README.md`
 
 ## 开发环境
 
@@ -149,4 +154,4 @@ pnpm test
 - 不再把 Todo 当作 Quest 子对象
 - 不再走 “Task 执行自动创建 Session” 这套模型
 
-如果 README 和代码不一致，以 `docs/mvp/architecture/*`、`docs/mvp/specs/*` 与 `docs/v1/specs/*` 为准。
+如果 README 和代码不一致，以 `docs/mvp/architecture/*`、`docs/mvp/specs/*`、`docs/v1/specs/*` 与 `docs/v2/*` 为准。

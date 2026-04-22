@@ -557,6 +557,12 @@ export function TodoPanel({
     }
   }, [projectId])
 
+  useEffect(() => {
+    setFilterTags((current) => current.filter((tag) =>
+      projectTags.some((projectTag) => projectTag.toLowerCase() === tag.toLowerCase())
+    ))
+  }, [projectTags])
+
   useSseEvent(
     (event) => {
       const shouldReloadData = (
@@ -722,6 +728,7 @@ export function TodoPanel({
     () => sourceTab === 'ai' ? [] : scopeData.archivedTodos,
     [scopeData.archivedTodos, sourceTab],
   )
+  const hasActiveTagFilter = filterTags.length > 0
 
   const humanCount = useMemo(
     () => scopeData.todos.filter((t) => t.status === 'pending').length,
@@ -762,19 +769,23 @@ export function TodoPanel({
   )
 
   const historyItems = useMemo(
-    () => sortRailTaskItems([
-      ...createTodoItems(historyHumanTodos),
-      ...createQuestItems(historyAiTasks),
-    ]),
-    [historyHumanTodos, historyAiTasks],
+    () => hasActiveTagFilter
+      ? []
+      : sortRailTaskItems([
+          ...createTodoItems(historyHumanTodos),
+          ...createQuestItems(historyAiTasks),
+        ]),
+    [hasActiveTagFilter, historyHumanTodos, historyAiTasks],
   )
 
   const visibleArchivedItems = useMemo(
-    () => sortRailTaskItems([
-      ...createTodoItems(visibleArchivedTodos, true),
-      ...createQuestItems(visibleArchivedTasks, true),
-    ]),
-    [visibleArchivedTasks, visibleArchivedTodos],
+    () => hasActiveTagFilter
+      ? []
+      : sortRailTaskItems([
+          ...createTodoItems(visibleArchivedTodos, true),
+          ...createQuestItems(visibleArchivedTasks, true),
+        ]),
+    [hasActiveTagFilter, visibleArchivedTasks, visibleArchivedTodos],
   )
 
   const scopeCounts = useMemo(

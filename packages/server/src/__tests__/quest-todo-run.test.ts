@@ -16,8 +16,9 @@ import type {
 import type { StartQuestRunResult, SubmitQuestMessageResult } from '../runtime/session-runner'
 import { appendEvent } from '../models/history'
 import { getQuest, updateQuest } from '../models/quest'
-import { getRun, getRunsByQuest } from '../models/run'
-import { listTodos } from '../models/todo'
+import { createRun, getRun, getRunsByQuest, updateRun } from '../models/run'
+import { recoverPendingSessionAutoRenames } from '../runtime/session-runner'
+import { listProjectTags, listTodos } from '../models/todo'
 import { stopScheduler } from '../services/scheduler'
 import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
@@ -364,6 +365,38 @@ describe('quest/todo/run APIs', () => {
     expect(archivedTaskIds).toEqual([archivedTask.id])
   })
 
+  it('excludes completed and archived todo tags from the project tag list', async () => {
+    const project = await openProject('todo-tag-filtering')
+
+    const pendingTodo = await POST<Todo>('/api/todos', {
+      projectId: project.id,
+      title: 'Pending todo',
+      tags: ['active-tag', 'shared-tag'],
+    })
+    expect(pendingTodo.status).toBe(201)
+
+    const doneTodo = await POST<Todo>('/api/todos', {
+      projectId: project.id,
+      title: 'Done todo',
+      tags: ['done-tag', 'shared-tag'],
+      status: 'done',
+    })
+    expect(doneTodo.status).toBe(201)
+
+    const archivedTodo = await POST<Todo>('/api/todos', {
+      projectId: project.id,
+      title: 'Archived todo',
+      tags: ['archived-tag'],
+      deleted: true,
+    })
+    expect(archivedTodo.status).toBe(201)
+
+    expect(mustOk(pendingTodo).tags).toEqual(['active-tag', 'shared-tag'])
+    expect(mustOk(doneTodo).tags).toEqual(['done-tag', 'shared-tag'])
+    expect(mustOk(archivedTodo).tags).toEqual(['archived-tag'])
+    expect(listProjectTags(project.id)).toEqual(['active-tag', 'shared-tag'])
+  })
+
   it('moves a quest to another project and reassigns its run history', async () => {
     const sourceProject = await openProject('quest-move-source')
     const targetProject = await openProject('quest-move-target')
@@ -606,6 +639,61 @@ describe('quest/todo/run APIs', () => {
       expect(freshQuest?.activeRunId).toBeUndefined()
       expect(freshQuest?.autoRenamePending).toBeUndefined()
       expect(freshQuest?.name).toBe('Prepare release readiness checklist')
+      return freshQuest
+    }, { timeoutMs: 6_000 })
+  })
+
+  it('recovers pending auto rename after the first-run rename hook was missed', async () => {
+    installFakeCodex()
+    process.env['PLUSE_FAKE_CODEX_AUTO_RENAME_REPLY'] = '恢复后的会话名'
+    process.env['PLUSE_FAKE_CODEX_THREAD_ID'] = 'thread_recover'
+
+    const project = await openProject('chat-auto-rename-recover')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+      name: '新会话',
+      autoRenamePending: true,
+    })
+
+    appendEvent(quest.id, {
+      timestamp: Date.now(),
+      type: 'message',
+      role: 'user',
+      content: '帮我梳理发布前检查项',
+    })
+    appendEvent(quest.id, {
+      timestamp: Date.now(),
+      type: 'message',
+      role: 'assistant',
+      content: '先确认发布流程、风险和负责人。',
+    })
+
+    const run = createRun({
+      questId: quest.id,
+      projectId: project.id,
+      requestId: 'recover-rename-1',
+      trigger: 'chat',
+      triggeredBy: 'human',
+      tool: 'codex',
+      model: 'gpt-5.4-mini',
+      thinking: false,
+      codexThreadId: 'thread_recover',
+    })
+    updateRun(run.id, {
+      state: 'completed',
+      completedAt: new Date().toISOString(),
+      finalizedAt: new Date().toISOString(),
+      codexThreadId: 'thread_recover',
+    })
+
+    recoverPendingSessionAutoRenames()
+
+    await waitFor(() => {
+      const freshQuest = getQuest(quest.id)
+      expect(freshQuest?.autoRenamePending).toBeUndefined()
+      expect(freshQuest?.name).toBe('恢复后的会话名')
       return freshQuest
     }, { timeoutMs: 6_000 })
   })

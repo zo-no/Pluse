@@ -153,13 +153,13 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'project open',
-            cli: 'pluse project open --work-dir <path> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--domain-id <id>] [--pin] [--json]',
+            cli: 'pluse project open --work-dir <path> [--name <name>] [--goal <goal>] [--description <text>] [--system-prompt <prompt>] [--domain-id <id>] [--pin] [--json]',
             api: 'POST /api/projects/open',
             description: '打开或创建项目',
           },
           {
             name: 'project update',
-            cli: 'pluse project update <id> [--name <name>] [--goal <goal>] [--system-prompt <prompt>] [--domain-id <id>|--clear-domain] [--pin] [--unpin] [--archive] [--json]',
+            cli: 'pluse project update <id> [--name <name>] [--goal <goal>] [--description <text>] [--clear-description] [--system-prompt <prompt>] [--domain-id <id>] [--clear-domain] [--pin] [--unpin] [--archive] [--json]',
             api: 'PATCH /api/projects/<id>',
             description: '更新项目属性',
           },
@@ -183,7 +183,7 @@ export function getCommandCatalog(): CommandCatalog {
         commands: [
           {
             name: 'domain list',
-            cli: 'pluse domain list [--json]',
+            cli: 'pluse domain list [--with-projects] [--json]',
             api: 'GET /api/domains',
             description: '列出所有 Domain',
           },
@@ -195,13 +195,13 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'domain create',
-            cli: 'pluse domain create --name <name> [--description <text>] [--json]',
+            cli: 'pluse domain create --name <name> [--description <text>] [--icon <icon>] [--color <color>] [--order-index <n>] [--json]',
             api: 'POST /api/domains',
             description: '创建新的 Domain',
           },
           {
             name: 'domain update',
-            cli: 'pluse domain update <id> [--name <name>] [--description <text>] [--json]',
+            cli: 'pluse domain update <id> [--name <name>] [--description <text>] [--icon <icon>] [--color <color>] [--order-index <n>] [--json]',
             api: 'PATCH /api/domains/<id>',
             description: '更新 Domain 内容',
           },

@@ -127,7 +127,9 @@ export function listProjectTags(projectId: string): string[] {
   const rows = db.query<{ tag: string }, [string]>(
     `SELECT DISTINCT json_each.value AS tag
      FROM todos, json_each(todos.tags)
-     WHERE todos.project_id = ? AND todos.deleted = 0
+     WHERE todos.project_id = ?
+       AND todos.deleted = 0
+       AND todos.status = 'pending'
      ORDER BY tag ASC`
   ).all(projectId)
   return rows.map((r) => r.tag)

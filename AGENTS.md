@@ -41,6 +41,7 @@ docs/mvp/specs/core/0003-thread-unified-model.md
 docs/mvp/specs/core/0005-thread-execution-model.md
 docs/mvp/specs/features/0011-thread-centric-ia.md
 docs/v1/specs/0008-domain-project-grouping.md
+docs/v2/README.md
 ```
 
 按需深入：
@@ -95,6 +96,7 @@ Domain
 | 要改什么 | 先看文档 | 再看代码 |
 |---|---|---|
 | Domain / Project 分组 | `docs/v1/specs/0008-domain-project-grouping.md` | `packages/server/src/models/domain.ts` / `packages/server/src/services/domains.ts` |
+| v2 研发方法 | `docs/v2/README.md` / `docs/v2/requirements/*` | 先不要直接跳到代码 |
 | Quest 数据结构 | `docs/mvp/architecture/data-model.md` | `packages/server/src/models/quest.ts` |
 | Run 执行流程 | `docs/mvp/architecture/execution-model.md` | `packages/server/src/runtime/session-runner.ts` / `packages/server/src/models/run.ts` |
 | 调度逻辑 | `docs/mvp/specs/core/0005-thread-execution-model.md` | `packages/server/src/services/scheduler.ts` |
@@ -116,6 +118,17 @@ Domain
 5. **SQLite 使用 Bun 内置 `bun:sqlite`**
 6. **不新增旧 Session/Task 兼容接口**
 7. **附件一律按 `questId` 持久化到 `~/.pluse/assets/{questId}`**
+
+## v2 研发方法
+
+对于非琐碎功能和系统改造，默认遵循：
+
+1. 先写 `Requirement`
+2. 再写 `Design`
+3. 最后写实现 `Spec`
+4. 用户确认 spec 后再编码
+
+不要从用户症状直接跳到功能设计或代码实现。
 
 ---
 

@@ -19,6 +19,7 @@ import {
   dequeueFollowUp,
   enqueueFollowUp,
   getQuest,
+  listQuestsPendingAutoRename,
   listQuestsWithPendingQueue,
   removeFollowUp,
   updateQuest,
@@ -788,6 +789,17 @@ async function maybeAutoRenameQuest(questId: string, snapshot: AutoRenameSnapsho
   emitQuestUpdated(questId)
 }
 
+function scheduleAutoRename(questId: string): void {
+  const quest = getQuest(questId)
+  if (!quest || quest.kind !== 'session' || !quest.autoRenamePending || isQuestBusyForChat(quest)) return
+  if (!getRunsByQuest(quest.id).some((run) => run.trigger === 'chat')) return
+
+  const autoRenameSnapshot = buildAutoRenameSnapshot(quest.id)
+  queueMicrotask(() => {
+    void maybeAutoRenameQuest(quest.id, autoRenameSnapshot)
+  })
+}
+
 function maybeStartNextFollowUp(questId: string): void {
   const quest = getQuest(questId)
   if (!quest || quest.kind !== 'session' || isQuestBusyForChat(quest)) return
@@ -859,11 +871,8 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
     })
   }
 
-  if (quest.kind === 'session' && run.trigger === 'chat' && getRunsByQuest(quest.id).filter((entry) => entry.trigger === 'chat').length === 1) {
-    const autoRenameSnapshot = buildAutoRenameSnapshot(quest.id)
-    queueMicrotask(() => {
-      void maybeAutoRenameQuest(quest.id, autoRenameSnapshot)
-    })
+  if (quest.kind === 'session' && run.trigger === 'chat' && quest.autoRenamePending) {
+    scheduleAutoRename(quest.id)
   }
 
   ensureTaskReviewTodo(quest, state === 'completed')
@@ -1338,5 +1347,11 @@ export function recoverFollowUpQueues(): void {
   for (const quest of listQuestsWithPendingQueue()) {
     if (isQuestBusyForChat(quest)) continue
     maybeStartNextFollowUp(quest.id)
+  }
+}
+
+export function recoverPendingSessionAutoRenames(): void {
+  for (const quest of listQuestsPendingAutoRename()) {
+    scheduleAutoRename(quest.id)
   }
 }

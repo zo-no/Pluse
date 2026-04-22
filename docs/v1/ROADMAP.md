@@ -21,6 +21,7 @@ v1 的核心目标：**让 Agent 可以自主配置自己的工作环境**，人
 | 0006 | Hook 自动 Todo 标签 — 会话完成/失败 Todo 自动打 tag | ✅ 已完成 | [0006-hook-todo-tags.md](./specs/0006-hook-todo-tags.md) |
 | 0007 | 会话/项目分组旧草稿 | 📝 旧草稿 | [0007-session-project-grouping.md](./specs/0007-session-project-grouping.md) |
 | 0008 | Domain/Project 分组 — Project 上层组织层 | 📝 草稿 | [0008-domain-project-grouping.md](./specs/0008-domain-project-grouping.md) |
+| 0013 | Todo Broker / Human Work Control Plane — 统一人类待办准入与调度 | 📝 草稿 | [0013-todo-broker-control-plane.md](./specs/0013-todo-broker-control-plane.md) |
 
 ## 设计原则
 

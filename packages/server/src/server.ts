@@ -19,7 +19,7 @@ import { getDb } from './db'
 import { requireAuth } from './middleware/auth'
 import { ensureBuiltinProjects } from './services/projects'
 import { reconcile, startScheduler, stopScheduler } from './services/scheduler'
-import { recoverFollowUpQueues } from './runtime/session-runner'
+import { recoverFollowUpQueues, recoverPendingSessionAutoRenames } from './runtime/session-runner'
 import { getServerMetadataPath, getWebDistRoot } from './support/paths'
 
 const DEFAULT_PORT = 7760
@@ -93,6 +93,7 @@ function bootstrap(): void {
   reconcile()
   startScheduler()
   recoverFollowUpQueues()
+  recoverPendingSessionAutoRenames()
 }
 
 export function startServer(port: number = DEFAULT_PORT): void {
