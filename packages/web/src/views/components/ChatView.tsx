@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { MessageAttachment, Quest, QuestEvent, QueuedMessage, Run, RuntimeModelCatalog, RuntimeTool, UpdateQuestInput } from '@pluse/types'
+import type { MessageAttachment, Quest, QuestEvent, QueuedMessage, Run, RuntimeModelCatalog, RuntimeTool, SessionCategory, UpdateQuestInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
@@ -345,6 +345,7 @@ function MetaEventGroup({
 export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProps) {
   const { locale, t } = useI18n()
   const [quest, setQuest] = useState<Quest | null>(null)
+  const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
   const [events, setEvents] = useState<QuestEvent[]>([])
   const [runs, setRuns] = useState<Run[]>([])
   const [draft, setDraft] = useState(() => loadDraft(questId))
@@ -551,6 +552,26 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }, [quest?.id, quest?.tool, quest?.model, quest?.effort, quest?.thinking])
 
   useEffect(() => {
+    if (!quest?.projectId) {
+      setSessionCategories([])
+      return
+    }
+    void api.getSessionCategories(quest.projectId).then((result) => {
+      if (result.ok) setSessionCategories(result.data)
+    })
+  }, [quest?.projectId])
+
+  const refreshSessionCategories = useEffectEvent(() => {
+    if (!quest?.projectId) {
+      setSessionCategories([])
+      return
+    }
+    void api.getSessionCategories(quest.projectId).then((result) => {
+      if (result.ok) setSessionCategories(result.data)
+    })
+  })
+
+  useEffect(() => {
     if (!catalog) return
     setRuntimeSelection((current) => {
       const nextModel = resolveRuntimeModelSelection(current.tool, current.model, catalog)
@@ -572,6 +593,9 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
       if (event.type === 'quest_updated') {
         pendingQuestRefreshRef.current = true
         pendingProjectRefreshRef.current = true
+      }
+      if (event.type === 'project_updated' && event.data.projectId === quest?.projectId) {
+        refreshSessionCategories()
       }
       if (event.type === 'run_updated') {
         pendingQuestRefreshRef.current = true
@@ -611,6 +635,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
         }
         void refreshQuest()
         void refreshThread()
+        refreshSessionCategories()
       },
     },
   )
@@ -632,6 +657,12 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     const latestEvent = events[events.length - 1]
     return isDrawingEvent(latestEvent)
   }, [quest?.model, events])
+
+  const currentSessionCategory = useMemo(() => (
+    quest?.sessionCategoryId
+      ? sessionCategories.find((category) => category.id === quest.sessionCategoryId) ?? null
+      : null
+  ), [quest?.sessionCategoryId, sessionCategories])
 
   useEffect(() => {
     if (!isDrawingMode) return
@@ -869,6 +900,13 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   return (
     <div className="pluse-page pluse-session-page">
       <div className="pluse-chat-shell" style={chatShellStyle}>
+        {currentSessionCategory ? (
+          <div style={{ padding: '12px 16px 0' }}>
+            <span className="pluse-inline-pill">
+              {t('分类')} · {currentSessionCategory.name}
+            </span>
+          </div>
+        ) : null}
         <div className="pluse-thread" ref={threadRef} onScroll={updateScrollBottomVisibility}>
           <div className="pluse-thread-inner">
             {events.length === 0 ? (

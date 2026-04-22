@@ -214,6 +214,36 @@ export function getCommandCatalog(): CommandCatalog {
         ],
       },
       {
+        name: 'session-category',
+        description: 'Session 分类',
+        commands: [
+          {
+            name: 'session-category list',
+            cli: 'pluse session-category list --project-id <id> [--json]',
+            api: 'GET /api/projects/<id>/session-categories',
+            description: '列出项目下的会话分类',
+          },
+          {
+            name: 'session-category create',
+            cli: 'pluse session-category create --project-id <id> --name <name> [--description <text>] [--collapsed true|false] [--json]',
+            api: 'POST /api/projects/<id>/session-categories',
+            description: '创建会话分类',
+          },
+          {
+            name: 'session-category update',
+            cli: 'pluse session-category update <id> [--name <name>] [--description <text>] [--collapsed true|false] [--json]',
+            api: 'PATCH /api/session-categories/<id>',
+            description: '更新会话分类',
+          },
+          {
+            name: 'session-category delete',
+            cli: 'pluse session-category delete <id> --confirm [--json]',
+            api: 'DELETE /api/session-categories/<id>',
+            description: '删除会话分类并解绑其下会话',
+          },
+        ],
+      },
+      {
         name: 'commands',
         description: '系统',
         commands: [

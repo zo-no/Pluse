@@ -30,7 +30,9 @@
 
 ### P1
 
-- 暂无
+- [0003-agent-driven-session-classification.md](./0003-agent-driven-session-classification.md)
+  - 核心问题：会话空间只有时间排序，缺少可被 Agent 维护的稳定语义结构
+  - 说明：这是会话导航与长期上下文承接的基础能力，但优先级低于 `0001-human-workload-control`
 
 ### P2
 
@@ -45,7 +47,8 @@
 1. 先确认 `0001-human-workload-control`
 2. 基于 `0001` 写对应 `design`
 3. 再将 `0001` 拆成多期 `spec`
-4. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+4. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
+5. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
 
 ## 维护规则
 

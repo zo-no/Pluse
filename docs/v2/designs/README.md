@@ -21,3 +21,4 @@
 
 - 当前总 design：
   - [0001-human-workload-control.md](./0001-human-workload-control.md)
+  - [0003-agent-driven-session-classification.md](./0003-agent-driven-session-classification.md)

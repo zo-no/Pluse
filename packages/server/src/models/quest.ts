@@ -25,6 +25,7 @@ function now(): string {
 type QuestRow = {
   id: string
   project_id: string
+  session_category_id: string | null
   kind: QuestKind
   created_by: Quest['createdBy']
   codex_thread_id: string | null
@@ -80,6 +81,7 @@ function rowToQuest(row: QuestRow): Quest {
   return {
     id: row.id,
     projectId: row.project_id,
+    sessionCategoryId: row.session_category_id ?? undefined,
     kind: row.kind,
     createdBy: row.created_by,
     codexThreadId: row.codex_thread_id ?? undefined,
@@ -185,13 +187,13 @@ export function createQuest(input: CreateQuestInput): Quest {
 
   db.run(
     `INSERT INTO quests (
-      id, project_id, kind, created_by, codex_thread_id, claude_session_id,
+      id, project_id, session_category_id, kind, created_by, codex_thread_id, claude_session_id,
       tool, model, effort, thinking, active_run_id,
       name, auto_rename_pending, pinned, follow_up_queue,
       title, description, status, enabled, schedule_kind, schedule_config,
       executor_kind, executor_config, executor_options, completion_output,
       review_on_complete, order_index, deleted, deleted_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?)`,
+    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?)`,
     [
       id,
       input.projectId,
@@ -248,6 +250,7 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
   if ('name' in input) setField('name', input.name ?? null)
   if ('title' in input) setField('title', input.title ?? null)
   if ('description' in input) setField('description', input.description ?? null)
+  if ('sessionCategoryId' in input) setField('session_category_id', input.sessionCategoryId ?? null)
   if (input.status !== undefined) setField('status', input.status)
   if (input.enabled !== undefined) setField('enabled', input.enabled ? 1 : 0)
   if (input.pinned !== undefined) setField('pinned', input.pinned ? 1 : 0)

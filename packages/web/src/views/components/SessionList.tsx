@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Domain, Project, Quest } from '@pluse/types'
+import type { Domain, Project, Quest, SessionCategory } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
@@ -162,6 +162,7 @@ export function SessionList({
   const navigate = useNavigate()
   const [sessions, setSessions] = useState<Quest[]>([])
   const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
+  const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('sessions')
   const [domains, setDomains] = useState<Domain[]>([])
@@ -221,6 +222,15 @@ export function SessionList({
     if (archivedResult.ok) setArchivedSessions(archivedResult.data)
   }, [activeProjectId])
 
+  const loadSessionCategories = useCallback(async () => {
+    if (!activeProjectId) {
+      setSessionCategories([])
+      return
+    }
+    const result = await api.getSessionCategories(activeProjectId)
+    if (result.ok) setSessionCategories(result.data)
+  }, [activeProjectId])
+
   const loadDomains = useCallback(async () => {
     const result = await api.getDomains()
     if (result.ok) setDomains(result.data)
@@ -233,6 +243,10 @@ export function SessionList({
   useEffect(() => {
     void loadDomains()
   }, [loadDomains])
+
+  useEffect(() => {
+    void loadSessionCategories()
+  }, [loadSessionCategories])
 
   useEffect(() => {
     return () => {
@@ -259,10 +273,14 @@ export function SessionList({
       const shouldReloadQuests = activeProjectId != null
         && (event.type === 'quest_updated' || event.type === 'quest_deleted')
         && event.data.projectId === activeProjectId
+      const shouldReloadSessionCategories = activeProjectId != null
+        && event.type === 'project_updated'
+        && event.data.projectId === activeProjectId
       const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
-      if (!shouldReloadQuests && !shouldReloadDomains) return
+      if (!shouldReloadQuests && !shouldReloadSessionCategories && !shouldReloadDomains) return
 
       if (shouldReloadQuests) pendingQuestReloadRef.current = true
+      if (shouldReloadSessionCategories) pendingQuestReloadRef.current = true
       if (shouldReloadDomains) pendingDomainReloadRef.current = true
       if (reloadTimerRef.current) window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = window.setTimeout(() => {
@@ -272,6 +290,7 @@ export function SessionList({
         pendingDomainReloadRef.current = false
 
         if (nextQuestReload) void loadQuests()
+        if (nextQuestReload) void loadSessionCategories()
         if (nextDomainReload) void loadDomains()
       }, 300)
     },
@@ -284,6 +303,7 @@ export function SessionList({
           reloadTimerRef.current = null
         }
         void loadQuests()
+        void loadSessionCategories()
         void loadDomains()
       },
     },
@@ -448,6 +468,15 @@ export function SessionList({
     void handleArchive(questId, archived)
   }, [handleArchive])
 
+  const handleToggleSessionCategoryCollapsed = useCallback(async (categoryId: string, collapsed: boolean) => {
+    const result = await api.updateSessionCategory(categoryId, { collapsed })
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    await loadSessionCategories()
+  }, [loadSessionCategories])
+
   const filteredSessions = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase()
     return normalized
@@ -457,6 +486,29 @@ export function SessionList({
 
   const pinnedSessions = filteredSessions.filter((quest) => quest.pinned)
   const unpinnedSessions = filteredSessions.filter((quest) => !quest.pinned)
+
+  const categorizedSessionSections = useMemo(() => {
+    const grouped = new Map<string, Quest[]>()
+    for (const category of sessionCategories) grouped.set(category.id, [])
+
+    const ungrouped: Quest[] = []
+    for (const quest of unpinnedSessions) {
+      const categoryId = quest.sessionCategoryId
+      if (categoryId && grouped.has(categoryId)) {
+        grouped.get(categoryId)!.push(quest)
+      } else {
+        ungrouped.push(quest)
+      }
+    }
+
+    return {
+      categories: sessionCategories.map((category) => ({
+        category,
+        quests: grouped.get(category.id) ?? [],
+      })),
+      ungrouped,
+    }
+  }, [sessionCategories, unpinnedSessions])
 
   const archivedSessionsByDate = useMemo(() => {
     const groups = new Map<string, Quest[]>()
@@ -503,6 +555,27 @@ export function SessionList({
         onTogglePin={handleTogglePin}
         onToggleArchive={handleToggleArchive}
       />
+    )
+  }
+
+  function renderSessionCategorySection(category: SessionCategory, quests: Quest[]) {
+    return (
+      <div key={category.id} className="pluse-sidebar-archive-group">
+        <button
+          type="button"
+          className="pluse-sidebar-archive-toggle"
+          onClick={() => void handleToggleSessionCategoryCollapsed(category.id, !category.collapsed)}
+        >
+          <span>{category.collapsed ? '▸' : '▾'} {category.name} ({quests.length})</span>
+        </button>
+        {!category.collapsed ? (
+          <div className="pluse-sidebar-archive-list">
+            {quests.length > 0 ? quests.map((quest) => renderQuest(quest)) : (
+              <div className="pluse-empty-state pluse-sidebar-empty">{t('暂无会话')}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
     )
   }
 
@@ -607,12 +680,20 @@ export function SessionList({
                     <>
                       <div className="pluse-sidebar-section-label">{t('固定')}</div>
                       {pinnedSessions.map((quest) => renderQuest(quest))}
-                      {unpinnedSessions.length > 0 ? (
-                        <div className="pluse-sidebar-section-label">{t('最近')}</div>
-                      ) : null}
                     </>
                   ) : null}
-                  {unpinnedSessions.map((quest) => renderQuest(quest))}
+                  {categorizedSessionSections.categories.length > 0 ? (
+                    <>
+                      <div className="pluse-sidebar-section-label">{t('分类')}</div>
+                      {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
+                    </>
+                  ) : null}
+                  {categorizedSessionSections.ungrouped.length > 0 ? (
+                    <>
+                      <div className="pluse-sidebar-section-label">{t('未分组')}</div>
+                      {categorizedSessionSections.ungrouped.map((quest) => renderQuest(quest))}
+                    </>
+                  ) : null}
                   {sessions.length === 0 ? (
                     <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
                   ) : filteredSessions.length === 0 ? (

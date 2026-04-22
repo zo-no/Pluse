@@ -12,6 +12,7 @@
 | 主线 | 当前状态 | 当前焦点 | 已完成产物 |
 | --- | --- | --- | --- |
 | `0001-human-workload-control` | `spec` | `review P0 review todo uniqueness spec` | `requirements/0001-human-workload-control.md`, `designs/0001-human-workload-control.md`, `specs/0001-human-workload-control-phase-1.md`, `specs/0001-human-workload-control-p0-review-todo-uniqueness.md` |
+| `0003-agent-driven-session-classification` | `spec` | `review Phase 1 session classification spec` | `requirements/0003-agent-driven-session-classification.md`, `designs/0003-agent-driven-session-classification.md`, `specs/0003-agent-driven-session-classification-phase-1.md` |
 
 ## 使用规则
 

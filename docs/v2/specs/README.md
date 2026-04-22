@@ -23,3 +23,4 @@
 - 当前 spec：
   - [0001-human-workload-control-phase-1.md](./0001-human-workload-control-phase-1.md)
   - [0001-human-workload-control-p0-review-todo-uniqueness.md](./0001-human-workload-control-p0-review-todo-uniqueness.md)
+  - [0003-agent-driven-session-classification-phase-1.md](./0003-agent-driven-session-classification-phase-1.md)

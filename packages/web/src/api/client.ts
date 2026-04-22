@@ -16,6 +16,7 @@ import type {
   RuntimeModelCatalog,
   RuntimeTool,
   SendMessageInput,
+  SessionCategory,
   AppSettings,
   Todo,
   TokenUsageSummary,
@@ -149,6 +150,22 @@ export function getProjectOverview(id: string): Promise<ApiResult<ProjectOvervie
 
 export function getProjectTokenSummary(id: string): Promise<ApiResult<TokenUsageSummary>> {
   return request<TokenUsageSummary>('GET', `/projects/${id}/token-summary`)
+}
+
+export function getSessionCategories(projectId: string): Promise<ApiResult<SessionCategory[]>> {
+  return request<SessionCategory[]>('GET', `/projects/${projectId}/session-categories`)
+}
+
+export function createSessionCategory(projectId: string, input: { name: string; description?: string; collapsed?: boolean }): Promise<ApiResult<SessionCategory>> {
+  return request<SessionCategory>('POST', `/projects/${projectId}/session-categories`, input)
+}
+
+export function updateSessionCategory(id: string, input: { name?: string | null; description?: string | null; collapsed?: boolean }): Promise<ApiResult<SessionCategory>> {
+  return request<SessionCategory>('PATCH', `/session-categories/${id}`, input)
+}
+
+export function deleteSessionCategory(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/session-categories/${id}`)
 }
 
 export function updateProject(id: string, input: UpdateProjectInput): Promise<ApiResult<Project>> {

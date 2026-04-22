@@ -1,6 +1,7 @@
 export * from './project'
 export * from './domain'
 export * from './quest'
+export * from './session-category'
 export * from './todo'
 export * from './run'
 export * from './auth'

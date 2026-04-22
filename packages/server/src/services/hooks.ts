@@ -3,15 +3,19 @@ import { dirname } from 'node:path'
 import type { Quest } from '@pluse/types'
 import type { Run } from '@pluse/types'
 import { getGlobalHooksPath, getProjectHooksPath } from '../support/paths'
+import { getRunsByQuest } from '../models/run'
 import { updateQuest } from '../models/quest'
 import { createTodoWithEffects, ensureReviewTodoWithEffects } from './todos'
 import { getProject } from '../models/project'
+import { runSessionClassificationInBackground } from './session-classifier'
 
 export type HookEvent = 'run_completed' | 'run_failed'
 
 interface HookFilter {
   kind?: 'session' | 'task'
+  trigger?: string[]
   triggeredBy?: string[]
+  firstCompletedChatRun?: boolean
 }
 
 interface HighlightQuestAction {
@@ -30,7 +34,12 @@ interface ShellAction {
   command: string
 }
 
-type HookAction = HighlightQuestAction | CreateTodoAction | ShellAction
+interface AgentClassifySessionAction {
+  type: 'agent_classify_session'
+  allowCreateSessionCategory?: boolean
+}
+
+type HookAction = HighlightQuestAction | CreateTodoAction | ShellAction | AgentClassifySessionAction
 
 export interface Hook {
   id: string
@@ -76,6 +85,22 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
         {
           type: 'shell',
           command: "kairos {{project.name.shell}}，{{quest.name.shell}}完成了",
+        },
+      ],
+    },
+    {
+      id: 'classify-first-session-run',
+      event: 'run_completed',
+      enabled: false,
+      filter: {
+        kind: 'session',
+        trigger: ['chat'],
+        firstCompletedChatRun: true,
+      },
+      actions: [
+        {
+          type: 'agent_classify_session',
+          allowCreateSessionCategory: true,
         },
       ],
     },
@@ -128,7 +153,13 @@ function matchesFilter(hook: Hook, event: HookEvent, quest: Quest, run: Run): bo
   const f = hook.filter
   if (!f) return true
   if (f.kind && f.kind !== quest.kind) return false
+  if (f.trigger && !f.trigger.includes(run.trigger)) return false
   if (f.triggeredBy && !f.triggeredBy.includes(run.triggeredBy)) return false
+  if (f.firstCompletedChatRun) {
+    const completedChatRuns = getRunsByQuest(quest.id)
+      .filter((entry) => entry.trigger === 'chat' && entry.state === 'completed')
+    if (completedChatRuns.length !== 1 || completedChatRuns[0]?.id !== run.id) return false
+  }
   return true
 }
 
@@ -183,7 +214,7 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
         const todoInput = {
           projectId: quest.projectId,
           originQuestId: quest.id,
-          createdBy: 'system',
+          createdBy: 'system' as const,
           title: renderTemplate(action.title, fullCtx),
           description: action.description ? renderTemplate(action.description, fullCtx) : undefined,
           tags: action.tags,
@@ -205,6 +236,11 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
         } catch (error) {
           console.warn('[hooks] shell action failed to spawn:', error instanceof Error ? error.message : error)
         }
+      } else if (action.type === 'agent_classify_session') {
+        runSessionClassificationInBackground({
+          questId: quest.id,
+          allowCreateSessionCategory: action.allowCreateSessionCategory,
+        })
       }
     }
   }

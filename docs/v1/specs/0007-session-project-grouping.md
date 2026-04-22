@@ -6,7 +6,11 @@
 **依赖**: `docs/mvp/architecture/architecture.md`, `docs/mvp/architecture/ui-design.md`, `docs/mvp/specs/core/0003-thread-unified-model.md`
 
 > 这是旧草稿，保留作历史参考。
-> 当前 v1 的有效方案是 `0008-domain-project-grouping.md`，以 `Domain` 作为 Project 的上层组织层。
+> 其中 Project 上层组织已由 `0008-domain-project-grouping.md` 替代。
+> 其中会话侧方案已在 v2 转向 “Agent 驱动的会话分类能力”，见：
+> - `docs/v2/requirements/0003-agent-driven-session-classification.md`
+> - `docs/v2/designs/0003-agent-driven-session-classification.md`
+> - `docs/v2/specs/0003-agent-driven-session-classification-phase-1.md`
 
 ---
 

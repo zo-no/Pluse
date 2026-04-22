@@ -66,6 +66,8 @@ type QuestUpdateOptions = SharedTaskOptionFlags & {
   name?: string
   title?: string
   description?: string
+  sessionCategoryId?: string
+  clearSessionCategory?: boolean
   status?: Quest['status']
   tool?: string
   model?: string
@@ -490,6 +492,8 @@ const questUpdateCommand = questCommand
   .option('--name <name>', 'Name')
   .option('--title <title>', 'Title')
   .option('--description <description>', 'Description')
+  .option('--session-category-id <id>', 'Assign quest to a session category')
+  .option('--clear-session-category', 'Clear quest session category')
   .option('--tool <tool>', 'Tool')
   .option('--model <model>', 'Model')
   .option('--pin', 'Pin quest')
@@ -498,6 +502,9 @@ const questUpdateCommand = questCommand
 addSharedTaskOptions(questUpdateCommand)
 questUpdateCommand
   .action(async (id: string, opts: QuestUpdateOptions) => {
+    if (opts.sessionCategoryId && opts.clearSessionCategory) {
+      throw new Error('Use either --session-category-id or --clear-session-category, not both')
+    }
     const mode = getCliMode()
     const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
     const existing = await loadQuest(baseUrl, id)
@@ -506,6 +513,7 @@ questUpdateCommand
       name: opts.name,
       title: opts.title,
       description: opts.description,
+      sessionCategoryId: opts.clearSessionCategory ? null : opts.sessionCategoryId,
       status: opts.status,
       tool: opts.tool,
       model: opts.model,

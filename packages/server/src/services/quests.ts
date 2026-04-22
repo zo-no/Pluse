@@ -8,6 +8,7 @@ import { createQuestOp, getQuestOps } from '../models/quest-op'
 import { createQuest, getQuest, listQuests, updateQuest } from '../models/quest'
 import { getProject } from '../models/project'
 import { getLatestRunForQuest, getRun, getRunsByQuest } from '../models/run'
+import { getSessionCategory } from '../models/session-category'
 import { emit } from './events'
 import { refreshQuestSchedule } from './scheduler'
 import { getAssetsDir, getHistoryRoot, getPluseRoot } from '../support/paths'
@@ -92,6 +93,15 @@ function questActivityTitle(quest: Quest): string {
     || (quest.kind === 'task' ? '未命名任务' : '未命名会话')
 }
 
+function assertSessionCategoryBelongsToProject(projectId: string, sessionCategoryId: string | null | undefined): void {
+  if (!sessionCategoryId) return
+  const category = getSessionCategory(sessionCategoryId)
+  if (!category) throw new Error(`Session category not found: ${sessionCategoryId}`)
+  if (category.projectId !== projectId) {
+    throw new Error(`Session category ${sessionCategoryId} does not belong to project ${projectId}`)
+  }
+}
+
 export function listQuestViews(filter: Parameters<typeof listQuests>[0] = {}): Quest[] {
   return listQuests(filter).map((quest) => (
     quest.kind === 'session'
@@ -132,6 +142,9 @@ export function createQuestWithEffects(input: CreateQuestInput): Quest {
 export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Quest {
   const before = getQuest(id)
   if (!before) throw new Error(`Quest not found: ${id}`)
+  if ('sessionCategoryId' in input) {
+    assertSessionCategoryBelongsToProject(before.projectId, input.sessionCategoryId)
+  }
   const updated = updateQuest(id, input)
   if (
     before.kind === 'session'
@@ -240,7 +253,7 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
   const movedAt = new Date().toISOString()
   const tx = db.transaction(() => {
     db.run(
-      'UPDATE quests SET project_id = ?, updated_at = ? WHERE id = ?',
+      'UPDATE quests SET project_id = ?, session_category_id = NULL, updated_at = ? WHERE id = ?',
       [input.targetProjectId, movedAt, id],
     )
     db.run(

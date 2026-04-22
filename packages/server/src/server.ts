@@ -11,6 +11,7 @@ import { projectsRouter } from './controllers/http/projects'
 import { settingsRouter } from './controllers/http/settings'
 import { hooksRouter } from './controllers/http/hooks'
 import { questsRouter } from './controllers/http/quests'
+import { sessionCategoriesRouter } from './controllers/http/session-categories'
 import { runsRouter } from './controllers/http/runs'
 import { todosRouter } from './controllers/http/todos'
 import { runtimeRouter } from './controllers/http/runtime'
@@ -38,6 +39,7 @@ app.route('/api', runsRouter)
 app.route('/api', todosRouter)
 app.route('/api', settingsRouter)
 app.route('/api', hooksRouter)
+app.route('/api', sessionCategoriesRouter)
 app.route('/api', runtimeRouter)
 app.route('/api', toolsRouter)
 app.route('/api', eventsRouter)

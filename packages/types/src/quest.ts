@@ -71,6 +71,7 @@ export interface Quest {
 
   name?: string
   autoRenamePending?: boolean
+  sessionCategoryId?: string
   pinned?: boolean
   deleted?: boolean
   deletedAt?: string
@@ -143,6 +144,7 @@ export interface UpdateQuestInput {
   order?: number | null
   codexThreadId?: string | null
   claudeSessionId?: string | null
+  sessionCategoryId?: string | null
   unread?: boolean
 }
 

@@ -70,6 +70,7 @@ const QuestPatchSchema = z.object({
   name: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
+  sessionCategoryId: z.string().nullable().optional(),
   status: z.enum(['idle', 'running', 'pending', 'done', 'failed', 'cancelled']).optional(),
   enabled: z.boolean().optional(),
   pinned: z.boolean().optional(),

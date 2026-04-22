@@ -75,6 +75,7 @@ function initSchema(db: Database): void {
     active_run_id        TEXT,
     name                 TEXT,
     auto_rename_pending  INTEGER DEFAULT 1,
+    session_category_id  TEXT REFERENCES session_categories(id),
     pinned               INTEGER DEFAULT 0,
     follow_up_queue      TEXT NOT NULL DEFAULT '[]',
     title                TEXT,
@@ -106,6 +107,20 @@ function initSchema(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_quests_status
     ON quests (project_id, kind, status)`)
 
+  db.run(`CREATE TABLE IF NOT EXISTS session_categories (
+    id            TEXT PRIMARY KEY NOT NULL,
+    project_id    TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    collapsed     INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_session_categories_project_name
+    ON session_categories (project_id, name)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_session_categories_project_name_sort
+    ON session_categories (project_id, name COLLATE NOCASE, created_at)`)
+
   db.run(`CREATE TABLE IF NOT EXISTS todos (
     id                   TEXT PRIMARY KEY NOT NULL,
     project_id           TEXT NOT NULL REFERENCES projects(id),
@@ -123,6 +138,7 @@ function initSchema(db: Database): void {
     updated_at           TEXT NOT NULL
   ) STRICT`)
   ensureColumn(db, 'quests', 'unread', 'ALTER TABLE quests ADD COLUMN unread INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'quests', 'session_category_id', 'ALTER TABLE quests ADD COLUMN session_category_id TEXT REFERENCES session_categories(id)')
   ensureColumn(db, 'todos', 'deleted', 'ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
   ensureColumn(db, 'todos', 'due_at', 'ALTER TABLE todos ADD COLUMN due_at TEXT')
