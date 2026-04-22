@@ -1158,7 +1158,7 @@ function Shell({
         subtitle={isSettingsRoute ? t('全局系统 Prompt') : undefined}
         floating={!isDesktop && isQuestRoute && isSessionRoute}
         overlayOpen={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
-        hideContext={!isDesktop && mobileSidebarOpen}
+        hideContext={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
         sidebarVisible={sidebarVisible}
         railVisible={railVisible}
         showSidebarToggle={isDesktop}
