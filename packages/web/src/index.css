@@ -4666,6 +4666,10 @@ select {
   box-sizing: border-box;
 }
 
+.pluse-rail-head-sidebar .pluse-project-switcher-btn {
+  border-bottom: 0;
+}
+
 .pluse-rail-head-sidebar .pluse-sidebar-tabs {
   margin: 0;
   padding: 0 4px;
@@ -4684,11 +4688,6 @@ select {
   min-width: 0;
   padding: 0 10px;
   text-align: center;
-  border-bottom: 0;
-}
-
-.pluse-task-panel-tab.is-active {
-  border-bottom: 0;
 }
 
 .pluse-todo-tag-filter-row {
