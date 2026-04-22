@@ -1,12 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
-import type { Domain, Project, Quest, Todo, UpdateTodoInput } from '@pluse/types'
+import type { Project, Quest, Todo, UpdateTodoInput } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayTaskName } from '@/views/utils/display'
-import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
 import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
@@ -163,11 +162,6 @@ function formatScopeEmptyMessage(
   return source === 'ai'
     ? (t ? t('当前范围暂无 AI 任务。') : '当前范围暂无 AI 任务。')
     : (t ? t('当前范围暂无待办。') : '当前范围暂无待办。')
-}
-
-function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
-  if (!project.domainId) return t('未分组')
-  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
 }
 
 const QuestRailItem = memo(function QuestRailItem({
@@ -379,11 +373,9 @@ const TodoRailItem = memo(function TodoRailItem({
 export function TodoPanel({
   projectId,
   projectName,
-  projectWorkDir,
   projects,
   activeQuestId,
   activeQuest,
-  onSelectProject,
   onRequestClose,
   onDataChanged,
 }: TodoPanelProps) {
@@ -398,7 +390,6 @@ export function TodoPanel({
   const [globalArchivedTasks, setGlobalArchivedTasks] = useState<Quest[]>([])
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
-  const [domains, setDomains] = useState<Domain[]>([])
   const [scopeTab, setScopeTab] = useState<ScopeTab>('project')
   const [scopeModes, setScopeModes] = useState<Record<ScopeTab, SourceTab>>({
     global: 'all',
@@ -426,16 +417,9 @@ export function TodoPanel({
   const [reloadTick, setReloadTick] = useState(0)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [projectTags, setProjectTags] = useState<string[]>([])
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const reloadTimerRef = useRef<number | null>(null)
   const pendingDataReloadRef = useRef(false)
-  const pendingDomainReloadRef = useRef(false)
   const dataRequestSeqRef = useRef(0)
-  const domainsRequestSeqRef = useRef(0)
-  const activeProject = useMemo(
-    () => projects.find((project) => project.id === projectId) ?? null,
-    [projects, projectId],
-  )
 
   const loadData = useCallback(async () => {
     const requestId = dataRequestSeqRef.current + 1
@@ -520,22 +504,12 @@ export function TodoPanel({
     setScopeModes((current) => ({ ...current, [tab]: source }))
   }
 
-  const loadDomains = useCallback(async () => {
-    const requestId = domainsRequestSeqRef.current + 1
-    domainsRequestSeqRef.current = requestId
-    const result = await api.getDomains()
-    if (requestId !== domainsRequestSeqRef.current) return
-    if (result.ok) setDomains(result.data)
-  }, [])
-
   useEffect(() => {
     void loadData()
-    void loadDomains()
     return () => {
       dataRequestSeqRef.current += 1
-      domainsRequestSeqRef.current += 1
     }
-  }, [loadData, loadDomains, projectId, reloadTick])
+  }, [loadData, projectId, reloadTick])
 
   useEffect(() => {
     return () => {
@@ -544,13 +518,11 @@ export function TodoPanel({
         reloadTimerRef.current = null
       }
       pendingDataReloadRef.current = false
-      pendingDomainReloadRef.current = false
     }
   }, [])
 
   useEffect(() => {
     pendingDataReloadRef.current = false
-    pendingDomainReloadRef.current = false
     if (reloadTimerRef.current) {
       window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = null
@@ -571,32 +543,25 @@ export function TodoPanel({
         || event.type === 'todo_updated'
         || event.type === 'todo_deleted'
       ) && (projectId == null || event.data.projectId === projectId)
-      const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
-      if (!shouldReloadData && !shouldReloadDomains) return
+      if (!shouldReloadData) return
 
       if (shouldReloadData) pendingDataReloadRef.current = true
-      if (shouldReloadDomains) pendingDomainReloadRef.current = true
       if (reloadTimerRef.current) window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = window.setTimeout(() => {
         const nextDataReload = pendingDataReloadRef.current
-        const nextDomainReload = pendingDomainReloadRef.current
         pendingDataReloadRef.current = false
-        pendingDomainReloadRef.current = false
 
         if (nextDataReload) setReloadTick((value) => value + 1)
-        if (nextDomainReload) void loadDomains()
       }, 300)
     },
     {
       onReconnect: () => {
         pendingDataReloadRef.current = false
-        pendingDomainReloadRef.current = false
         if (reloadTimerRef.current) {
           window.clearTimeout(reloadTimerRef.current)
           reloadTimerRef.current = null
         }
         void loadData()
-        void loadDomains()
       },
     },
   )
@@ -869,32 +834,6 @@ export function TodoPanel({
     setCreateModalOpen(true)
   }
 
-  const railContextLabel = useMemo(() => {
-    const scopeLabel = scopeTab === 'global'
-      ? t('全局')
-      : scopeTab === 'project'
-        ? t('项目')
-        : t('会话')
-    return `${t('任务栏')}-${scopeLabel}`
-  }, [scopeTab, t])
-
-  const activeProjectDomainLabel = useMemo(
-    () => activeProject ? projectDomainName(activeProject, domains, t) : t('未分组'),
-    [activeProject, domains, t],
-  )
-
-  async function openProjectFirstSession(nextProjectId: string) {
-    onSelectProject?.(nextProjectId)
-    setProjectPickerOpen(false)
-    onRequestClose?.()
-    const questId = await getPreferredSessionId(nextProjectId)
-    if (questId) {
-      navigate(`/quests/${questId}`)
-      return
-    }
-    navigate(`/projects/${nextProjectId}`)
-  }
-
   async function handleSaveSelectedTodo() {
     if (!selectedTodo) return
     const nextTitle = todoDraft.title.trim()
@@ -938,45 +877,6 @@ export function TodoPanel({
         </div>
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
-          <div className="pluse-sidebar-project-context">
-            <span className="pluse-sidebar-project-context-domain">{railContextLabel}</span>
-            <div className="pluse-project-switcher">
-              <button
-                type="button"
-                className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
-                onClick={() => setProjectPickerOpen((value) => !value)}
-                aria-haspopup="listbox"
-                aria-expanded={projectPickerOpen}
-              >
-                <div className="pluse-project-switcher-label">
-                  <strong>{projectName || t('当前项目')}</strong>
-                  <span>{activeProjectDomainLabel}</span>
-                </div>
-                <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
-              </button>
-
-              {projectPickerOpen ? (
-                <div className="pluse-project-picker">
-                  <div className="pluse-project-picker-list" role="listbox" aria-label={t('选择项目')}>
-                    {projects.map((project) => (
-                      <button
-                        key={project.id}
-                        type="button"
-                        className={`pluse-project-picker-item${project.id === projectId ? ' is-active' : ''}`}
-                        onClick={() => void openProjectFirstSession(project.id)}
-                      >
-                        <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
-                        <div className="pluse-project-picker-item-text">
-                          <strong>{project.name}</strong>
-                          <span>{projectDomainName(project, domains, t)}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
           <div className="pluse-sidebar-tabs pluse-task-panel-tabs" role="tablist" aria-label={t('任务视图')}>
             <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
               {t('全局')}

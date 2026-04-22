@@ -19,7 +19,9 @@ import { getQuest, updateQuest } from '../models/quest'
 import { createRun, getRun, getRunsByQuest, updateRun } from '../models/run'
 import { recoverPendingSessionAutoRenames } from '../runtime/session-runner'
 import { listProjectTags, listTodos } from '../models/todo'
+import { loadGlobalHooksConfig, saveGlobalHooksConfig } from '../services/hooks'
 import { stopScheduler } from '../services/scheduler'
+import { updateTodoWithEffects } from '../services/todos'
 import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
 
@@ -811,7 +813,7 @@ describe('quest/todo/run APIs', () => {
     expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Fake Claude reply')).toBe(true)
   })
 
-  it('enforces manual task run conflicts, skips overlapping automation runs, and records review todos', async () => {
+  it('enforces manual task run conflicts, skips overlapping automation runs, and deduplicates review todos', async () => {
     const project = await openProject('script-task')
     const task = await createQuest({
       projectId: project.id,
@@ -876,12 +878,111 @@ describe('quest/todo/run APIs', () => {
       return todos
     })
 
+    const firstReviewTodo = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
+      .find((todo) => todo.originQuestId === task.id)
+    expect(firstReviewTodo?.title).toContain('Review: Nightly Build')
+
+    const rerun = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
+      requestId: 'task-4',
+      trigger: 'manual',
+      triggeredBy: 'api',
+    })
+    expect(rerun.status).toBe(200)
+    expect(mustOk(rerun).skipped).toBe(false)
+
+    await waitFor(() => {
+      const run = getRun(mustOk(rerun).run!.id)
+      expect(run?.state).toBe('completed')
+      return run
+    }, { timeoutMs: 6_000 })
+
+    const pendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
+      .filter((todo) => todo.originQuestId === task.id)
+    expect(pendingReviewTodos).toHaveLength(1)
+
+    updateTodoWithEffects(firstReviewTodo!.id, { status: 'done' })
+
+    const rerunAfterDone = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
+      requestId: 'task-5',
+      trigger: 'manual',
+      triggeredBy: 'api',
+    })
+    expect(rerunAfterDone.status).toBe(200)
+    expect(mustOk(rerunAfterDone).skipped).toBe(false)
+
+    await waitFor(() => {
+      const run = getRun(mustOk(rerunAfterDone).run!.id)
+      expect(run?.state).toBe('completed')
+      return run
+    }, { timeoutMs: 6_000 })
+
+    const nextPendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
+      .filter((todo) => todo.originQuestId === task.id)
+    expect(nextPendingReviewTodos).toHaveLength(1)
+    expect(nextPendingReviewTodos[0]?.id).not.toBe(firstReviewTodo!.id)
+
     const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
     expect(overview.status).toBe(200)
     const overviewData = mustOk(overview)
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'triggered' && item.subjectId === task.id)).toBe(true)
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'done' && item.subjectId === task.id)).toBe(true)
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'created' && item.questId === task.id)).toBe(true)
+  })
+
+  it('deduplicates session review todos created by run_completed hooks', async () => {
+    const { commandPath } = installFakeCodex()
+    process.env['PLUSE_CODEX_COMMAND'] = commandPath
+    process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Session reply'
+    saveGlobalHooksConfig(loadGlobalHooksConfig())
+
+    const project = await openProject('session-review-dedupe')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Review Session',
+      autoRenamePending: false,
+      tool: 'codex',
+    })
+
+    const first = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'First turn',
+      requestId: 'session-review-1',
+      tool: 'codex',
+    })
+    expect(first.status).toBe(200)
+    expect(mustOk(first).queued).toBe(false)
+
+    await waitFor(() => {
+      const run = getRunsByQuest(quest.id)[0]
+      expect(run?.state).toBe('completed')
+      return run
+    }, { timeoutMs: 6_000 })
+
+    await waitFor(() => {
+      const todos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
+        .filter((todo) => todo.originQuestId === quest.id)
+      expect(todos).toHaveLength(1)
+      return todos
+    })
+
+    const second = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Second turn',
+      requestId: 'session-review-2',
+      tool: 'codex',
+    })
+    expect(second.status).toBe(200)
+    expect(mustOk(second).queued).toBe(false)
+
+    await waitFor(() => {
+      const runs = getRunsByQuest(quest.id)
+      expect(runs[0]?.state).toBe('completed')
+      expect(runs.length).toBeGreaterThanOrEqual(2)
+      return runs
+    }, { timeoutMs: 6_000 })
+
+    const pendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
+      .filter((todo) => todo.originQuestId === quest.id)
+    expect(pendingReviewTodos).toHaveLength(1)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

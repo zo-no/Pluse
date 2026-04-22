@@ -18,6 +18,7 @@
 - 每份文档都至少包含：`状态`、`类型`、`优先级`
 - priority 只表达产品推进顺序，不直接等同于实现难度
 - 新 requirement 加入前，先判断它是否真的是独立问题，还是现有 requirement 的子点
+- 宏大问题优先保持为一个清晰的 umbrella requirement，再通过 design/spec 分期实现
 
 ## 当前需求栈
 
@@ -43,7 +44,8 @@
 
 1. 先确认 `0001-human-workload-control`
 2. 基于 `0001` 写对应 `design`
-3. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+3. 再将 `0001` 拆成多期 `spec`
+4. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
 
 ## 维护规则
 

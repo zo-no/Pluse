@@ -4,7 +4,7 @@ import type { Quest } from '@pluse/types'
 import type { Run } from '@pluse/types'
 import { getGlobalHooksPath, getProjectHooksPath } from '../support/paths'
 import { updateQuest } from '../models/quest'
-import { createTodoWithEffects } from './todos'
+import { createTodoWithEffects, ensureReviewTodoWithEffects } from './todos'
 import { getProject } from '../models/project'
 
 export type HookEvent = 'run_completed' | 'run_failed'
@@ -180,14 +180,19 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
       if (action.type === 'highlight_quest') {
         updateQuest(quest.id, { unread: true })
       } else if (action.type === 'create_todo') {
-        createTodoWithEffects({
+        const todoInput = {
           projectId: quest.projectId,
           originQuestId: quest.id,
           createdBy: 'system',
           title: renderTemplate(action.title, fullCtx),
           description: action.description ? renderTemplate(action.description, fullCtx) : undefined,
           tags: action.tags,
-        })
+        }
+        if ((action.tags ?? []).some((tag) => tag.trim().toLowerCase() === 'review')) {
+          ensureReviewTodoWithEffects(todoInput)
+        } else {
+          createTodoWithEffects(todoInput)
+        }
       } else if (action.type === 'shell') {
         const rendered = renderTemplate(action.command, fullCtx)
         try {

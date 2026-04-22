@@ -37,7 +37,7 @@ import {
 } from '../models/run'
 import { emit } from '../services/events'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
-import { createTodoWithEffects } from '../services/todos'
+import { ensureReviewTodoWithEffects } from '../services/todos'
 import { runHooks } from '../services/hooks'
 import { getManagedCodexHome } from '../support/paths'
 import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from './catalog'
@@ -672,12 +672,13 @@ function requestTermination(runId: string, reason: 'cancelled' | 'timeout'): voi
 
 function ensureTaskReviewTodo(quest: Quest, succeeded: boolean): void {
   if (!succeeded || !quest.reviewOnComplete || quest.kind !== 'task' || quest.deleted) return
-  createTodoWithEffects({
+  ensureReviewTodoWithEffects({
     projectId: quest.projectId,
     originQuestId: quest.id,
     createdBy: 'system',
     title: `Review: ${quest.title ?? quest.name ?? quest.id}`,
     waitingInstructions: `Task "${quest.title ?? quest.name ?? quest.id}" completed. Please review the output and close the todo when done.`,
+    tags: ['review'],
   })
 }
 
