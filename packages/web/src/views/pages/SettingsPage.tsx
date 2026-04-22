@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n'
 const NOTIFY_HOOK_ID = 'notify-on-session-complete'
 const NOTIFY_FAILED_HOOK_ID = 'notify-on-session-failed'
 const SPEAK_HOOK_ID = 'speak-on-session-complete'
+const CLASSIFY_HOOK_ID = 'classify-first-session-run'
 
 export function SettingsPage() {
   const { t } = useI18n()
@@ -22,6 +23,7 @@ export function SettingsPage() {
   const [kairosInstalling, setKairosInstalling] = useState(false)
   const [kairosError, setKairosError] = useState<string | null>(null)
   const [speakOnComplete, setSpeakOnComplete] = useState(false)
+  const [classifyOnFirstRun, setClassifyOnFirstRun] = useState(false)
 
   async function loadSettings() {
     setLoading(true)
@@ -46,6 +48,8 @@ export function SettingsPage() {
     setNotifyOnFailed(failedHook ? failedHook.enabled !== false : true)
     const speakHook = result.data.hooks.find((h) => h.id === SPEAK_HOOK_ID)
     setSpeakOnComplete(speakHook ? speakHook.enabled === true : false)
+    const classifyHook = result.data.hooks.find((h) => h.id === CLASSIFY_HOOK_ID)
+    setClassifyOnFirstRun(classifyHook ? classifyHook.enabled === true : false)
   }
 
   async function loadKairosStatus() {
@@ -99,6 +103,13 @@ export function SettingsPage() {
     setSpeakOnComplete(enabled)
     setHookSaving(true)
     await api.updateHook(SPEAK_HOOK_ID, enabled)
+    setHookSaving(false)
+  }
+
+  async function handleToggleClassify(enabled: boolean) {
+    setClassifyOnFirstRun(enabled)
+    setHookSaving(true)
+    await api.updateHook(CLASSIFY_HOOK_ID, enabled)
     setHookSaving(false)
   }
 
@@ -193,6 +204,33 @@ export function SettingsPage() {
                   {kairosInstalling ? t('安装中…') : t('一键安装')}
                 </button>
               )}
+            </div>
+          </section>
+
+          <section className="pluse-detail-section pluse-settings-section">
+            <header className="pluse-detail-section-head">
+              <h2 className="pluse-settings-section-title">{t('元数据补全')}</h2>
+              <p className="pluse-settings-section-desc">
+                {t('用于在首轮会话结束后补全会话的辅助元数据。')}
+              </p>
+            </header>
+            <div className="pluse-settings-toggle-row">
+              <div className="pluse-settings-toggle-info">
+                <span className="pluse-settings-toggle-label">{t('首轮会话后自动分类')}</span>
+                <span className="pluse-settings-toggle-desc">
+                  {t('首个 chat run 完成后，Agent 会尝试复用或新建会话分类。')}
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={classifyOnFirstRun}
+                className={`pluse-settings-toggle${classifyOnFirstRun ? ' is-on' : ''}`}
+                onClick={() => void handleToggleClassify(!classifyOnFirstRun)}
+                disabled={hookLoading || hookSaving}
+              >
+                <span className="pluse-settings-toggle-thumb" />
+              </button>
             </div>
           </section>
 
