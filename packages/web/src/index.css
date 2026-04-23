@@ -300,6 +300,7 @@ select {
 
 .pluse-header-center {
   min-width: 0;
+  overflow: hidden;
 }
 
 .pluse-wordmark {
@@ -334,7 +335,9 @@ select {
 
 .pluse-header-context strong,
 .pluse-header-context span {
+  display: block;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
