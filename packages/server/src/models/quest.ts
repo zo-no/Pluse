@@ -116,11 +116,11 @@ function rowToQuest(row: QuestRow): Quest {
 }
 
 function defaultName(input: CreateQuestInput): string {
-  return input.name?.trim() || input.title?.trim() || (input.kind === 'session' ? '新会话' : '新任务')
+  return input.name?.trim() || input.title?.trim() || (input.kind === 'session' ? '新会话' : '新自动化')
 }
 
 function defaultTitle(input: CreateQuestInput): string {
-  return input.title?.trim() || input.name?.trim() || '新任务'
+  return input.title?.trim() || input.name?.trim() || '新自动化'
 }
 
 function defaultStatus(kind: QuestKind): QuestStatus {
@@ -293,7 +293,7 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
   if (input.kind && input.kind !== existing.kind) {
     if (input.kind === 'task') {
       setField('status', 'pending')
-      if (!('title' in input)) setField('title', existing.title ?? existing.name ?? '新任务')
+      if (!('title' in input)) setField('title', existing.title ?? existing.name ?? '新自动化')
     } else {
       setField('status', 'idle')
       if (!('name' in input)) setField('name', existing.name ?? existing.title ?? '新会话')

@@ -28,7 +28,15 @@
   - 核心问题：用户工作负载失控，长期重要任务被即时噪音挤压
   - 说明：这是当前主矛盾，也是后续 Todo / Agent / notification 体系的上位需求
 
+- [0004-ai-task-result-handling.md](./0004-ai-task-result-handling.md)
+  - 核心问题：待办与自动化的产品边界不清晰，自动化仍被误表述为可完成、可处理的对象
+  - 说明：这条需求先锁定对象语义和工作面板边界，再决定后续更深的状态设计
+
 ### P1
+
+- [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
+  - 核心问题：Quest 归档不会收敛由它派生的 review 信号，系统缺少关联对象的生命周期归属规则
+  - 说明：这是开始 Todo / 会话剪枝前需要先锁定的基础边界
 
 - [0003-agent-driven-session-classification.md](./0003-agent-driven-session-classification.md)
   - 核心问题：会话空间只有时间排序，缺少可被 Agent 维护的稳定语义结构
@@ -45,10 +53,12 @@
 建议默认按以下顺序推进：
 
 1. 先确认 `0001-human-workload-control`
-2. 基于 `0001` 写对应 `design`
-3. 再将 `0001` 拆成多期 `spec`
-4. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
-5. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+2. 在 `0001` 边界内同步确认 `0004-ai-task-result-handling`
+3. 先基于 `0004` 收敛 Todo / Automation 边界与工作面板 IA
+4. 再将 `0001` 拆成多期 `spec`
+5. 先锁定 `0005-quest-lifecycle-linked-dependent-cleanup`，避免 Todo / Session 剪枝没有生命周期边界
+6. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
+7. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
 
 ## 维护规则
 

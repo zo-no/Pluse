@@ -336,17 +336,17 @@ function ProjectOverviewHero({
 
 function formatActivitySubjectType(type: ProjectActivityItem['subjectType'], t: (key: string, values?: Record<string, string>) => string): string {
   if (type === 'session') return t('会话')
-  if (type === 'task') return t('任务')
+  if (type === 'task') return t('自动化')
   return t('待办')
 }
 
 function formatActivityOp(item: ProjectActivityItem, t: (key: string, values?: Record<string, string>) => string): string {
-  if (item.op === 'created') return item.subjectType === 'session' ? t('创建会话') : item.subjectType === 'task' ? t('创建任务') : t('创建待办')
-  if (item.op === 'kind_changed') return item.toKind === 'task' ? t('转为任务') : t('转为会话')
+  if (item.op === 'created') return item.subjectType === 'session' ? t('创建会话') : item.subjectType === 'task' ? t('创建自动化') : t('创建待办')
+  if (item.op === 'kind_changed') return item.toKind === 'task' ? t('转为自动化') : t('转为会话')
   if (item.op === 'project_changed_in') return t('移入项目')
   if (item.op === 'project_changed_out') return t('移出项目')
   if (item.op === 'triggered') return t('开始执行')
-  if (item.op === 'done') return item.subjectType === 'todo' ? t('待办完成') : t('任务完成')
+  if (item.op === 'done') return item.subjectType === 'todo' ? t('待办完成') : t('运行完成')
   if (item.op === 'failed') return t('执行失败')
   if (item.op === 'cancelled') return item.subjectType === 'todo' ? t('待办取消') : t('执行取消')
   if (item.op === 'deleted') return t('已归档')
@@ -356,7 +356,7 @@ function formatActivityOp(item: ProjectActivityItem, t: (key: string, values?: R
 function formatActivityDetail(item: ProjectActivityItem, t: (key: string, values?: Record<string, string>) => string): string | null {
   if (item.note?.trim()) return item.note.trim()
   if (item.op === 'kind_changed' && item.fromKind && item.toKind) {
-    return `${item.fromKind === 'task' ? t('任务') : t('会话')} → ${item.toKind === 'task' ? t('任务') : t('会话')}`
+    return `${item.fromKind === 'task' ? t('自动化') : t('会话')} → ${item.toKind === 'task' ? t('自动化') : t('会话')}`
   }
   if (item.fromStatus && item.toStatus && item.fromStatus !== item.toStatus) {
     return `${formatOutputStatus(item.fromStatus, t)} → ${formatOutputStatus(item.toStatus, t)}`
@@ -676,7 +676,7 @@ function ProjectPage({
                 title={t('等待中')}
                 count={overview.waitingTodos.length}
                 defaultOpen
-                note={t('人类待办')}
+                note={t('待办')}
                 scrollable={overview.waitingTodos.length > 3}
               >
                 <div className="pluse-task-list pluse-overview-scroll-list">
@@ -748,7 +748,7 @@ function ProjectPage({
               ) : (
                 <div className="pluse-delete-confirm">
                   <p>
-                    {t('此操作会将项目及其所有会话、AI 任务、人类任务和运行数据归档。请输入项目名称')}
+                    {t('此操作会将项目及其所有会话、自动化、待办和运行数据归档。请输入项目名称')}
                     {' '}
                     <strong>{overview.project.name}</strong>
                     {' '}
@@ -840,7 +840,7 @@ function QuestRoute({
       <div className="pluse-modal-backdrop pluse-task-detail-backdrop">
         <section className="pluse-modal-panel pluse-task-detail-modal">
           <div className="pluse-task-detail-loading">
-            <p className="pluse-empty-inline">{t('正在加载任务…')}</p>
+            <p className="pluse-empty-inline">{t('正在加载自动化…')}</p>
           </div>
         </section>
       </div>
@@ -1273,7 +1273,6 @@ function Shell({
               projectWorkDir={activeProject?.workDir ?? null}
               projects={projects}
               activeQuestId={activeQuestId}
-              activeQuest={activeQuest}
               onSelectProject={handleProjectSelected}
               onRequestClose={() => setMobileRailOpen(false)}
             />

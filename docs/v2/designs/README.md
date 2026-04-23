@@ -21,4 +21,8 @@
 
 - 当前总 design：
   - [0001-human-workload-control.md](./0001-human-workload-control.md)
+  - [0004-automation-ia-and-naming.md](./0004-automation-ia-and-naming.md)
+  - [0004-automation-result-attention.md](./0004-automation-result-attention.md)
+    - 当前用于承接 Todo / Automation workspace IA，而不是更深的 result-attention 状态机
   - [0003-agent-driven-session-classification.md](./0003-agent-driven-session-classification.md)
+  - [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)

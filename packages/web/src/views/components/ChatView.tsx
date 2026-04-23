@@ -1076,8 +1076,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   <button
                     type="button"
                     className="pluse-icon-button pluse-transfer-action"
-                    title={t('转任务')}
-                    aria-label={t('转任务')}
+                    title={t('转为自动化')}
+                    aria-label={t('转为自动化')}
                     onClick={() => setConvertTaskModalOpen(true)}
                     disabled={Boolean(quest.activeRunId)}
                   >

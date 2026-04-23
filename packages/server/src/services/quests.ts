@@ -91,7 +91,7 @@ function deriveSessionListName(quest: Quest): string | undefined {
 function questActivityTitle(quest: Quest): string {
   return quest.title?.trim()
     || quest.name?.trim()
-    || (quest.kind === 'task' ? '未命名任务' : '未命名会话')
+    || (quest.kind === 'task' ? '未命名自动化' : '未命名会话')
 }
 
 function assertSessionCategoryBelongsToProject(projectId: string, sessionCategoryId: string | null | undefined): void {

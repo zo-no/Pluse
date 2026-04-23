@@ -55,8 +55,8 @@ type ParsedRecurringSchedule = {
 type TranslateFn = (key: string, values?: Record<string, string | number>) => string
 
 function defaultTitle(kind: TaskComposerKind, t?: (key: string) => string): string {
-  if (kind === 'ai') return t ? t('新 AI 任务') : '新 AI 任务'
-  return t ? t('新任务') : '新任务'
+  if (kind === 'ai') return t ? t('新自动化') : '新自动化'
+  return t ? t('新待办') : '新待办'
 }
 
 function defaultTaskTimezone(): string {
@@ -626,13 +626,13 @@ export function TaskComposerModal({
         className="pluse-modal-panel pluse-task-modal-panel"
         role="dialog"
         aria-modal="true"
-        aria-label={t('创建任务')}
+        aria-label={isConversionMode ? t('转为自动化') : kind === 'ai' ? t('创建自动化') : t('创建待办')}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="pluse-task-modal-head">
           <div className="pluse-task-modal-title">
             <span className="pluse-task-modal-kicker">{projectName || t('当前项目')}</span>
-            <h2>{isConversionMode ? t('转换为任务') : t('创建任务')}</h2>
+            <h2>{isConversionMode ? t('转为自动化') : kind === 'ai' ? t('创建自动化') : t('创建待办')}</h2>
           </div>
           <button type="button" className="pluse-icon-button" onClick={onClose} aria-label={t('关闭')} title={t('关闭')} disabled={saving}>
             <CloseIcon className="pluse-icon" />
@@ -642,7 +642,7 @@ export function TaskComposerModal({
         <form className="pluse-task-modal-body" onSubmit={handleSubmit}>
           <div className="pluse-task-modal-summary">
             <span className="pluse-sidebar-badge">{projectName || t('当前项目')}</span>
-            <span className="pluse-inline-pill">{kind === 'ai' ? t('AI 任务') : t('人类任务')}</span>
+            <span className="pluse-inline-pill">{kind === 'ai' ? t('自动化') : t('待办')}</span>
             {kind === 'ai' ? (
               <>
                 <span className="pluse-sidebar-badge">{toolLabel}</span>
@@ -654,7 +654,7 @@ export function TaskComposerModal({
           </div>
 
           {isConversionMode ? null : (
-            <div className="pluse-task-modal-modes" role="tablist" aria-label={t('任务类型')}>
+            <div className="pluse-task-modal-modes" role="tablist" aria-label={t('对象类型')}>
               <button
                 type="button"
                 className={`pluse-task-modal-mode${kind === 'human' ? ' is-active' : ''}`}
@@ -663,7 +663,7 @@ export function TaskComposerModal({
                 <span className="pluse-task-modal-mode-icon">
                   <UserIcon className="pluse-icon" />
                 </span>
-                <strong>{t('人类')}</strong>
+                <strong>{t('待办')}</strong>
               </button>
               <button
                 type="button"
@@ -673,7 +673,7 @@ export function TaskComposerModal({
                 <span className="pluse-task-modal-mode-icon">
                   <SparkIcon className="pluse-icon" />
                 </span>
-                <strong>{t('AI')}</strong>
+                <strong>{t('自动化')}</strong>
               </button>
             </div>
           )}
@@ -801,7 +801,7 @@ export function TaskComposerModal({
                       onChange={setThinking}
                     />
                     <TaskSettingSwitch
-                      label={t('完成后复盘')}
+                      label={t('运行后复盘')}
                       note={t('任务结束后补一条 review todo')}
                       checked={reviewOnComplete}
                       onChange={setReviewOnComplete}
@@ -965,7 +965,7 @@ export function TaskComposerModal({
               {t('取消')}
             </button>
             <button type="submit" className="pluse-button" disabled={!projectId || !title.trim() || saving}>
-              {saving ? t('保存中…') : isConversionMode ? t('保存并转换') : kind === 'ai' ? t('创建 AI 任务') : t('创建人类任务')}
+              {saving ? t('保存中…') : isConversionMode ? t('保存并转换') : kind === 'ai' ? t('创建自动化') : t('创建待办')}
             </button>
           </footer>
         </form>

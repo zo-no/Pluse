@@ -35,9 +35,12 @@ function projectAvatar(project: Project): string {
   return name ? name[0]!.toUpperCase() : '#'
 }
 
-function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
-  if (!project.domainId) return t('未分组')
-  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+function shortProjectPath(value: string): string {
+  const normalized = value.replace(/^\/Users\/[^/]+/, '~')
+  const isHome = normalized.startsWith('~/')
+  const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
+  if (parts.length <= 4) return normalized
+  return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
 }
 
 export function DomainSidebar({
@@ -79,13 +82,13 @@ export function DomainSidebar({
   }, [projects])
 
   function isExpanded(key: string): boolean {
-    return expanded[key] ?? false
+    return expanded[key] ?? true
   }
 
   function toggleExpanded(key: string): void {
     setExpanded((current) => ({
       ...current,
-      [key]: !(current[key] ?? false),
+      [key]: !(current[key] ?? true),
     }))
   }
 
@@ -216,7 +219,7 @@ export function DomainSidebar({
             <div className="pluse-sidebar-item-title">
               <strong>{project.name}</strong>
             </div>
-            <p>{projectDomainName(project, domains, t)}</p>
+            <p title={project.workDir}>{shortProjectPath(project.workDir)}</p>
           </div>
         </button>
         <div className="pluse-sidebar-item-actions pluse-domain-project-actions">

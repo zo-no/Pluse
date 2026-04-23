@@ -32,9 +32,9 @@ function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => s
 
 function formatStatus(status?: string, t?: (key: string) => string): string {
   if (!status) return t ? t('未设置') : '未设置'
-  if (status === 'pending') return t ? t('待处理') : '待处理'
+  if (status === 'pending') return t ? t('待触发') : '待触发'
   if (status === 'running') return t ? t('运行中') : '运行中'
-  if (status === 'done' || status === 'completed') return t ? t('已完成') : '已完成'
+  if (status === 'done' || status === 'completed') return t ? t('已执行') : '已执行'
   if (status === 'failed') return t ? t('失败') : '失败'
   if (status === 'cancelled') return t ? t('已取消') : '已取消'
   if (status === 'idle') return t ? t('空闲') : '空闲'
@@ -57,7 +57,7 @@ function formatOp(op: QuestOp['op'], t?: (key: string) => string): string {
   if (op === 'created') return t ? t('已创建') : '已创建'
   if (op === 'kind_changed') return t ? t('形态切换') : '形态切换'
   if (op === 'triggered') return t ? t('已触发') : '已触发'
-  if (op === 'done') return t ? t('已完成') : '已完成'
+  if (op === 'done') return t ? t('运行完成') : '运行完成'
   if (op === 'failed') return t ? t('失败') : '失败'
   if (op === 'cancelled') return t ? t('已取消') : '已取消'
   if (op === 'status_changed') return t ? t('状态变更') : '状态变更'
@@ -653,7 +653,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
 
     const result = await api.updateQuest(quest.id, {
       kind: 'task',
-      title: form.title.trim() || t('未命名任务'),
+      title: form.title.trim() || t('未命名自动化'),
       description: form.description.trim() || null,
       tool: form.tool,
       model: form.model || null,
@@ -795,14 +795,14 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
           className="pluse-modal-panel pluse-task-detail-modal"
           role="dialog"
           aria-modal="true"
-          aria-label={quest ? t('任务 {{name}}', { name: displayTaskName(quest.title ?? quest.name, t) }) : t('任务详情')}
+          aria-label={quest ? t('自动化 {{name}}', { name: displayTaskName(quest.title ?? quest.name, t) }) : t('自动化详情')}
           onMouseDown={(event) => event.stopPropagation()}
         >
           <header className="pluse-task-detail-head">
             <div className="pluse-task-detail-identity">
-              <span className="pluse-task-detail-kicker">{t('AI 任务')}</span>
+              <span className="pluse-task-detail-kicker">{t('自动化')}</span>
               <div className="pluse-task-detail-title-row">
-                <h2>{quest ? (form.title || t('未命名任务')) : t('正在加载任务…')}</h2>
+                <h2>{quest ? (form.title || t('未命名自动化')) : t('正在加载自动化…')}</h2>
                 {quest ? <span className={`pluse-task-status is-${quest.status ?? 'idle'}`}>{formatStatus(quest.status, t)}</span> : null}
                 {quest?.activeRunId ? <span className="pluse-inline-pill is-running">{t('运行中')}</span> : null}
               </div>
@@ -817,14 +817,14 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                 </div>
               ) : null}
             </div>
-            <button type="button" className="pluse-icon-button" onClick={closeModal} aria-label={t('关闭任务详情')} title={t('关闭任务详情')}>
+            <button type="button" className="pluse-icon-button" onClick={closeModal} aria-label={t('关闭自动化详情')} title={t('关闭自动化详情')}>
               <CloseIcon className="pluse-icon" />
             </button>
           </header>
 
           {!quest ? (
             <div className="pluse-task-detail-loading">
-              <p className="pluse-empty-inline">{error ? t('加载失败：{error}', { error }) : t('正在加载任务…')}</p>
+              <p className="pluse-empty-inline">{error ? t('加载失败：{error}', { error }) : t('正在加载自动化…')}</p>
             </div>
           ) : (
             <form className="pluse-task-detail-form" onSubmit={save}>
@@ -852,8 +852,8 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <button
                     type="button"
                     className="pluse-icon-button"
-                    title={t('新建人类任务')}
-                    aria-label={t('新建人类任务')}
+                    title={t('新建待办')}
+                    aria-label={t('新建待办')}
                     onClick={() => setCreateTaskModalOpen(true)}
                   >
                     <PlusIcon className="pluse-icon" />
@@ -950,7 +950,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                         onChange={(thinking) => setForm((current) => ({ ...current, thinking }))}
                       />
                       <TaskSettingSwitch
-                        label={t('完成后复盘')}
+                        label={t('运行后复盘')}
                         note={t('任务结束后补一条 review todo')}
                         checked={form.reviewOnComplete}
                         onChange={(reviewOnComplete) => setForm((current) => ({ ...current, reviewOnComplete }))}

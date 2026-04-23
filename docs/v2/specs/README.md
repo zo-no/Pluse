@@ -23,4 +23,7 @@
 - 当前 spec：
   - [0001-human-workload-control-phase-1.md](./0001-human-workload-control-phase-1.md)
   - [0001-human-workload-control-p0-review-todo-uniqueness.md](./0001-human-workload-control-p0-review-todo-uniqueness.md)
+  - [0004-automation-ia-and-naming-phase-1.md](./0004-automation-ia-and-naming-phase-1.md)
+  - [0004-automation-workspace-grouping-iteration-1.md](./0004-automation-workspace-grouping-iteration-1.md)
   - [0003-agent-driven-session-classification-phase-1.md](./0003-agent-driven-session-classification-phase-1.md)
+  - [0005-quest-archive-review-todo-pruning-phase-1.md](./0005-quest-archive-review-todo-pruning-phase-1.md)

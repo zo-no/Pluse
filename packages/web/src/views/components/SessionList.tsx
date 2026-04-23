@@ -377,7 +377,7 @@ export function SessionList({
             kind,
             createdBy: 'human',
             tool: 'codex',
-            title: t('新任务'),
+            title: t('新自动化'),
             status: 'pending',
             enabled: true,
             scheduleKind: 'once',

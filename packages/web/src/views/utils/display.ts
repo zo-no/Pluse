@@ -15,8 +15,10 @@ export function displaySessionName(value?: string | null, t?: Translate): string
 
 export function displayTaskName(value?: string | null, t?: Translate): string {
   const normalized = normalizeText(value)
-  if (!normalized || normalized === 'Untitled Task') return t ? t('未命名任务') : '未命名任务'
-  if (normalized === 'New Task') return t ? t('新任务') : '新任务'
+  if (!normalized || normalized === 'Untitled Task' || normalized === '未命名任务') {
+    return t ? t('未命名自动化') : '未命名自动化'
+  }
+  if (normalized === 'New Task' || normalized === '新任务') return t ? t('新自动化') : '新自动化'
   return normalized
 }
 

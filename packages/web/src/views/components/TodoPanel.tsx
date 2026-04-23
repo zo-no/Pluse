@@ -16,14 +16,14 @@ interface TodoPanelProps {
   projectWorkDir?: string | null
   projects: Project[]
   activeQuestId?: string | null
-  activeQuest?: Quest | null
   onSelectProject?: (projectId: string) => void
   onRequestClose?: () => void
   onDataChanged?: () => Promise<void> | void
 }
 
-type ScopeTab = 'global' | 'project' | 'session'
-type SourceTab = 'human' | 'ai' | 'all'
+type ScopeTab = 'global' | 'project'
+type SourceTab = 'human' | 'ai'
+type AutomationSectionKey = 'running' | 'attention' | 'recurring' | 'scheduled' | 'manual'
 
 type RailTaskItem =
   | { entityType: 'quest'; quest: Quest; archived: boolean }
@@ -66,21 +66,17 @@ function taskLabel(quest: Quest, t?: (key: string) => string): string {
 
 function taskStatusLabel(status?: Quest['status'], t?: (key: string) => string): string {
   if (status === 'running') return t ? t('运行中') : '运行中'
-  if (status === 'pending') return t ? t('待处理') : '待处理'
-  if (status === 'done') return t ? t('已完成') : '已完成'
+  if (status === 'pending') return t ? t('待触发') : '待触发'
+  if (status === 'done') return t ? t('已执行') : '已执行'
   if (status === 'failed') return t ? t('失败') : '失败'
   if (status === 'cancelled') return t ? t('已取消') : '已取消'
-  return t ? t('待处理') : '待处理'
+  return t ? t('待触发') : '待触发'
 }
 
 function todoStatusLabel(status: Todo['status'], t?: (key: string) => string): string {
   if (status === 'done') return t ? t('已完成') : '已完成'
   if (status === 'cancelled') return t ? t('已取消') : '已取消'
   return t ? t('待处理') : '待处理'
-}
-
-function isClosedQuest(quest: Quest): boolean {
-  return quest.status === 'done' || quest.status === 'failed' || quest.status === 'cancelled'
 }
 
 function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]): T[] {
@@ -122,10 +118,6 @@ function resolveScopeData(params: {
   globalArchivedTasks: Quest[]
   globalTodos: Todo[]
   globalArchivedTodos: Todo[]
-  sessionTasks: Quest[]
-  sessionArchivedTasks: Quest[]
-  sessionTodos: Todo[]
-  sessionArchivedTodos: Todo[]
 }): { tasks: Quest[]; archivedTasks: Quest[]; todos: Todo[]; archivedTodos: Todo[] } {
   if (params.scope === 'global') {
     return {
@@ -133,14 +125,6 @@ function resolveScopeData(params: {
       archivedTasks: params.globalArchivedTasks,
       todos: params.globalTodos,
       archivedTodos: params.globalArchivedTodos,
-    }
-  }
-  if (params.scope === 'session') {
-    return {
-      tasks: params.sessionTasks,
-      archivedTasks: params.sessionArchivedTasks,
-      todos: params.sessionTodos,
-      archivedTodos: params.sessionArchivedTodos,
     }
   }
   return {
@@ -152,16 +136,69 @@ function resolveScopeData(params: {
 }
 
 function formatScopeEmptyMessage(
-  scope: ScopeTab,
+  _scope: ScopeTab,
   source: SourceTab,
   t?: (key: string) => string,
 ): string {
-  if (source === 'all') return t ? t('当前范围暂无任务。') : '当前范围暂无任务。'
-  if (scope === 'session' && source === 'ai') return t ? t('当前会话暂无 AI 任务。') : '当前会话暂无 AI 任务。'
-  if (scope === 'session' && source === 'human') return t ? t('当前会话暂无待办。') : '当前会话暂无待办。'
   return source === 'ai'
-    ? (t ? t('当前范围暂无 AI 任务。') : '当前范围暂无 AI 任务。')
+    ? (t ? t('当前范围暂无自动化。') : '当前范围暂无自动化。')
     : (t ? t('当前范围暂无待办。') : '当前范围暂无待办。')
+}
+
+function automationSectionKey(quest: Quest): AutomationSectionKey {
+  if (quest.activeRunId || quest.status === 'running') return 'running'
+  if (quest.status === 'failed' || quest.status === 'cancelled') return 'attention'
+  if (quest.scheduleKind === 'recurring') return 'recurring'
+  if (quest.scheduleKind === 'scheduled') return 'scheduled'
+  return 'manual'
+}
+
+function automationSectionLabel(key: AutomationSectionKey, t: (key: string) => string): string {
+  if (key === 'running') return t('运行中')
+  if (key === 'attention') return t('异常')
+  if (key === 'recurring') return t('周期')
+  if (key === 'scheduled') return t('定时')
+  return t('手动')
+}
+
+function buildAutomationSections(tasks: Quest[]): Array<{ key: AutomationSectionKey; items: Quest[] }> {
+  const order: AutomationSectionKey[] = ['running', 'attention', 'recurring', 'scheduled', 'manual']
+  const grouped = new Map<AutomationSectionKey, Quest[]>()
+  for (const quest of sortByUpdatedAt(tasks)) {
+    const key = automationSectionKey(quest)
+    grouped.set(key, [...(grouped.get(key) ?? []), quest])
+  }
+  return order
+    .map((key) => ({ key, items: grouped.get(key) ?? [] }))
+    .filter((entry) => entry.items.length > 0)
+}
+
+function groupTodosByProject(
+  todos: Todo[],
+  projects: Project[],
+  t: (key: string) => string,
+): Array<{ key: string; label: string; items: Todo[] }> {
+  const projectMap = new Map(projects.map((project) => [project.id, project] as const))
+  const groups = new Map<string, Todo[]>()
+
+  for (const todo of todos) {
+    groups.set(todo.projectId, [...(groups.get(todo.projectId) ?? []), todo])
+  }
+
+  return Array.from(groups.entries())
+    .sort(([leftId], [rightId]) => {
+      const left = projectMap.get(leftId)
+      const right = projectMap.get(rightId)
+      if (left && right) return left.name.localeCompare(right.name, 'zh-Hans-CN')
+      if (left) return -1
+      if (right) return 1
+      return leftId.localeCompare(rightId)
+    })
+    .map(([projectId, items]) => ({
+      key: projectId,
+      label: projectMap.get(projectId)?.name ?? `${t('项目')} ${projectId}`,
+      items,
+    }))
 }
 
 const QuestRailItem = memo(function QuestRailItem({
@@ -200,7 +237,7 @@ const QuestRailItem = memo(function QuestRailItem({
       >
         <div className="pluse-task-list-copy">
           <div className="pluse-sidebar-item-title">
-            <span className="pluse-task-kind-badge" aria-label={t('AI 任务')} title={t('AI 任务')}>
+            <span className="pluse-task-kind-badge" aria-label={t('自动化')} title={t('自动化')}>
               <SparkIcon className="pluse-icon" />
             </span>
             <strong>{taskLabel(quest, t)}</strong>
@@ -298,7 +335,7 @@ const TodoRailItem = memo(function TodoRailItem({
         type="button"
         className="pluse-task-list-main pluse-sidebar-item-main-button pluse-task-list-detail-trigger"
         onClick={() => onOpenTodo(todo.id)}
-        aria-label={`${t('任务详情')} · ${todo.title}`}
+        aria-label={`${t('待办详情')} · ${todo.title}`}
       >
         <div className="pluse-task-list-copy">
           <div className="pluse-sidebar-item-title">
@@ -375,7 +412,6 @@ export function TodoPanel({
   projectName,
   projects,
   activeQuestId,
-  activeQuest,
   onRequestClose,
   onDataChanged,
 }: TodoPanelProps) {
@@ -392,10 +428,10 @@ export function TodoPanel({
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
   const [scopeTab, setScopeTab] = useState<ScopeTab>('project')
   const [scopeModes, setScopeModes] = useState<Record<ScopeTab, SourceTab>>({
-    global: 'all',
-    project: 'all',
-    session: 'all',
+    global: 'human',
+    project: 'human',
   })
+  const [sectionExpandedByKey, setSectionExpandedByKey] = useState<Record<string, boolean>>({})
   const [historyExpandedByView, setHistoryExpandedByView] = useState<Record<string, boolean>>({})
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
@@ -502,6 +538,17 @@ export function TodoPanel({
 
   function setSourceTab(tab: ScopeTab, source: SourceTab) {
     setScopeModes((current) => ({ ...current, [tab]: source }))
+  }
+
+  function isSectionExpanded(key: string, defaultExpanded = true): boolean {
+    return sectionExpandedByKey[key] ?? defaultExpanded
+  }
+
+  function toggleSectionExpanded(key: string, defaultExpanded = true): void {
+    setSectionExpandedByKey((current) => ({
+      ...current,
+      [key]: !(current[key] ?? defaultExpanded),
+    }))
   }
 
   useEffect(() => {
@@ -662,12 +709,8 @@ export function TodoPanel({
       globalArchivedTasks,
       globalTodos,
       globalArchivedTodos,
-      sessionTasks: activeQuest?.kind === 'task' && activeQuest.id ? [activeQuest] : [],
-      sessionArchivedTasks: [],
-      sessionTodos: globalTodos.filter((todo) => todo.originQuestId === activeQuestId),
-      sessionArchivedTodos: globalArchivedTodos.filter((todo) => todo.originQuestId === activeQuestId),
     }),
-    [scopeTab, tasks, archivedTasks, todos, archivedTodos, globalTasks, globalArchivedTasks, globalTodos, globalArchivedTodos, projectId, activeQuest, activeQuestId],
+    [scopeTab, tasks, archivedTasks, todos, archivedTodos, globalTasks, globalArchivedTasks, globalTodos, globalArchivedTodos],
   )
 
   const visibleTodos = useMemo(() => {
@@ -701,7 +744,7 @@ export function TodoPanel({
   )
 
   const aiCount = useMemo(
-    () => scopeData.tasks.filter((q) => !isClosedQuest(q)).length,
+    () => scopeData.tasks.length,
     [scopeData.tasks],
   )
 
@@ -709,38 +752,26 @@ export function TodoPanel({
     () => sortOpenTodos(visibleTodos.filter((todo) => todo.status === 'pending')),
     [visibleTodos],
   )
-
-  const openAiTasks = useMemo(
-    () => sortByUpdatedAt(visibleTasks.filter((quest) => !isClosedQuest(quest))),
-    [visibleTasks],
+  const groupedOpenHumanTodos = useMemo(
+    () => scopeTab === 'global' ? groupTodosByProject(openHumanTodos, projects, t) : [],
+    [scopeTab, openHumanTodos, projects, t],
   )
 
   const historyHumanTodos = useMemo(
     () => sortByUpdatedAt(visibleTodos.filter((todo) => todo.status !== 'pending')),
     [visibleTodos],
   )
-
-  const historyAiTasks = useMemo(
-    () => sortByUpdatedAt(visibleTasks.filter((quest) => isClosedQuest(quest))),
-    [visibleTasks],
+  const groupedHistoryHumanTodos = useMemo(
+    () => scopeTab === 'global' ? groupTodosByProject(historyHumanTodos, projects, t) : [],
+    [scopeTab, historyHumanTodos, projects, t],
   )
 
-  const activeItems = useMemo(
-    () => sortRailTaskItems([
-      ...createTodoItems(openHumanTodos),
-      ...createQuestItems(openAiTasks),
-    ]),
-    [openHumanTodos, openAiTasks],
-  )
-
-  const historyItems = useMemo(
-    () => hasActiveTagFilter
-      ? []
-      : sortRailTaskItems([
-          ...createTodoItems(historyHumanTodos),
-          ...createQuestItems(historyAiTasks),
-        ]),
-    [hasActiveTagFilter, historyHumanTodos, historyAiTasks],
+  const automationSections = useMemo(
+    () => buildAutomationSections(visibleTasks).map((entry) => ({
+      ...entry,
+      label: automationSectionLabel(entry.key, t),
+    })),
+    [t, visibleTasks],
   )
 
   const visibleArchivedItems = useMemo(
@@ -753,16 +784,6 @@ export function TodoPanel({
     [hasActiveTagFilter, visibleArchivedTasks, visibleArchivedTodos],
   )
 
-  const scopeCounts = useMemo(
-    () => ({
-      global: globalTasks.filter((q) => !isClosedQuest(q)).length + globalTodos.filter((t) => t.status === 'pending').length,
-      project: tasks.filter((q) => !isClosedQuest(q)).length + todos.filter((t) => t.status === 'pending').length,
-      session: (activeQuest?.kind === 'task' && !isClosedQuest(activeQuest) ? 1 : 0) + (activeQuestId ? globalTodos.filter((todo) => todo.originQuestId === activeQuestId && todo.status === 'pending').length : 0),
-      pending: openHumanTodos.length + openAiTasks.length,
-      done: historyHumanTodos.length + historyAiTasks.length,
-    }),
-    [activeQuest, activeQuestId, globalTasks, globalTodos, tasks, todos, openHumanTodos.length, openAiTasks.length, historyHumanTodos.length, historyAiTasks.length],
-  )
   const allKnownTodos = useMemo(() => {
     const deduped = new Map<string, Todo>()
     for (const item of [...todos, ...archivedTodos, ...globalTodos, ...globalArchivedTodos]) {
@@ -780,17 +801,13 @@ export function TodoPanel({
     () => taskOverlayState(location),
     [location],
   )
-  const historySectionKey = `${scopeTab}:${sourceTab}`
+  const historySectionKey = `${scopeTab}:${sourceTab}:todos`
   const historyExpanded = historyExpandedByView[historySectionKey] ?? false
-  const historyDoneCount = useMemo(
-    () => historyItems.filter((item) => (
-      item.entityType === 'todo'
-        ? item.todo.status === 'done'
-        : item.quest.status === 'done'
-    )).length,
-    [historyItems],
+  const hasVisibleContent = (
+    openHumanTodos.length > 0
+    || historyHumanTodos.length > 0
+    || automationSections.length > 0
   )
-  const historySectionLabel = historyDoneCount === historyItems.length ? t('已完成') : t('已处理')
 
   useEffect(() => {
     if (!selectedTodo) {
@@ -900,9 +917,6 @@ export function TodoPanel({
             <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
               {t('项目')}
             </button>
-            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'session' ? ' is-active' : ''}`} onClick={() => setScopeTab('session')}>
-              {t('会话')}
-            </button>
           </div>
         </div>
 
@@ -925,44 +939,151 @@ export function TodoPanel({
 
         <div className="pluse-task-list">
 
-          {activeItems.length > 0 ? (
-            <div className="pluse-note-list pluse-task-stream">
-              {activeItems.map((item) => (
-                item.entityType === 'todo'
-                  ? (
-                      <TodoRailItem
-                        key={item.todo.id}
-                        todo={item.todo}
-                        archived={item.archived}
-                        activeQuestId={activeQuestId}
-                        locale={locale}
-                        t={t}
-                        onOpenTodo={handleOpenTodo}
-                        onToggleTodoStatus={handleToggleTodoStatus}
-                        onArchiveTodo={handleArchiveTodo}
-                        onOpenTodoSource={handleOpenTodoSource}
-                        onRequestClose={onRequestClose}
-                      />
-                    )
-                  : (
-                      <QuestRailItem
-                        key={item.quest.id}
-                        quest={item.quest}
-                        archived={item.archived}
-                        activeQuestId={activeQuestId}
-                        locale={locale}
-                        t={t}
-                        questLinkState={questLinkState}
-                        onRequestClose={onRequestClose}
-                        onTriggerQuest={handleTriggerQuest}
-                        onArchiveQuest={handleArchiveQuest}
-                      />
-                    )
-              ))}
-            </div>
+          {sourceTab !== 'ai' && scopeTab === 'global' ? (
+            <>
+              {groupedOpenHumanTodos.map((group) => {
+                const sectionKey = `global:human:open:${group.key}`
+                const expanded = isSectionExpanded(sectionKey)
+                return (
+                <section key={`global-open-${group.key}`} className="pluse-domain-group pluse-task-stream">
+                  <div className="pluse-domain-group-head">
+                    <button
+                      type="button"
+                      className="pluse-domain-group-toggle"
+                      onClick={() => toggleSectionExpanded(sectionKey)}
+                    >
+                      <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                      <div className="pluse-domain-group-copy">
+                        <strong>{group.label}</strong>
+                        <span>{group.items.length}</span>
+                      </div>
+                    </button>
+                  </div>
+                  {expanded ? (
+                    <div className="pluse-note-list">
+                      {group.items.map((todo) => (
+                        <TodoRailItem
+                          key={todo.id}
+                          todo={todo}
+                          archived={false}
+                          activeQuestId={activeQuestId}
+                          locale={locale}
+                          t={t}
+                          onOpenTodo={handleOpenTodo}
+                          onToggleTodoStatus={handleToggleTodoStatus}
+                          onArchiveTodo={handleArchiveTodo}
+                          onOpenTodoSource={handleOpenTodoSource}
+                          onRequestClose={onRequestClose}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+                )
+              })}
+
+              {groupedHistoryHumanTodos.length > 0 ? (
+                <section className="pluse-domain-group pluse-task-history">
+                  <div className="pluse-domain-group-head">
+                    <button
+                      type="button"
+                      className="pluse-domain-group-toggle"
+                      onClick={() => toggleSectionExpanded('global:human:history', false)}
+                    >
+                      <span className="pluse-domain-group-chevron" aria-hidden="true">{isSectionExpanded('global:human:history', false) ? '▾' : '▸'}</span>
+                      <div className="pluse-domain-group-copy">
+                        <strong>{t('历史')}</strong>
+                        <span>{historyHumanTodos.length}</span>
+                      </div>
+                    </button>
+                  </div>
+                  {isSectionExpanded('global:human:history', false) ? (
+                    <div className="pluse-task-history-list">
+                      {groupedHistoryHumanTodos.map((group) => {
+                        const sectionKey = `global:human:history:${group.key}`
+                        const expanded = isSectionExpanded(sectionKey, false)
+                        return (
+                          <section key={`global-history-${group.key}`} className="pluse-domain-group pluse-task-history">
+                            <div className="pluse-domain-group-head">
+                              <button
+                                type="button"
+                                className="pluse-domain-group-toggle"
+                                onClick={() => toggleSectionExpanded(sectionKey, false)}
+                              >
+                                <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                                <div className="pluse-domain-group-copy">
+                                  <strong>{group.label}</strong>
+                                  <span>{group.items.length}</span>
+                                </div>
+                              </button>
+                            </div>
+                            {expanded ? (
+                              <div className="pluse-note-list pluse-task-history-list">
+                                {group.items.map((todo) => (
+                                  <TodoRailItem
+                                    key={todo.id}
+                                    todo={todo}
+                                    archived={false}
+                                    activeQuestId={activeQuestId}
+                                    locale={locale}
+                                    t={t}
+                                    onOpenTodo={handleOpenTodo}
+                                    onToggleTodoStatus={handleToggleTodoStatus}
+                                    onArchiveTodo={handleArchiveTodo}
+                                    onOpenTodoSource={handleOpenTodoSource}
+                                    onRequestClose={onRequestClose}
+                                  />
+                                ))}
+                              </div>
+                            ) : null}
+                          </section>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+            </>
           ) : null}
 
-          {historyItems.length > 0 ? (
+          {sourceTab !== 'ai' && scopeTab !== 'global' && openHumanTodos.length > 0 ? (
+            <section className="pluse-domain-group pluse-task-stream">
+              <div className="pluse-domain-group-head">
+                <button
+                  type="button"
+                  className="pluse-domain-group-toggle"
+                  onClick={() => toggleSectionExpanded(`${scopeTab}:${sourceTab}:open`)}
+                >
+                  <span className="pluse-domain-group-chevron" aria-hidden="true">{isSectionExpanded(`${scopeTab}:${sourceTab}:open`) ? '▾' : '▸'}</span>
+                  <div className="pluse-domain-group-copy">
+                    <strong>{t('待办')}</strong>
+                    <span>{openHumanTodos.length}</span>
+                  </div>
+                </button>
+              </div>
+              {isSectionExpanded(`${scopeTab}:${sourceTab}:open`) ? (
+                <div className="pluse-note-list">
+                  {openHumanTodos.map((todo) => (
+                    <TodoRailItem
+                      key={todo.id}
+                      todo={todo}
+                      archived={false}
+                      activeQuestId={activeQuestId}
+                      locale={locale}
+                      t={t}
+                      onOpenTodo={handleOpenTodo}
+                      onToggleTodoStatus={handleToggleTodoStatus}
+                      onArchiveTodo={handleArchiveTodo}
+                      onOpenTodoSource={handleOpenTodoSource}
+                      onRequestClose={onRequestClose}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {sourceTab !== 'ai' && scopeTab !== 'global' && historyHumanTodos.length > 0 ? (
             <section className="pluse-domain-group pluse-task-history">
               <div className="pluse-domain-group-head">
                 <button
@@ -975,51 +1096,74 @@ export function TodoPanel({
                 >
                   <span className="pluse-domain-group-chevron" aria-hidden="true">{historyExpanded ? '▾' : '▸'}</span>
                   <div className="pluse-domain-group-copy">
-                    <strong>{historySectionLabel}</strong>
-                    <span>{historyItems.length}</span>
+                    <strong>{t('历史')}</strong>
+                    <span>{historyHumanTodos.length}</span>
                   </div>
                 </button>
               </div>
               {historyExpanded ? (
                 <div className="pluse-note-list pluse-task-history-list">
-                  {historyItems.map((item) => (
-                    item.entityType === 'todo'
-                      ? (
-                          <TodoRailItem
-                            key={item.todo.id}
-                            todo={item.todo}
-                            archived={item.archived}
-                            activeQuestId={activeQuestId}
-                            locale={locale}
-                            t={t}
-                            onOpenTodo={handleOpenTodo}
-                            onToggleTodoStatus={handleToggleTodoStatus}
-                            onArchiveTodo={handleArchiveTodo}
-                            onOpenTodoSource={handleOpenTodoSource}
-                            onRequestClose={onRequestClose}
-                          />
-                        )
-                      : (
-                          <QuestRailItem
-                            key={item.quest.id}
-                            quest={item.quest}
-                            archived={item.archived}
-                            activeQuestId={activeQuestId}
-                            locale={locale}
-                            t={t}
-                            questLinkState={questLinkState}
-                            onRequestClose={onRequestClose}
-                            onTriggerQuest={handleTriggerQuest}
-                            onArchiveQuest={handleArchiveQuest}
-                          />
-                        )
+                  {historyHumanTodos.map((todo) => (
+                    <TodoRailItem
+                      key={todo.id}
+                      todo={todo}
+                      archived={false}
+                      activeQuestId={activeQuestId}
+                      locale={locale}
+                      t={t}
+                      onOpenTodo={handleOpenTodo}
+                      onToggleTodoStatus={handleToggleTodoStatus}
+                      onArchiveTodo={handleArchiveTodo}
+                      onOpenTodoSource={handleOpenTodoSource}
+                      onRequestClose={onRequestClose}
+                    />
                   ))}
                 </div>
               ) : null}
             </section>
           ) : null}
 
-          {activeItems.length === 0 && historyItems.length === 0 ? (
+          {sourceTab !== 'human' ? automationSections.map((section) => {
+            const sectionKey = `${scopeTab}:${sourceTab}:automation:${section.key}`
+            const expanded = isSectionExpanded(sectionKey)
+            return (
+            <section key={section.key} className="pluse-domain-group pluse-task-stream">
+              <div className="pluse-domain-group-head">
+                <button
+                  type="button"
+                  className="pluse-domain-group-toggle"
+                  onClick={() => toggleSectionExpanded(sectionKey)}
+                >
+                  <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                  <div className="pluse-domain-group-copy">
+                    <strong>{section.label}</strong>
+                    <span>{section.items.length}</span>
+                  </div>
+                </button>
+              </div>
+              {expanded ? (
+                <div className="pluse-note-list">
+                  {section.items.map((quest) => (
+                    <QuestRailItem
+                      key={quest.id}
+                      quest={quest}
+                      archived={false}
+                      activeQuestId={activeQuestId}
+                      locale={locale}
+                      t={t}
+                      questLinkState={questLinkState}
+                      onRequestClose={onRequestClose}
+                      onTriggerQuest={handleTriggerQuest}
+                      onArchiveQuest={handleArchiveQuest}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+            )
+          }) : null}
+
+          {!hasVisibleContent ? (
             <div className="pluse-rail-empty pluse-task-empty-state">
               <strong>{t('暂无任务')}</strong>
               <p>{formatScopeEmptyMessage(scopeTab, sourceTab, t)}</p>
@@ -1082,20 +1226,13 @@ export function TodoPanel({
         </div>
 
         <section className="pluse-rail-section-new-task">
-          <div className="pluse-rail-source-switch" role="tablist" aria-label={t('任务类型')}>
-            <button
-              type="button"
-              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'all' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab(scopeTab, 'all')}
-            >
-              {t('全部')}
-            </button>
+          <div className="pluse-rail-source-switch" role="tablist" aria-label={t('对象类型')}>
             <button
               type="button"
               className={`pluse-tab pluse-rail-source-tab${sourceTab === 'human' ? ' is-active' : ''}`}
               onClick={() => setSourceTab(scopeTab, 'human')}
             >
-              {t('人类')}
+              {t('待办')}
               {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
             </button>
             <button
@@ -1103,19 +1240,19 @@ export function TodoPanel({
               className={`pluse-tab pluse-rail-source-tab${sourceTab === 'ai' ? ' is-active' : ''}`}
               onClick={() => setSourceTab(scopeTab, 'ai')}
             >
-              {t('AI')}
+              {t('自动化')}
               {aiCount > 0 ? <span className="pluse-tab-count">{aiCount}</span> : null}
             </button>
           </div>
           <button
             type="button"
             className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
-            onClick={() => openCreateModal(sourceTab === 'all' ? 'human' : sourceTab)}
-            aria-label={t('新建任务')}
+            onClick={() => openCreateModal(sourceTab)}
+            aria-label={sourceTab === 'human' ? t('新建待办') : t('新建自动化')}
             disabled={!projectId}
           >
             <PlusIcon className="pluse-icon" />
-            <span>{t('新建任务')}</span>
+            <span>{sourceTab === 'human' ? t('新建待办') : t('新建自动化')}</span>
           </button>
         </section>
 
@@ -1146,7 +1283,7 @@ export function TodoPanel({
           >
             <header className="pluse-todo-detail-head">
               <div className="pluse-todo-detail-identity">
-                <span className="pluse-task-detail-kicker">{t('人类任务')}</span>
+                <span className="pluse-task-detail-kicker">{t('待办')}</span>
                 <div className="pluse-task-detail-title-row">
                   <h2 id={`todo-detail-title-${selectedTodo.id}`}>{selectedTodo.title}</h2>
                 </div>
