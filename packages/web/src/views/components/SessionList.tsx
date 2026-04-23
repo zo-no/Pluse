@@ -502,10 +502,12 @@ export function SessionList({
     }
 
     return {
-      categories: sessionCategories.map((category) => ({
-        category,
-        quests: grouped.get(category.id) ?? [],
-      })),
+      categories: sessionCategories
+        .map((category) => ({
+          category,
+          quests: grouped.get(category.id) ?? [],
+        }))
+        .filter(({ quests }) => quests.length > 0),
       ungrouped,
     }
   }, [sessionCategories, unpinnedSessions])
@@ -563,16 +565,18 @@ export function SessionList({
       <div key={category.id} className="pluse-sidebar-archive-group">
         <button
           type="button"
-          className="pluse-sidebar-archive-toggle"
+          className="pluse-sidebar-archive-toggle pluse-sidebar-category-toggle"
           onClick={() => void handleToggleSessionCategoryCollapsed(category.id, !category.collapsed)}
         >
-          <span>{category.collapsed ? '▸' : '▾'} {category.name} ({quests.length})</span>
+          <span className="pluse-sidebar-category-toggle-main">
+            <span className="pluse-sidebar-category-chevron" aria-hidden="true">{category.collapsed ? '▸' : '▾'}</span>
+            <span className="pluse-sidebar-category-name" title={category.name}>{category.name}</span>
+          </span>
+          <span className="pluse-sidebar-category-count" aria-hidden="true">({quests.length})</span>
         </button>
         {!category.collapsed ? (
           <div className="pluse-sidebar-archive-list">
-            {quests.length > 0 ? quests.map((quest) => renderQuest(quest)) : (
-              <div className="pluse-empty-state pluse-sidebar-empty">{t('暂无会话')}</div>
-            )}
+            {quests.map((quest) => renderQuest(quest))}
           </div>
         ) : null}
       </div>

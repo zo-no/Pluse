@@ -10,6 +10,7 @@ import type {
   QuestEvent,
   QuestOp,
   Run,
+  SessionCategory,
   Todo,
   UploadedAsset,
 } from '@pluse/types'
@@ -320,7 +321,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'domain', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'domain', 'session-category', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
@@ -470,6 +471,45 @@ describe('quest/todo/run APIs', () => {
     const ops = await GET<QuestOp[]>(`/api/quests/${task.id}/ops`)
     expect(ops.status).toBe(200)
     expect(mustOk(ops).some((entry) => entry.op === 'project_changed' && entry.note?.includes(targetProject.id))).toBe(true)
+  })
+
+  it('auto-deletes empty session categories after reassignment or cross-project move', async () => {
+    const sourceProject = await openProject('session-category-prune-source')
+    const targetProject = await openProject('session-category-prune-target')
+
+    const categoryA = await POST<SessionCategory>(`/api/projects/${sourceProject.id}/session-categories`, { name: 'A' })
+    expect(categoryA.status).toBe(201)
+    const categoryAData = mustOk(categoryA)
+
+    const categoryB = await POST<SessionCategory>(`/api/projects/${sourceProject.id}/session-categories`, { name: 'B' })
+    expect(categoryB.status).toBe(201)
+    const categoryBData = mustOk(categoryB)
+
+    const session = await createQuest({
+      projectId: sourceProject.id,
+      kind: 'session',
+      name: 'Need category cleanup',
+    })
+
+    const assignedA = await PATCH<Quest>(`/api/quests/${session.id}`, { sessionCategoryId: categoryAData.id })
+    expect(assignedA.status).toBe(200)
+    expect(mustOk(assignedA).sessionCategoryId).toBe(categoryAData.id)
+
+    const movedToB = await PATCH<Quest>(`/api/quests/${session.id}`, { sessionCategoryId: categoryBData.id })
+    expect(movedToB.status).toBe(200)
+    expect(mustOk(movedToB).sessionCategoryId).toBe(categoryBData.id)
+
+    const categoriesAfterReassign = await GET<SessionCategory[]>(`/api/projects/${sourceProject.id}/session-categories`)
+    expect(categoriesAfterReassign.status).toBe(200)
+    expect(mustOk(categoriesAfterReassign).map((item) => item.id)).toEqual([categoryBData.id])
+
+    const moved = await POST<Quest>(`/api/quests/${session.id}/move`, { targetProjectId: targetProject.id })
+    expect(moved.status).toBe(200)
+    expect(mustOk(moved).sessionCategoryId).toBeUndefined()
+
+    const sourceCategoriesAfterMove = await GET<SessionCategory[]>(`/api/projects/${sourceProject.id}/session-categories`)
+    expect(sourceCategoriesAfterMove.status).toBe(200)
+    expect(mustOk(sourceCategoriesAfterMove)).toHaveLength(0)
   })
 
   it('persists assets under quest storage and archives the project without removing data', async () => {

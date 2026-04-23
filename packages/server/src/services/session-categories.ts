@@ -15,6 +15,14 @@ function emitProjectUpdated(projectId: string): void {
   emit({ type: 'project_updated', data: { projectId } })
 }
 
+function countQuestBindings(sessionCategoryId: string): number {
+  const db = getDb()
+  const row = db.query<{ total: number }, [string]>(
+    'SELECT COUNT(1) as total FROM quests WHERE session_category_id = ?'
+  ).get(sessionCategoryId)
+  return row?.total ?? 0
+}
+
 function assertProjectExists(projectId: string): void {
   const project = getProject(projectId)
   if (!project) throw new Error(`Project not found: ${projectId}`)
@@ -54,6 +62,21 @@ export function deleteSessionCategoryWithEffects(id: string): void {
   })
   tx()
   emitProjectUpdated(existing.projectId)
+}
+
+export function deleteSessionCategoryIfEmptyWithEffects(id: string): boolean {
+  const db = getDb()
+  const tx = db.transaction(() => {
+    const existing = getSessionCategory(id)
+    if (!existing) return null
+    if (countQuestBindings(id) > 0) return null
+    deleteSessionCategory(id)
+    return existing.projectId
+  })
+  const deletedProjectId = tx()
+  if (!deletedProjectId) return false
+  emitProjectUpdated(deletedProjectId)
+  return true
 }
 
 export function createOrReuseSessionCategory(projectId: string, input: { name: string; description?: string }): SessionCategory {

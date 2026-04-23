@@ -901,8 +901,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
     <div className="pluse-page pluse-session-page">
       <div className="pluse-chat-shell" style={chatShellStyle}>
         {currentSessionCategory ? (
-          <div style={{ padding: '12px 16px 0' }}>
-            <span className="pluse-inline-pill">
+          <div className="pluse-chat-session-category">
+            <span className="pluse-inline-pill pluse-chat-session-category-pill" title={currentSessionCategory.name}>
               {t('分类')} · {currentSessionCategory.name}
             </span>
           </div>

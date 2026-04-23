@@ -319,8 +319,10 @@ Phase 1 推荐的默认自动化不是持续重分类，而是一次性的首轮
 
 - `Pinned` 是 attention override
 - `Categories` 按 `SessionCategory` 渲染多个分区
+- 空分类不应长期保留，应在解绑后自动回收，导航面也不渲染空分区
 - `Uncategorized` 承接未被分类的会话
 - `Archived` 保持现有语义
+- 移动端分类标题需要支持窄屏截断，避免分类名和计数展示错位
 
 Phase 1 不要求提供复杂的手动分类管理 UI。
 

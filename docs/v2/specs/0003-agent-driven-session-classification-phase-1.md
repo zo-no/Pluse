@@ -226,6 +226,12 @@ Phase 1 删除分类采用直接删除，不做归档。
 
 恢复后应回到原分类。
 
+### 6. 空分类自动回收
+
+当 Quest 变更 `sessionCategoryId`、或跨项目移动导致旧分类解绑后，若旧分类已不再被任何 Quest 引用，系统应自动删除该分类。
+
+该回收行为不会删除 Quest 本身，只清理空分类记录。
+
 ## HTTP 接口
 
 ### SessionCategory
@@ -421,8 +427,10 @@ pluse quest update <questId> --clear-session-category
 - 额外拉取当前 Project 的 `sessionCategories`
 - 先渲染 `Pinned`
 - 再按 category 渲染 session 分区
+- 空分类不渲染
 - 再渲染 `Uncategorized`
 - 最后渲染 archived 区
+- 移动端分类标题需要在窄屏下可截断，避免名称和计数错位
 
 ### 交互范围
 

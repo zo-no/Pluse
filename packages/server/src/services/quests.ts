@@ -11,6 +11,7 @@ import { getLatestRunForQuest, getRun, getRunsByQuest } from '../models/run'
 import { getSessionCategory } from '../models/session-category'
 import { emit } from './events'
 import { refreshQuestSchedule } from './scheduler'
+import { deleteSessionCategoryIfEmptyWithEffects } from './session-categories'
 import { getAssetsDir, getHistoryRoot, getPluseRoot } from '../support/paths'
 
 function emitQuestUpdated(quest: Quest): void {
@@ -146,6 +147,12 @@ export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Que
     assertSessionCategoryBelongsToProject(before.projectId, input.sessionCategoryId)
   }
   const updated = updateQuest(id, input)
+  const detachedSessionCategoryId = (
+    before.sessionCategoryId
+    && before.sessionCategoryId !== updated.sessionCategoryId
+      ? before.sessionCategoryId
+      : null
+  )
   if (
     before.kind === 'session'
     && !before.deleted
@@ -226,6 +233,9 @@ export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Que
   }
 
   refreshQuestSchedule(updated)
+  if (detachedSessionCategoryId) {
+    deleteSessionCategoryIfEmptyWithEffects(detachedSessionCategoryId)
+  }
   const quest = getQuest(updated.id) ?? updated
   emitQuestUpdated(quest)
   return quest
@@ -301,6 +311,9 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
   })
   emit({ type: 'quest_updated', data: { questId: moved.id, projectId: before.projectId } })
   emitQuestUpdated(moved)
+  if (before.sessionCategoryId) {
+    deleteSessionCategoryIfEmptyWithEffects(before.sessionCategoryId)
+  }
   emitProjectUpdated(before.projectId)
   emitProjectUpdated(moved.projectId)
   return moved
