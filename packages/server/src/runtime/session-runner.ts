@@ -41,6 +41,16 @@ import { ensureReviewTodoWithEffects } from '../services/todos'
 import { runHooks } from '../services/hooks'
 import { getManagedCodexHome } from '../support/paths'
 import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from './catalog'
+import {
+  isClaudeRuntimeTool,
+  normalizeRuntimeToolName,
+  resolveClaudeProxyCommandSpec,
+  resolveRuntimeCommandSpec,
+  resolveRuntimeToolFamily,
+  sameRuntimeCommand,
+  type RuntimeCommandSpec,
+  type RuntimeToolName,
+} from './command'
 
 type ToolName = 'codex' | 'claude'
 type ProviderEvent = Omit<QuestEvent, 'seq'>
@@ -53,7 +63,7 @@ type ActiveRunner = {
 }
 
 type RuntimePreferences = {
-  tool: ToolName
+  tool: RuntimeToolName
   model: string
   effort: string | null
   thinking: boolean
@@ -262,21 +272,15 @@ function buildAttachmentPrompt(input: SubmitQuestMessageInput): string {
   return [attachments.join('\n'), input.text.trim()].filter(Boolean).join('\n\n')
 }
 
-function resolveTool(tool?: string | null): ToolName {
-  return tool?.trim().toLowerCase() === 'claude' ? 'claude' : 'codex'
+function resolveTool(tool?: string | null): RuntimeToolName {
+  return normalizeRuntimeToolName(tool)
 }
 
-function resolveModel(tool: ToolName, requested?: string | null): string {
+function resolveModel(tool: RuntimeToolName, requested?: string | null): string {
+  const family = resolveRuntimeToolFamily(tool)
   const next = requested?.trim()
-  if (next) return tool === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet[1m]' : 'gpt-5.3-codex-spark')
-}
-
-function resolveToolCommand(tool: ToolName): string {
-  if (tool === 'claude') {
-    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude'
-  }
-  return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex'
+  if (next) return family === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
+  return getRuntimeModelCatalog(tool).defaultModel ?? (family === 'claude' ? 'sonnet[1m]' : 'gpt-5.3-codex-spark')
 }
 
 function syncManagedCodexAuth(): string {
@@ -302,8 +306,8 @@ function syncManagedCodexAuth(): string {
   return managedHome
 }
 
-function runtimeEnvForTool(tool: ToolName): NodeJS.ProcessEnv {
-  if (tool !== 'codex') return process.env
+function runtimeEnvForTool(tool: RuntimeToolName): NodeJS.ProcessEnv {
+  if (resolveRuntimeToolFamily(tool) !== 'codex') return process.env
   return {
     ...process.env,
     CODEX_HOME: syncManagedCodexAuth(),
@@ -398,11 +402,12 @@ function validateTaskRunConfig(quest: Quest): string | null {
 
 function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePreferences>): RuntimePreferences {
   const tool = overrides?.tool ?? resolveTool(quest.tool)
+  const family = resolveRuntimeToolFamily(tool)
   return {
     tool,
     model: overrides?.model ?? resolveModel(tool, quest.model),
-    effort: overrides?.effort ?? quest.effort ?? (tool === 'codex' ? 'low' : null),
-    thinking: overrides?.thinking ?? (tool === 'claude' ? quest.thinking === true : false),
+    effort: overrides?.effort ?? quest.effort ?? (family === 'codex' ? 'low' : null),
+    thinking: overrides?.thinking ?? (family === 'claude' ? quest.thinking === true : false),
   }
 }
 
@@ -425,6 +430,23 @@ function shouldPersistQuestProviderIds(quest: Quest): boolean {
 function shouldRetryResumeFailure(failureReason: string | undefined, sawProviderOutput: boolean): boolean {
   if (!failureReason || sawProviderOutput) return false
   return /resume|thread|session|conversation|context|expired|not found|invalid/i.test(failureReason)
+}
+
+function shouldRetryClaudeProxyFailure(
+  tool: ToolName,
+  command: RuntimeCommandSpec,
+  fallbackCommand: RuntimeCommandSpec | null,
+  failureReason: string | undefined,
+  sawProviderOutput: boolean,
+): boolean {
+  if (tool !== 'claude' || !failureReason || sawProviderOutput) return false
+  if (!fallbackCommand || sameRuntimeCommand(command, fallbackCommand)) return false
+  return /429|request rejected|service unavailable|overload|overloaded|capacity/i.test(failureReason)
+}
+
+function describeProviderRun(tool: RuntimeToolName, command: RuntimeCommandSpec, nativeResume: boolean): string {
+  const via = command.display === tool ? '' : ` via ${command.display}`
+  return `Running with ${tool}${via}${nativeResume ? ' (resume)' : ''}`
 }
 
 function fallbackQuestName(source: string): string {
@@ -570,8 +592,8 @@ function parseCodexLine(line: string): ProviderParseResult {
   return { events, assistantText, codexThreadId }
 }
 
-function parseProviderLine(tool: ToolName, line: string): ProviderParseResult {
-  return tool === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
+function parseProviderLine(tool: RuntimeToolName, line: string): ProviderParseResult {
+  return resolveRuntimeToolFamily(tool) === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
 }
 
 function buildClaudeArgs(prompt: string, options: { model?: string; effort?: string | null; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
@@ -697,17 +719,18 @@ async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameS
     thinking: false,
   })
   const tool = runtime.tool
-  const command = resolveToolCommand(tool)
-  const args = tool === 'claude'
-      ? buildClaudeArgs(
-        buildAutoRenamePrompt(snapshot),
-        {
-          model: runtime.model,
-          effort: runtime.effort,
-          thinking: false,
-          systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
-        },
-      )
+  const toolFamily = resolveRuntimeToolFamily(tool)
+  const command = resolveRuntimeCommandSpec(tool)
+  const args = toolFamily === 'claude'
+    ? buildClaudeArgs(
+      buildAutoRenamePrompt(snapshot),
+      {
+        model: runtime.model,
+        effort: runtime.effort,
+        thinking: false,
+        systemPrompt: AUTO_RENAME_SYSTEM_PROMPT,
+      },
+    )
     : buildCodexArgs(
       buildAutoRenamePrompt(snapshot),
       {
@@ -718,7 +741,7 @@ async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameS
     )
 
   return await new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(command.file, [...command.args, ...args], {
       cwd: project.workDir,
       env: runtimeEnvForTool(tool),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -913,8 +936,8 @@ function createAcceptedRun(
     model: runtime.model,
     effort: runtime.effort ?? undefined,
     thinking: runtime.thinking,
-    claudeSessionId: runtime.tool === 'claude' ? quest.claudeSessionId : undefined,
-    codexThreadId: runtime.tool === 'codex' ? quest.codexThreadId : undefined,
+    claudeSessionId: isClaudeRuntimeTool(runtime.tool) ? quest.claudeSessionId : undefined,
+    codexThreadId: isClaudeRuntimeTool(runtime.tool) ? undefined : quest.codexThreadId,
   })
   updateQuest(quest.id, {
     activeRunId: run.id,
@@ -1016,6 +1039,7 @@ type ProviderAttemptResult = {
   failureReason?: string
   assistantText?: string
   retryWithHistory?: boolean
+  retryWithClaudeProxy?: boolean
   tokenUsage?: TokenUsage
 }
 
@@ -1037,15 +1061,20 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     return
   }
 
-  const tool = resolveTool(run.tool)
-  const command = resolveToolCommand(tool)
+  const toolId = resolveTool(run.tool)
+  const tool = resolveRuntimeToolFamily(toolId)
+  const primaryCommand = resolveRuntimeCommandSpec(toolId)
+  const claudeProxyCommand = tool === 'claude' ? resolveClaudeProxyCommandSpec() : null
   const canContinueContext = shouldContinueQuestContext(quest)
   const updateQuestProviderIds = shouldPersistQuestProviderIds(quest)
   const initialNativeResume = tool === 'claude'
     ? canContinueContext && Boolean(run.claudeSessionId)
     : canContinueContext && Boolean(run.codexThreadId)
 
-  const attempt = (nativeResume: boolean): Promise<ProviderAttemptResult> => new Promise((resolve) => {
+  const attempt = (
+    nativeResume: boolean,
+    command: RuntimeCommandSpec,
+  ): Promise<ProviderAttemptResult> => new Promise((resolve) => {
     const currentRun = getRun(runId)
     const currentQuest = getQuest(questId)
     if (!currentRun || !currentQuest) {
@@ -1079,9 +1108,9 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         },
       )
 
-    const child = spawn(command, args, {
+    const child = spawn(command.file, [...command.args, ...args], {
       cwd: project.workDir,
-      env: runtimeEnvForTool(tool),
+      env: runtimeEnvForTool(toolId),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -1093,7 +1122,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       runnerProcessId: child.pid ?? undefined,
     })
     emitRunUpdated(runId)
-    appendQuestEvents(questId, [makeStatusEvent(`Running with ${tool}${nativeResume ? ' (resume)' : ''}`)])
+    appendQuestEvents(questId, [makeStatusEvent(describeProviderRun(toolId, command, nativeResume))])
 
     let sawProviderOutput = false
     let lastAssistantText = ''
@@ -1105,7 +1134,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     wireLineStream(child.stdout, (line) => {
       appendRunSpoolLine(runId, line)
       emit({ type: 'run_line', data: { runId, questId, projectId: currentQuest.projectId, line, ts: nowIso() } })
-      const parsed = parseProviderLine(tool, line)
+      const parsed = parseProviderLine(toolId, line)
       if (parsed.assistantText?.trim()) lastAssistantText = parsed.assistantText
       if (parsed.providerError) lastProviderError = parsed.providerError
       if (parsed.tokenUsage) capturedTokenUsage = parsed.tokenUsage
@@ -1161,43 +1190,47 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         failureReason,
         assistantText: lastAssistantText,
         tokenUsage: capturedTokenUsage,
+        retryWithClaudeProxy: shouldRetryClaudeProxyFailure(tool, command, claudeProxyCommand, failureReason, sawProviderOutput),
         retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
       })
     })
   })
 
-  const firstAttempt = await attempt(initialNativeResume)
-  if (firstAttempt.retryWithHistory) {
-    appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
-    const fallbackAttempt = await attempt(false)
-    // Use fallbackAttempt's tokenUsage (firstAttempt's is discarded — it failed before completion)
-    if (fallbackAttempt.tokenUsage) updateRun(runId, fallbackAttempt.tokenUsage)
-    if (fallbackAttempt.state === 'completed') {
-      finalizeRun(runId, 'completed', undefined, fallbackAttempt.assistantText)
-      return
+  let nativeResume = initialNativeResume
+  let command = primaryCommand
+  let usedHistoryFallback = false
+  let usedClaudeProxyFallback = false
+  let finalAttempt: ProviderAttemptResult | null = null
+
+  while (!finalAttempt) {
+    const nextAttempt = await attempt(nativeResume, command)
+    if (nextAttempt.retryWithClaudeProxy && !usedClaudeProxyFallback && claudeProxyCommand) {
+      appendQuestEvents(questId, [makeStatusEvent(`Claude request was rejected, retrying with ${claudeProxyCommand.display}`)])
+      command = claudeProxyCommand
+      usedClaudeProxyFallback = true
+      continue
     }
-    if (fallbackAttempt.state === 'cancelled') {
-      appendQuestEvents(questId, [makeStatusEvent('cancelled')])
-      finalizeRun(runId, 'cancelled', fallbackAttempt.failureReason, fallbackAttempt.assistantText)
-      return
+    if (nextAttempt.retryWithHistory && !usedHistoryFallback) {
+      appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
+      nativeResume = false
+      usedHistoryFallback = true
+      continue
     }
-    appendQuestEvents(questId, [makeStatusEvent(`error: ${fallbackAttempt.failureReason}`)])
-    finalizeRun(runId, 'failed', fallbackAttempt.failureReason, fallbackAttempt.assistantText)
-    return
+    finalAttempt = nextAttempt
   }
 
-  if (firstAttempt.tokenUsage) updateRun(runId, firstAttempt.tokenUsage)
-  if (firstAttempt.state === 'completed') {
-    finalizeRun(runId, 'completed', undefined, firstAttempt.assistantText)
+  if (finalAttempt.tokenUsage) updateRun(runId, finalAttempt.tokenUsage)
+  if (finalAttempt.state === 'completed') {
+    finalizeRun(runId, 'completed', undefined, finalAttempt.assistantText)
     return
   }
-  if (firstAttempt.state === 'cancelled') {
+  if (finalAttempt.state === 'cancelled') {
     appendQuestEvents(questId, [makeStatusEvent('cancelled')])
-    finalizeRun(runId, 'cancelled', firstAttempt.failureReason, firstAttempt.assistantText)
+    finalizeRun(runId, 'cancelled', finalAttempt.failureReason, finalAttempt.assistantText)
     return
   }
-  appendQuestEvents(questId, [makeStatusEvent(`error: ${firstAttempt.failureReason}`)])
-  finalizeRun(runId, 'failed', firstAttempt.failureReason, firstAttempt.assistantText)
+  appendQuestEvents(questId, [makeStatusEvent(`error: ${finalAttempt.failureReason}`)])
+  finalizeRun(runId, 'failed', finalAttempt.failureReason, finalAttempt.assistantText)
 }
 
 async function executeQuestRun(runId: string, questId: string, promptText?: string): Promise<void> {

@@ -6,7 +6,14 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displaySessionName } from '@/views/utils/display'
-import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
+import {
+  buildFallbackRuntimeModelCatalog,
+  defaultRuntimeEffortId,
+  defaultRuntimeModelId,
+  isClaudeRuntimeTool,
+  resolveRuntimeEffortSelection,
+  resolveRuntimeModelSelection,
+} from '@/views/utils/runtime'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -87,7 +94,7 @@ function resolveComposerRuntimeState(source?: Pick<Quest, 'tool' | 'model' | 'ef
     tool,
     model: resolveRuntimeModelSelection(tool, source?.model, fallbackCatalog),
     effort: resolveRuntimeEffortSelection(tool, source?.effort, fallbackCatalog),
-    thinking: tool === 'claude' ? source?.thinking === true : false,
+    thinking: isClaudeRuntimeTool(tool) ? source?.thinking === true : false,
   }
 }
 
@@ -809,7 +816,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
       tool: runtimeSelection.tool,
       model: runtimeSelection.model || null,
       effort: runtimeSelection.effort || null,
-      thinking: runtimeSelection.tool === 'claude' ? runtimeSelection.thinking : false,
+      thinking: isClaudeRuntimeTool(runtimeSelection.tool) ? runtimeSelection.thinking : false,
       attachments: attachments.length > 0 ? attachments : undefined,
     })
     setSending(false)
@@ -1018,7 +1025,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                         tool,
                         model: defaultRuntimeModelId(tool),
                         effort: resolveRuntimeEffortSelection(tool, defaultRuntimeEffortId(tool, nextCatalog), nextCatalog),
-                        thinking: tool === 'claude' ? runtimeSelection.thinking : false,
+                        thinking: isClaudeRuntimeTool(tool) ? runtimeSelection.thinking : false,
                       }
                       setCatalog(nextCatalog)
                       setRuntimeSelection(nextSelection)
@@ -1062,7 +1069,7 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
                   ) : null}
                 </div>
                 <div className="pluse-composer-quick-actions">
-                  {runtimeSelection.tool === 'claude' ? (
+                  {isClaudeRuntimeTool(runtimeSelection.tool) ? (
                     <ComposerToggle
                       label={t('Think')}
                       active={runtimeSelection.thinking}

@@ -457,7 +457,7 @@ const questCreateCommand = questCommand
   .option('--name <name>', 'Session-style name')
   .option('--title <title>', 'Task-style title')
   .option('--description <description>', 'Description')
-  .option('--tool <tool>', 'codex or claude')
+  .option('--tool <tool>', 'codex, claude, or mc')
   .option('--model <model>', 'Model id')
   .option('--json', 'Output as JSON', false)
 addSharedTaskOptions(questCreateCommand)
@@ -565,7 +565,7 @@ questCommand
 questCommand
   .command('message <id>')
   .requiredOption('--text <text>', 'Message text')
-  .option('--tool <tool>', 'codex or claude')
+  .option('--tool <tool>', 'codex, claude, or mc')
   .option('--model <model>', 'Model id')
   .option('--json', 'Output as JSON', false)
   .action(async (id: string, opts: { text: string; tool?: string; model?: string; json: boolean }) => {

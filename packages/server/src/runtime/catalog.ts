@@ -1,9 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
-
-type ToolName = 'codex' | 'claude'
+import {
+  isClaudeRuntimeTool,
+  isRuntimeCommandAvailable,
+  resolveRuntimeCommandSpec,
+  type RuntimeToolName,
+} from './command'
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
 const CLAUDE_MODELS = [
@@ -53,6 +57,12 @@ const BUILTIN_TOOLS: Array<Omit<RuntimeTool, 'available' | 'command'>> = [
     runtimeFamily: 'claude-stream-json',
     builtin: true,
   },
+  {
+    id: 'mc',
+    name: 'MC (--code)',
+    runtimeFamily: 'claude-stream-json',
+    builtin: true,
+  },
 ]
 
 let cachedCodexCatalog: RuntimeModelCatalog | null = null
@@ -99,30 +109,6 @@ export function normalizeClaudeModelId(value?: string | null): string {
   }
 
   return trimmed
-}
-
-function resolveToolCommand(tool: ToolName): string {
-  if (tool === 'claude') {
-    return process.env['PLUSE_CLAUDE_COMMAND']?.trim()
-      || process.env['PULSE_CLAUDE_COMMAND']?.trim()
-      || process.env['MELODYSYNC_CLAUDE_COMMAND']?.trim()
-      || 'claude'
-  }
-  return process.env['PLUSE_CODEX_COMMAND']?.trim()
-    || process.env['PULSE_CODEX_COMMAND']?.trim()
-    || process.env['MELODYSYNC_CODEX_COMMAND']?.trim()
-    || 'codex'
-}
-
-function isCommandAvailable(command: string): boolean {
-  const trimmed = command.trim()
-  if (!trimmed) return false
-
-  if (trimmed.includes('/')) {
-    return existsSync(trimmed)
-  }
-
-  return typeof Bun.which === 'function' ? Boolean(Bun.which(trimmed)) : true
 }
 
 function buildEmptyCatalog(): RuntimeModelCatalog {
@@ -279,22 +265,19 @@ function buildCodexCatalog(): RuntimeModelCatalog {
 
 export function listRuntimeTools(): RuntimeTool[] {
   return BUILTIN_TOOLS.map((tool) => {
-    const command = resolveToolCommand(tool.id as ToolName)
+    const command = resolveRuntimeCommandSpec(tool.id as RuntimeToolName)
     return {
       ...tool,
-      command,
-      available: isCommandAvailable(command),
+      command: command.display,
+      available: isRuntimeCommandAvailable(command),
     }
   })
 }
 
 export function getRuntimeModelCatalog(toolId?: string | null): RuntimeModelCatalog {
-  switch (toolId?.trim()) {
-    case 'claude':
-      return buildClaudeCatalog()
-    case 'codex':
-      return buildCodexCatalog()
-    default:
-      return buildEmptyCatalog()
-  }
+  const normalized = toolId?.trim().toLowerCase()
+  if (!normalized) return buildEmptyCatalog()
+  if (isClaudeRuntimeTool(normalized)) return buildClaudeCatalog()
+  if (normalized === 'codex') return buildCodexCatalog()
+  return buildEmptyCatalog()
 }

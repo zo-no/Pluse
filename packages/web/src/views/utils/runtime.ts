@@ -30,12 +30,21 @@ const FALLBACK_CLAUDE_MODELS: RuntimeModelCatalog['models'] = [
   { id: 'haiku[1m]', label: 'Haiku 4.5' },
 ]
 
+export function isClaudeRuntimeTool(tool?: string | null): boolean {
+  const normalized = tool?.trim().toLowerCase()
+  return normalized === 'claude' || normalized === 'mc'
+}
+
+export function runtimeAgentForTool(tool?: string | null): 'claude' | 'codex' {
+  return isClaudeRuntimeTool(tool) ? 'claude' : 'codex'
+}
+
 export function defaultRuntimeModelId(tool?: string | null): string {
-  return tool?.trim().toLowerCase() === 'claude' ? DEFAULT_CLAUDE_MODEL_ID : DEFAULT_CODEX_MODEL_ID
+  return isClaudeRuntimeTool(tool) ? DEFAULT_CLAUDE_MODEL_ID : DEFAULT_CODEX_MODEL_ID
 }
 
 export function defaultRuntimeEffortId(tool?: string | null, catalog?: RuntimeModelCatalog | null): string {
-  if (tool?.trim().toLowerCase() === 'claude') return ''
+  if (isClaudeRuntimeTool(tool)) return ''
   return catalog?.reasoning.kind === 'enum'
     ? (catalog.reasoning.default ?? catalog.effortLevels?.[0] ?? 'low')
     : catalog?.effortLevels?.[0] ?? 'low'
@@ -87,7 +96,7 @@ export function normalizeClaudeModelId(value?: string | null): string {
 
 export function resolveRuntimeModelSelection(tool?: string | null, model?: string | null, catalog?: RuntimeModelCatalog | null): string {
   const normalizedTool = tool?.trim().toLowerCase()
-  const normalized = normalizedTool === 'claude'
+  const normalized = isClaudeRuntimeTool(normalizedTool)
     ? normalizeClaudeModelId(model)
     : normalizeCodexModelId(model)
 
@@ -103,7 +112,7 @@ export function resolveRuntimeModelSelection(tool?: string | null, model?: strin
 }
 
 export function resolveRuntimeEffortSelection(tool?: string | null, effort?: string | null, catalog?: RuntimeModelCatalog | null): string {
-  if (tool?.trim().toLowerCase() === 'claude') return effort?.trim() ?? ''
+  if (isClaudeRuntimeTool(tool)) return effort?.trim() ?? ''
 
   const trimmed = effort?.trim()
   if (trimmed) return trimmed
@@ -112,7 +121,7 @@ export function resolveRuntimeEffortSelection(tool?: string | null, effort?: str
 }
 
 export function buildFallbackRuntimeModelCatalog(tool?: string | null): RuntimeModelCatalog {
-  if (tool?.trim().toLowerCase() === 'claude') {
+  if (isClaudeRuntimeTool(tool)) {
     return {
       models: FALLBACK_CLAUDE_MODELS,
       effortLevels: null,

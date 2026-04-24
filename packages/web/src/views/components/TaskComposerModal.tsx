@@ -9,6 +9,7 @@ import {
   buildFallbackRuntimeModelCatalog,
   defaultRuntimeEffortId,
   defaultRuntimeModelId,
+  runtimeAgentForTool,
   resolveRuntimeEffortSelection,
   resolveRuntimeModelSelection,
 } from '@/views/utils/runtime'
@@ -35,6 +36,7 @@ interface TaskComposerModalProps {
 const FALLBACK_RUNTIME_TOOLS: RuntimeTool[] = [
   { id: 'codex', name: 'Codex', command: 'codex', runtimeFamily: 'codex-json', builtin: true, available: true },
   { id: 'claude', name: 'Claude Code', command: 'claude', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
+  { id: 'mc', name: 'MC (--code)', command: 'mc --code', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
 ]
 
 type SegmentedOption<T extends string> = {
@@ -241,7 +243,7 @@ function buildAiPayload(input: {
       }
     : {
         prompt: input.prompt.trim(),
-        agent: input.tool === 'claude' ? 'claude' : 'codex',
+        agent: runtimeAgentForTool(input.tool),
         model: input.model || undefined,
       }
 
@@ -297,7 +299,7 @@ export function TaskComposerModal({
   const [waitingInstructions, setWaitingInstructions] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [repeat, setRepeat] = useState<TodoRepeat>('none')
-  const [tool, setTool] = useState<'claude' | 'codex'>('codex')
+  const [tool, setTool] = useState<string>('codex')
   const [model, setModel] = useState(defaultRuntimeModelId('codex'))
   const [effort, setEffort] = useState(defaultRuntimeEffortId('codex'))
   const [thinking, setThinking] = useState(false)
@@ -421,10 +423,8 @@ export function TaskComposerModal({
     () => formatEffortLabel(resolveRuntimeEffortSelection(tool, effort, catalog) || t('默认'), t),
     [tool, effort, catalog, t],
   )
-  const toolOptions = useMemo<Array<SegmentedOption<'claude' | 'codex'>>>(
-    () => runtimeTools
-      .filter((item): item is RuntimeTool & { id: 'claude' | 'codex' } => item.id === 'claude' || item.id === 'codex')
-      .map((item) => ({ value: item.id, label: item.name })),
+  const toolOptions = useMemo<Array<SegmentedOption<string>>>(
+    () => runtimeTools.map((item) => ({ value: item.id, label: item.name })),
     [runtimeTools],
   )
   const effortChoiceOptions = useMemo<Array<SegmentedOption<string>>>(

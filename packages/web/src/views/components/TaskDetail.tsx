@@ -5,7 +5,14 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displaySessionName, displayTaskName } from '@/views/utils/display'
-import { buildFallbackRuntimeModelCatalog, defaultRuntimeEffortId, defaultRuntimeModelId, resolveRuntimeEffortSelection, resolveRuntimeModelSelection } from '@/views/utils/runtime'
+import {
+  buildFallbackRuntimeModelCatalog,
+  defaultRuntimeEffortId,
+  defaultRuntimeModelId,
+  runtimeAgentForTool,
+  resolveRuntimeEffortSelection,
+  resolveRuntimeModelSelection,
+} from '@/views/utils/runtime'
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ArchiveIcon, CloseIcon, ConvertIcon, PlayIcon, PlusIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
@@ -491,6 +498,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
         : [
             { id: 'codex', name: 'Codex' },
             { id: 'claude', name: 'Claude' },
+            { id: 'mc', name: 'MC (--code)' },
           ]
       return source.map((tool) => ({ value: tool.id, label: tool.name }))
     },
@@ -671,7 +679,7 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
           }
         : {
             prompt: form.prompt,
-            agent: form.tool === 'claude' ? 'claude' : 'codex',
+            agent: runtimeAgentForTool(form.tool),
             model: form.model || undefined,
           },
       executorOptions: {

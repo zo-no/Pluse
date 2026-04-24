@@ -26,12 +26,19 @@ import { updateTodoWithEffects } from '../services/todos'
 import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
 
+const ORIGINAL_PATH = process.env['PATH'] ?? ''
 const RUNTIME_ENV_KEYS = [
   'CODEX_HOME',
   'PLUSE_CLAUDE_COMMAND',
+  'PLUSE_MC_COMMAND',
+  'PLUSE_CLAUDE_PROXY_COMMAND',
   'PLUSE_CODEX_COMMAND',
   'PLUSE_FAKE_CLAUDE_ARGS_LOG',
+  'PLUSE_FAKE_CLAUDE_FAIL_WITH_429',
   'PLUSE_FAKE_CLAUDE_REPLY',
+  'PLUSE_FAKE_CLAUDE_PROXY_ARGS_LOG',
+  'PLUSE_FAKE_CLAUDE_PROXY_REPLY',
+  'PLUSE_FAKE_CLAUDE_PROXY_SESSION_ID',
   'PLUSE_FAKE_CLAUDE_SESSION_ID',
   'PLUSE_FAKE_CODEX_ARGS_LOG',
   'PLUSE_FAKE_CODEX_HOME_LOG',
@@ -47,6 +54,7 @@ function resetRuntimeEnv(): void {
   for (const key of RUNTIME_ENV_KEYS) {
     delete process.env[key]
   }
+  process.env['PATH'] = ORIGINAL_PATH
 }
 
 function mustOk<T>(response: { json: ApiResult<T> }): T {
@@ -140,6 +148,10 @@ set -eu
 if [ -n "\${PLUSE_FAKE_CLAUDE_ARGS_LOG:-}" ]; then
   printf '%s\\n' "$*" >> "$PLUSE_FAKE_CLAUDE_ARGS_LOG"
 fi
+if [ "\${PLUSE_FAKE_CLAUDE_FAIL_WITH_429:-}" = "1" ]; then
+  printf '%s\\n' '{"type":"error","message":"API Error: Request rejected (429) · Service Unavailable"}'
+  exit 1
+fi
 case " $* " in
   *" --print "*)
     ;;
@@ -161,6 +173,42 @@ printf '%s\\n' '{"type":"result","usage":{"input_tokens":12,"output_tokens":34}}
   process.env['PLUSE_FAKE_CLAUDE_ARGS_LOG'] = argsLogPath
   process.env['PLUSE_FAKE_CLAUDE_REPLY'] = 'Fake Claude reply'
   process.env['PLUSE_FAKE_CLAUDE_SESSION_ID'] = 'claude_session_fake'
+
+  return { commandPath, argsLogPath }
+}
+
+function installFakeClaudeProxy(): { commandPath: string; argsLogPath: string } {
+  const binDir = join(getTestRoot(), 'bin')
+  const commandPath = join(binDir, 'mc')
+  const argsLogPath = join(getTestRoot(), 'fake-claude-proxy-args.log')
+
+  mkdirSync(binDir, { recursive: true })
+  writeFileSync(commandPath, `#!/bin/sh
+set -eu
+if [ -n "\${PLUSE_FAKE_CLAUDE_PROXY_ARGS_LOG:-}" ]; then
+  printf '%s\\n' "$*" >> "$PLUSE_FAKE_CLAUDE_PROXY_ARGS_LOG"
+fi
+case " $* " in
+  *" --code --print "*)
+    ;;
+  *)
+    printf '%s\\n' '{"type":"error","message":"missing --code --print"}'
+    exit 1
+    ;;
+esac
+session_id="\${PLUSE_FAKE_CLAUDE_PROXY_SESSION_ID:-claude_session_proxy}"
+reply="\${PLUSE_FAKE_CLAUDE_PROXY_REPLY:-Proxy Claude reply}"
+printf '%s\\n' "{\\"type\\":\\"system\\",\\"session_id\\":\\"$session_id\\"}"
+printf '%s\\n' "{\\"type\\":\\"assistant\\",\\"message\\":{\\"content\\":[{\\"type\\":\\"text\\",\\"text\\":\\"$reply\\"}]}}"
+printf '%s\\n' '{"type":"result","usage":{"input_tokens":8,"output_tokens":13}}'
+`)
+  chmodSync(commandPath, 0o755)
+  writeFileSync(argsLogPath, '')
+
+  process.env['PATH'] = `${binDir}:${ORIGINAL_PATH}`
+  process.env['PLUSE_FAKE_CLAUDE_PROXY_ARGS_LOG'] = argsLogPath
+  process.env['PLUSE_FAKE_CLAUDE_PROXY_REPLY'] = 'Proxy Claude reply'
+  process.env['PLUSE_FAKE_CLAUDE_PROXY_SESSION_ID'] = 'claude_session_proxy'
 
   return { commandPath, argsLogPath }
 }
@@ -853,7 +901,126 @@ describe('quest/todo/run APIs', () => {
     expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Fake Claude reply')).toBe(true)
   })
 
-  it('enforces manual task run conflicts, skips overlapping automation runs, and deduplicates review todos', async () => {
+  it('lists mc as a separate runtime tool and runs it explicitly', async () => {
+    const { argsLogPath } = installFakeClaudeProxy()
+
+    const tools = await GET<Array<{ id: string; command: string; available: boolean }>>('/api/tools')
+    expect(tools.status).toBe(200)
+    const toolList = mustOk(tools)
+    const mcTool = toolList.find((item) => item.id === 'mc')
+    const claudeTool = toolList.find((item) => item.id === 'claude')
+    expect(mcTool?.command).toBe('mc --code')
+    expect(mcTool?.available).toBe(true)
+    expect(claudeTool?.command).toBe('claude')
+
+    const project = await openProject('mc-explicit-tool')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'mc',
+      model: 'sonnet',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Run through mc directly',
+      requestId: 'mc-tool-1',
+      tool: 'mc',
+      model: 'sonnet',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    expect(getQuest(quest.id)?.tool).toBe('mc')
+    expect(getQuest(quest.id)?.claudeSessionId).toBe('claude_session_proxy')
+    expect(readFileSync(argsLogPath, 'utf8')).toContain('--code --print')
+  })
+
+  it('supports wrapped Claude command strings with fixed args', async () => {
+    const { commandPath, argsLogPath } = installFakeClaudeProxy()
+    process.env['PLUSE_CLAUDE_COMMAND'] = `${commandPath} --code`
+
+    const tools = await GET<Array<{ id: string; command: string; available: boolean }>>('/api/tools')
+    expect(tools.status).toBe(200)
+    const claudeTool = mustOk(tools).find((item) => item.id === 'claude')
+    expect(claudeTool?.command).toBe(`${commandPath} --code`)
+    expect(claudeTool?.available).toBe(true)
+
+    const project = await openProject('claude-command-wrapper')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'claude',
+      model: 'sonnet',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Verify wrapped Claude command',
+      requestId: 'claude-wrapper-1',
+      tool: 'claude',
+      model: 'sonnet',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    const argsLog = readFileSync(argsLogPath, 'utf8')
+    expect(argsLog).toContain('--code --print')
+    expect(argsLog).toContain('--output-format stream-json')
+    expect(getQuest(quest.id)?.claudeSessionId).toBe('claude_session_proxy')
+  })
+
+  it('falls back to mc --code when direct Claude returns 429', async () => {
+    const { argsLogPath } = installFakeClaude()
+    const { argsLogPath: proxyArgsLogPath } = installFakeClaudeProxy()
+    process.env['PLUSE_FAKE_CLAUDE_FAIL_WITH_429'] = '1'
+
+    const project = await openProject('claude-proxy-fallback')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Claude Proxy Fallback',
+      tool: 'claude',
+      model: 'sonnet',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Retry through mc wrapper',
+      requestId: 'claude-proxy-1',
+      tool: 'claude',
+      model: 'sonnet',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    expect(readFileSync(argsLogPath, 'utf8')).toContain('--print')
+    expect(readFileSync(proxyArgsLogPath, 'utf8')).toContain('--code --print')
+    expect(getQuest(quest.id)?.claudeSessionId).toBe('claude_session_proxy')
+
+    const events = await GET<PagedResult<QuestEvent>>(`/api/quests/${quest.id}/events`)
+    expect(events.status).toBe(200)
+    const eventItems = mustOk(events).items
+    expect(eventItems.some((event) => event.type === 'status' && event.content?.includes('retrying with mc --code'))).toBe(true)
+    expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Proxy Claude reply')).toBe(true)
+  })
+
+  it('enforces manual task run conflicts, skips overlapping automation runs, and records review todos', async () => {
     const project = await openProject('script-task')
     const task = await createQuest({
       projectId: project.id,
