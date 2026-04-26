@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import type {
   Project,
+  ProjectOverview,
+  Quest,
   Reminder,
   ReminderProjectPriority,
   ReminderProjectPrioritySetting,
@@ -13,7 +15,7 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
-import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlusIcon, RouteIcon } from './icons'
+import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
 interface TodoPanelProps {
@@ -26,6 +28,19 @@ interface TodoPanelProps {
 }
 
 type SourceTab = 'human' | 'reminder'
+type SnoozePreset = 'later' | 'tomorrow' | 'next_week'
+type WorkbenchTimelineKind = 'reminder' | 'todo' | 'automation'
+
+type WorkbenchTimelineEntry = {
+  id: string
+  kind: WorkbenchTimelineKind
+  title: string
+  timeLabel: string
+  sortTime: number
+  href?: string
+  reminderId?: string
+  todoId?: string
+}
 
 type ProjectRailGroup = {
   key: string
@@ -58,6 +73,56 @@ function formatSidebarTime(value?: string, t?: (key: string, values?: Record<str
   if (delta < day) return t ? t('{count} 小时', { count: Math.max(1, Math.floor(delta / hour)) }) : `${Math.max(1, Math.floor(delta / hour))} 小时`
   if (delta < week) return t ? t('{count} 天', { count: Math.max(1, Math.floor(delta / day)) }) : `${Math.max(1, Math.floor(delta / day))} 天`
   return t ? t('{count} 周', { count: Math.max(1, Math.floor(delta / week)) }) : `${Math.max(1, Math.floor(delta / week))} 周`
+}
+
+function formatClock(value: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value)
+}
+
+function formatTimelineTime(value: string | undefined, locale: string, t: (key: string) => string): string {
+  if (!value) return t('现在')
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return t('未记录')
+  const now = new Date()
+  const todayStart = new Date(now)
+  todayStart.setHours(0, 0, 0, 0)
+  const tomorrowStart = new Date(todayStart)
+  tomorrowStart.setDate(todayStart.getDate() + 1)
+  const dayAfterTomorrowStart = new Date(todayStart)
+  dayAfterTomorrowStart.setDate(todayStart.getDate() + 2)
+  if (date.getTime() < todayStart.getTime()) return t('逾期')
+  if (date.getTime() < tomorrowStart.getTime()) return formatClock(date, locale)
+  if (date.getTime() < dayAfterTomorrowStart.getTime()) return `${t('明天')} ${formatClock(date, locale)}`
+  return new Intl.DateTimeFormat(locale, {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function snoozeDate(preset: SnoozePreset): string {
+  const next = new Date()
+  if (preset === 'later') {
+    next.setHours(next.getHours() + 2)
+  } else if (preset === 'tomorrow') {
+    next.setDate(next.getDate() + 1)
+    next.setHours(9, 0, 0, 0)
+  } else {
+    next.setDate(next.getDate() + ((1 - next.getDay() + 7) % 7 || 7))
+    next.setHours(9, 0, 0, 0)
+  }
+  return next.toISOString()
+}
+
+function defaultCustomSnoozeValue(): string {
+  const next = new Date()
+  next.setDate(next.getDate() + 1)
+  next.setHours(9, 0, 0, 0)
+  return toDateTimeLocalValue(next.toISOString())
 }
 
 function todoStatusLabel(status: Todo['status'], t?: (key: string) => string): string {
@@ -113,6 +178,115 @@ function sortOpenTodos(items: Todo[]): Todo[] {
 
 function sortReminders(items: Reminder[]): Reminder[] {
   return [...items].sort(compareRemindersByAttention)
+}
+
+function automationNextRunAt(quest: Quest): string | undefined {
+  if (quest.scheduleConfig?.nextRunAt) return quest.scheduleConfig.nextRunAt
+  if (
+    quest.scheduleKind === 'scheduled'
+    && quest.status !== 'done'
+    && quest.status !== 'cancelled'
+  ) {
+    return quest.scheduleConfig?.runAt
+  }
+  return undefined
+}
+
+function buildWorkbenchTimeline(params: {
+  projectId: string | null
+  todos: Todo[]
+  reminders: Reminder[]
+  automations: Quest[]
+  locale: string
+  t: (key: string) => string
+}): WorkbenchTimelineEntry[] {
+  if (!params.projectId) return []
+  const now = Date.now()
+  const horizon = now + 24 * 60 * 60 * 1000
+  const entries: WorkbenchTimelineEntry[] = []
+  const attentionReminderEntries: WorkbenchTimelineEntry[] = []
+
+  for (const reminder of params.reminders) {
+    if (reminder.projectId !== params.projectId) continue
+    if (!reminder.remindAt) {
+      attentionReminderEntries.push({
+        id: `reminder-${reminder.id}`,
+        kind: 'reminder',
+        title: reminder.title,
+        timeLabel: formatTimelineTime(undefined, params.locale, params.t),
+        sortTime: now,
+        reminderId: reminder.id,
+      })
+      continue
+    }
+
+    const time = Date.parse(reminder.remindAt)
+    if (!Number.isFinite(time) || time > horizon) continue
+    if (time <= now) {
+      attentionReminderEntries.push({
+        id: `reminder-${reminder.id}`,
+        kind: 'reminder',
+        title: reminder.title,
+        timeLabel: formatTimelineTime(reminder.remindAt, params.locale, params.t),
+        sortTime: time,
+        reminderId: reminder.id,
+      })
+      continue
+    }
+    entries.push({
+      id: `reminder-${reminder.id}`,
+      kind: 'reminder',
+      title: reminder.title,
+      timeLabel: formatTimelineTime(reminder.remindAt, params.locale, params.t),
+      sortTime: time,
+      reminderId: reminder.id,
+    })
+  }
+
+  for (const todo of params.todos) {
+    if (todo.projectId !== params.projectId || todo.status !== 'pending' || !todo.dueAt) continue
+    const time = Date.parse(todo.dueAt)
+    if (!Number.isFinite(time) || time > horizon) continue
+    entries.push({
+      id: `todo-${todo.id}`,
+      kind: 'todo',
+      title: todo.title,
+      timeLabel: formatTimelineTime(todo.dueAt, params.locale, params.t),
+      sortTime: time,
+      todoId: todo.id,
+    })
+  }
+
+  for (const quest of params.automations) {
+    if (quest.deleted || quest.enabled === false) continue
+    const nextRunAt = automationNextRunAt(quest)
+    if (!nextRunAt) continue
+    const time = Date.parse(nextRunAt)
+    if (!Number.isFinite(time) || time > horizon) continue
+    entries.push({
+      id: `automation-${quest.id}`,
+      kind: 'automation',
+      title: quest.title || quest.name || params.t('未命名自动化'),
+      timeLabel: formatTimelineTime(nextRunAt, params.locale, params.t),
+      sortTime: time,
+      href: `/quests/${quest.id}`,
+    })
+  }
+
+  return [
+    ...attentionReminderEntries
+      .sort((left, right) => right.sortTime - left.sortTime)
+      .slice(0, 2),
+    ...entries,
+  ]
+    .sort((left, right) => left.sortTime - right.sortTime)
+    .slice(0, 6)
+}
+
+function timelineKindLabel(kind: WorkbenchTimelineKind, t: (key: string) => string): string {
+  if (kind === 'automation') return t('自动化')
+  if (kind === 'reminder') return t('提醒')
+  return t('待办')
 }
 
 function formatEmptyMessage(
@@ -296,14 +470,26 @@ const ReminderRailItem = memo(function ReminderRailItem({
   activeQuestId,
   locale,
   t,
+  snoozeMenuOpen,
+  snoozing,
+  highlighted,
   onDeleteReminder,
+  onOpenSnoozeMenu,
+  onSnoozeReminder,
+  onCustomSnoozeReminder,
   onRequestClose,
 }: {
   reminder: Reminder
   activeQuestId?: string | null
   locale: string
   t: (key: string, values?: Record<string, string | number>) => string
+  snoozeMenuOpen: boolean
+  snoozing: boolean
+  highlighted: boolean
   onDeleteReminder: (reminder: Reminder) => void
+  onOpenSnoozeMenu: (reminderId: string) => void
+  onSnoozeReminder: (reminder: Reminder, preset: SnoozePreset) => void
+  onCustomSnoozeReminder: (reminder: Reminder) => void
   onRequestClose?: () => void
 }) {
   const hasSource = Boolean(reminder.originQuestId)
@@ -331,7 +517,8 @@ const ReminderRailItem = memo(function ReminderRailItem({
 
   return (
     <article
-      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-reminder${isActive ? ' is-active' : ''}`}
+      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-reminder${isActive ? ' is-active' : ''}${highlighted ? ' is-highlighted' : ''}`}
+      data-reminder-id={reminder.id}
     >
       {reminder.originQuestId ? (
         <Link
@@ -351,13 +538,40 @@ const ReminderRailItem = memo(function ReminderRailItem({
         <button
           type="button"
           className="pluse-sidebar-action-btn"
+          onClick={() => onOpenSnoozeMenu(reminder.id)}
+          aria-label={t('延后提醒')}
+          title={t('延后提醒')}
+          disabled={snoozing}
+        >
+          <ClockIcon className="pluse-icon" />
+        </button>
+        <button
+          type="button"
+          className="pluse-sidebar-action-btn"
           onClick={() => onDeleteReminder(reminder)}
-          aria-label={t('删除提醒')}
-          title={t('删除提醒')}
+          aria-label={t('完成提醒')}
+          title={t('完成提醒')}
+          disabled={snoozing}
         >
           <CheckIcon className="pluse-icon" />
         </button>
       </div>
+      {snoozeMenuOpen ? (
+        <div className="pluse-reminder-snooze-menu" aria-label={t('延后提醒')}>
+          <button type="button" onClick={() => onSnoozeReminder(reminder, 'later')} disabled={snoozing}>
+            {t('稍后')}
+          </button>
+          <button type="button" onClick={() => onSnoozeReminder(reminder, 'tomorrow')} disabled={snoozing}>
+            {t('明早')}
+          </button>
+          <button type="button" onClick={() => onSnoozeReminder(reminder, 'next_week')} disabled={snoozing}>
+            {t('下周')}
+          </button>
+          <button type="button" onClick={() => onCustomSnoozeReminder(reminder)} disabled={snoozing}>
+            {t('指定')}
+          </button>
+        </div>
+      ) : null}
     </article>
   )
 })
@@ -374,6 +588,7 @@ export function TodoPanel({
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
   const [globalReminders, setGlobalReminders] = useState<Reminder[]>([])
+  const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
   const [reminderProjectPriorities, setReminderProjectPriorities] = useState<ReminderProjectPrioritySetting[]>([])
   const [sourceTab, setSourceTab] = useState<SourceTab>('human')
   const [expandedProjectGroupKey, setExpandedProjectGroupKey] = useState<string | null>(projectId)
@@ -401,11 +616,17 @@ export function TodoPanel({
   })
   const [todoSaving, setTodoSaving] = useState(false)
   const [reminderSaving, setReminderSaving] = useState(false)
+  const [snoozeMenuReminderId, setSnoozeMenuReminderId] = useState<string | null>(null)
+  const [snoozingReminderId, setSnoozingReminderId] = useState<string | null>(null)
+  const [customSnoozeReminderId, setCustomSnoozeReminderId] = useState<string | null>(null)
+  const [customSnoozeAt, setCustomSnoozeAt] = useState('')
+  const [highlightedReminderId, setHighlightedReminderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [projectTags, setProjectTags] = useState<string[]>([])
   const reloadTimerRef = useRef<number | null>(null)
+  const highlightedReminderTimerRef = useRef<number | null>(null)
   const pendingDataReloadRef = useRef(false)
   const dataRequestSeqRef = useRef(0)
 
@@ -430,6 +651,7 @@ export function TodoPanel({
       projectId
         ? Promise.all([
             api.getProjectTags(projectId),
+            api.getProjectOverview(projectId),
           ])
         : Promise.resolve(null),
     ])
@@ -459,13 +681,15 @@ export function TodoPanel({
 
     if (!projectResults) {
       setProjectTags([])
+      setProjectOverview(null)
       setError(null)
       return
     }
 
-    const [tagsResult] = projectResults
+    const [tagsResult, overviewResult] = projectResults
     setError(null)
     setProjectTags(tagsResult.ok ? tagsResult.data.tags : [])
+    setProjectOverview(overviewResult.ok ? overviewResult.data : null)
   }, [projectId])
 
   useEffect(() => {
@@ -481,6 +705,10 @@ export function TodoPanel({
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
       }
+      if (highlightedReminderTimerRef.current) {
+        window.clearTimeout(highlightedReminderTimerRef.current)
+        highlightedReminderTimerRef.current = null
+      }
       pendingDataReloadRef.current = false
     }
   }, [])
@@ -490,6 +718,15 @@ export function TodoPanel({
     if (reloadTimerRef.current) {
       window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = null
+    }
+    setSnoozeMenuReminderId(null)
+    setSnoozingReminderId(null)
+    setCustomSnoozeReminderId(null)
+    setCustomSnoozeAt('')
+    setHighlightedReminderId(null)
+    if (highlightedReminderTimerRef.current) {
+      window.clearTimeout(highlightedReminderTimerRef.current)
+      highlightedReminderTimerRef.current = null
     }
   }, [projectId])
 
@@ -510,6 +747,9 @@ export function TodoPanel({
         || event.type === 'todo_deleted'
         || event.type === 'reminder_updated'
         || event.type === 'reminder_deleted'
+        || event.type === 'quest_updated'
+        || event.type === 'quest_deleted'
+        || event.type === 'run_updated'
       )
       if (!shouldReloadData) return
 
@@ -574,6 +814,50 @@ export function TodoPanel({
     await loadData()
     await onDataChanged?.()
   }, [loadData, onDataChanged])
+
+  const handleSnoozeReminder = useCallback(async (reminder: Reminder, remindAt: string) => {
+    setSnoozingReminderId(reminder.id)
+    const result = await api.updateReminder(reminder.id, { remindAt })
+    setSnoozingReminderId(null)
+    if (!result.ok) {
+      setError(result.error)
+      return false
+    }
+    setSnoozeMenuReminderId(null)
+    await loadData()
+    await onDataChanged?.()
+    return true
+  }, [loadData, onDataChanged])
+
+  const handlePresetSnoozeReminder = useCallback((reminder: Reminder, preset: SnoozePreset) => {
+    void handleSnoozeReminder(reminder, snoozeDate(preset))
+  }, [handleSnoozeReminder])
+
+  const handleOpenCustomSnooze = useCallback((reminder: Reminder) => {
+    setCustomSnoozeReminderId(reminder.id)
+    setCustomSnoozeAt(toDateTimeLocalValue(reminder.remindAt) || defaultCustomSnoozeValue())
+    setSnoozeMenuReminderId(null)
+  }, [])
+
+  async function handleSaveCustomSnooze() {
+    if (!selectedCustomSnoozeReminder) return
+    const remindAt = fromDateTimeLocalValue(customSnoozeAt)
+    if (!remindAt) {
+      setError(t('请选择提醒时间'))
+      return
+    }
+    const ok = await handleSnoozeReminder(selectedCustomSnoozeReminder, remindAt)
+    if (ok) {
+      setCustomSnoozeReminderId(null)
+      setCustomSnoozeAt('')
+    }
+  }
+
+  function closeCustomSnooze() {
+    if (snoozingReminderId) return
+    setCustomSnoozeReminderId(null)
+    setCustomSnoozeAt('')
+  }
 
   const handleReminderProjectPriorityChange = useCallback(async (
     projectId: string,
@@ -662,6 +946,21 @@ export function TodoPanel({
   const selectedTodo = useMemo(
     () => (selectedTodoId ? allKnownTodos.find((todo) => todo.id === selectedTodoId) ?? null : null),
     [allKnownTodos, selectedTodoId],
+  )
+  const selectedCustomSnoozeReminder = useMemo(
+    () => (customSnoozeReminderId ? globalReminders.find((reminder) => reminder.id === customSnoozeReminderId) ?? null : null),
+    [customSnoozeReminderId, globalReminders],
+  )
+  const workbenchTimeline = useMemo(
+    () => buildWorkbenchTimeline({
+      projectId,
+      todos: globalTodos,
+      reminders: globalReminders,
+      automations: projectOverview?.tasks ?? [],
+      locale,
+      t,
+    }),
+    [globalReminders, globalTodos, locale, projectId, projectOverview?.tasks, t],
   )
   const modalRoot = typeof document !== 'undefined' ? document.body : null
 
@@ -788,6 +1087,33 @@ export function TodoPanel({
     setSelectedTodoId(null)
   }, [])
 
+  const handleOpenTimelineReminder = useCallback((reminderId: string) => {
+    const reminder = globalReminders.find((item) => item.id === reminderId)
+    setSourceTab('reminder')
+    if (reminder?.projectId) {
+      setCollapsedReminderProjectKeys((current) => current.filter((key) => key !== reminder.projectId))
+    }
+    setHighlightedReminderId(reminderId)
+    if (highlightedReminderTimerRef.current) {
+      window.clearTimeout(highlightedReminderTimerRef.current)
+      highlightedReminderTimerRef.current = null
+    }
+    window.setTimeout(() => {
+      const element = document.querySelector<HTMLElement>(`[data-reminder-id="${reminderId}"]`)
+      element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      highlightedReminderTimerRef.current = window.setTimeout(() => {
+        setHighlightedReminderId((current) => current === reminderId ? null : current)
+        highlightedReminderTimerRef.current = null
+      }, 2400)
+    }, 80)
+  }, [globalReminders])
+
+  const handleOpenAutomationPanel = useCallback(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) {
+      onRequestClose?.()
+    }
+  }, [onRequestClose])
+
   return (
     <>
       <aside className="pluse-rail">
@@ -798,20 +1124,35 @@ export function TodoPanel({
         </div>
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
-          <div className="pluse-sidebar-project-context">
-            <span className="pluse-sidebar-project-context-domain">{t('工作台')}</span>
-            <div className="pluse-project-switcher">
-              <button
-                type="button"
-                className="pluse-project-switcher-btn"
-                disabled
-                aria-label={t('当前项目')}
-                title={t('当前项目')}
-              >
-                <div className="pluse-project-switcher-label">
-                  <strong>{projectName || t('当前项目')}</strong>
-                </div>
-              </button>
+          <div className="pluse-sidebar-project-context pluse-workbench-project-context">
+            <div className="pluse-workbench-project-strip">
+              <div className="pluse-workbench-project-copy">
+                <span>{t('工作台')}</span>
+                <strong>{projectName || t('当前项目')}</strong>
+              </div>
+              {projectId ? (
+                <Link
+                  className="pluse-workbench-project-action"
+                  to={`/projects/${projectId}#automation`}
+                  onClick={handleOpenAutomationPanel}
+                  aria-label={t('进入自动化面板')}
+                  title={t('进入自动化面板')}
+                >
+                  <SparkIcon className="pluse-icon" />
+                  <span>{t('自动化')}</span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="pluse-workbench-project-action"
+                  disabled
+                  aria-label={t('进入自动化面板')}
+                  title={t('进入自动化面板')}
+                >
+                  <SparkIcon className="pluse-icon" />
+                  <span>{t('自动化')}</span>
+                </button>
+              )}
             </div>
           </div>
           <div className="pluse-sidebar-tabs pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
@@ -835,6 +1176,73 @@ export function TodoPanel({
             </button>
           </div>
         </div>
+
+        {projectId ? (
+          <section className="pluse-workbench-timeline" aria-label={t('接下来 24 小时')}>
+            <header className="pluse-workbench-timeline-head">
+              <span>{t('接下来 24 小时')}</span>
+              <strong>{workbenchTimeline.length > 0 ? t('{{count}} 项', { count: workbenchTimeline.length }) : t('暂无时间事项')}</strong>
+            </header>
+            {workbenchTimeline.length > 0 ? (
+              <div className="pluse-workbench-timeline-list">
+                {workbenchTimeline.map((entry) => {
+                  const itemClassName = `pluse-workbench-timeline-item is-${entry.kind}`
+                  const content = (
+                    <>
+                      <span className="pluse-workbench-timeline-time">{entry.timeLabel}</span>
+                      <span className={`pluse-workbench-timeline-kind is-${entry.kind}`}>
+                        {timelineKindLabel(entry.kind, t)}
+                      </span>
+                      <strong>{entry.title}</strong>
+                    </>
+                  )
+                  if (entry.href) {
+                    return (
+                      <Link
+                        key={entry.id}
+                        className={itemClassName}
+                        to={entry.href}
+                        onClick={() => onRequestClose?.()}
+                      >
+                        {content}
+                      </Link>
+                    )
+                  }
+                  if (entry.reminderId) {
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={itemClassName}
+                        onClick={() => handleOpenTimelineReminder(entry.reminderId ?? '')}
+                        aria-label={`${t('定位提醒')} · ${entry.title}`}
+                      >
+                        {content}
+                      </button>
+                    )
+                  }
+                  if (entry.todoId) {
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={itemClassName}
+                        onClick={() => setSelectedTodoId(entry.todoId ?? null)}
+                      >
+                        {content}
+                      </button>
+                    )
+                  }
+                  return (
+                    <div key={entry.id} className={itemClassName}>
+                      {content}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {sourceTab === 'human' && projectTags.length > 0 ? (
           <div className="pluse-sidebar-search pluse-todo-tag-filter-row">
@@ -941,7 +1349,13 @@ export function TodoPanel({
                             activeQuestId={activeQuestId}
                             locale={locale}
                             t={t}
+                            snoozeMenuOpen={snoozeMenuReminderId === reminder.id}
+                            snoozing={snoozingReminderId === reminder.id}
+                            highlighted={highlightedReminderId === reminder.id}
                             onDeleteReminder={handleDeleteReminder}
+                            onOpenSnoozeMenu={(reminderId) => setSnoozeMenuReminderId((current) => current === reminderId ? null : reminderId)}
+                            onSnoozeReminder={handlePresetSnoozeReminder}
+                            onCustomSnoozeReminder={handleOpenCustomSnooze}
                             onRequestClose={onRequestClose}
                           />
                         ))}
@@ -1136,6 +1550,72 @@ export function TodoPanel({
         modalRoot,
       ) : null}
 
+      {selectedCustomSnoozeReminder && modalRoot ? createPortal(
+        <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={closeCustomSnooze}>
+          <section
+            className="pluse-modal-panel pluse-reminder-snooze-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reminder-snooze-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="pluse-todo-detail-head">
+              <div className="pluse-todo-detail-identity">
+                <span className="pluse-task-detail-kicker">{t('提醒')}</span>
+                <div className="pluse-task-detail-title-row">
+                  <h2 id="reminder-snooze-title">{t('指定提醒时间')}</h2>
+                </div>
+                <div className="pluse-task-detail-meta">
+                  <span>{selectedCustomSnoozeReminder.title}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pluse-icon-button"
+                onClick={closeCustomSnooze}
+                aria-label={t('关闭')}
+                title={t('关闭')}
+                disabled={Boolean(snoozingReminderId)}
+              >
+                <CloseIcon className="pluse-icon" />
+              </button>
+            </header>
+
+            <div className="pluse-todo-detail-body">
+              <label className="pluse-todo-edit-title-field">
+                <span>{t('时间')}</span>
+                <input
+                  type="datetime-local"
+                  value={customSnoozeAt}
+                  onChange={(event) => setCustomSnoozeAt(event.target.value)}
+                  autoFocus
+                />
+              </label>
+            </div>
+
+            <footer className="pluse-todo-detail-actions">
+              <button
+                type="button"
+                className="pluse-button"
+                onClick={() => void handleSaveCustomSnooze()}
+                disabled={Boolean(snoozingReminderId) || !customSnoozeAt}
+              >
+                {snoozingReminderId ? t('保存中…') : t('保存')}
+              </button>
+              <button
+                type="button"
+                className="pluse-button pluse-button-ghost"
+                onClick={closeCustomSnooze}
+                disabled={Boolean(snoozingReminderId)}
+              >
+                {t('取消')}
+              </button>
+            </footer>
+          </section>
+        </div>,
+        modalRoot,
+      ) : null}
+
       {selectedTodo && modalRoot ? createPortal(
         <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={() => setSelectedTodoId(null)}>
           <section
@@ -1169,8 +1649,8 @@ export function TodoPanel({
 
             <div className="pluse-todo-detail-body">
               {todoEditOpen ? (
-                <div className="pluse-form-grid pluse-todo-detail-form">
-                  <label>
+                <div className="pluse-todo-edit-form">
+                  <label className="pluse-todo-edit-title-field">
                     <span>{t('标题')}</span>
                     <input
                       value={todoDraft.title}
@@ -1179,22 +1659,44 @@ export function TodoPanel({
                       maxLength={160}
                     />
                   </label>
-                  <div className="pluse-form-field">
-                    <span>{t('优先级')}</span>
-                    <div className="pluse-priority-selector">
-                      {(['urgent', 'high', 'normal', 'low'] as const).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          className={`pluse-priority-option is-${p}${todoDraft.priority === p ? ' is-active' : ''}`}
-                          onClick={() => setTodoDraft((current) => ({ ...current, priority: p }))}
-                        >
-                          {p === 'urgent' ? t('紧急') : p === 'high' ? t('高') : p === 'normal' ? t('普通') : t('低')}
-                        </button>
-                      ))}
+                  <div className="pluse-todo-edit-properties">
+                    <div className="pluse-todo-edit-property is-priority">
+                      <span>{t('优先级')}</span>
+                      <div className="pluse-priority-selector">
+                        {(['urgent', 'high', 'normal', 'low'] as const).map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            className={`pluse-priority-option is-${p}${todoDraft.priority === p ? ' is-active' : ''}`}
+                            onClick={() => setTodoDraft((current) => ({ ...current, priority: p }))}
+                          >
+                            {p === 'urgent' ? t('紧急') : p === 'high' ? t('高') : p === 'normal' ? t('普通') : t('低')}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+                    <label className="pluse-todo-edit-property">
+                      <span>{t('时间')}</span>
+                      <input
+                        type="datetime-local"
+                        value={todoDraft.dueAt}
+                        onChange={(event) => setTodoDraft((current) => ({ ...current, dueAt: event.target.value }))}
+                      />
+                    </label>
+                    <label className="pluse-todo-edit-property">
+                      <span>{t('重复')}</span>
+                      <select
+                        value={todoDraft.repeat}
+                        onChange={(event) => setTodoDraft((current) => ({ ...current, repeat: event.target.value as Todo['repeat'] }))}
+                      >
+                        <option value="none">{formatTodoRepeat('none', t)}</option>
+                        <option value="daily">{formatTodoRepeat('daily', t)}</option>
+                        <option value="weekly">{formatTodoRepeat('weekly', t)}</option>
+                        <option value="monthly">{formatTodoRepeat('monthly', t)}</option>
+                      </select>
+                    </label>
                   </div>
-                  <div className="pluse-form-field">
+                  <div className="pluse-todo-edit-property is-tags">
                     <span>{t('标签')}</span>
                     <div className="pluse-tags-editor">
                       {todoDraft.tags.map((tag) => (
@@ -1235,42 +1737,22 @@ export function TodoPanel({
                       </datalist>
                     </div>
                   </div>
-                  <label>
+                  <label className="pluse-todo-edit-text-field">
                     <span>{t('等待说明')}</span>
                     <textarea
                       value={todoDraft.waitingInstructions}
                       onChange={(event) => setTodoDraft((current) => ({ ...current, waitingInstructions: event.target.value }))}
                       placeholder={t('补充等待谁、等什么、满足什么条件后继续')}
-                      rows={4}
+                      rows={3}
                     />
                   </label>
-                  <label>
-                    <span>{t('时间')}</span>
-                    <input
-                      type="datetime-local"
-                      value={todoDraft.dueAt}
-                      onChange={(event) => setTodoDraft((current) => ({ ...current, dueAt: event.target.value }))}
-                    />
-                  </label>
-                  <label>
-                    <span>{t('重复')}</span>
-                    <select
-                      value={todoDraft.repeat}
-                      onChange={(event) => setTodoDraft((current) => ({ ...current, repeat: event.target.value as Todo['repeat'] }))}
-                    >
-                      <option value="none">{formatTodoRepeat('none', t)}</option>
-                      <option value="daily">{formatTodoRepeat('daily', t)}</option>
-                      <option value="weekly">{formatTodoRepeat('weekly', t)}</option>
-                      <option value="monthly">{formatTodoRepeat('monthly', t)}</option>
-                    </select>
-                  </label>
-                  <label>
+                  <label className="pluse-todo-edit-text-field">
                     <span>{t('备注')}</span>
                     <textarea
                       value={todoDraft.description}
                       onChange={(event) => setTodoDraft((current) => ({ ...current, description: event.target.value }))}
                       placeholder={t('补充上下文、链接或补充说明')}
-                      rows={5}
+                      rows={3}
                     />
                   </label>
                 </div>

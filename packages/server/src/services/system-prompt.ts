@@ -17,7 +17,14 @@ Pluse 的核心概念：
 - Quest（统一工作容器）：内部技术概念。UI 上按 kind 显示为会话态或任务态。
 - Todo（人工待办）：独立于 Quest 的人工事项，可选记录来源 Quest。
 - Run（执行）：Quest 的一次执行记录，可能来自 chat、manual 或 automation。
-- Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。`
+- Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。
+
+时间触达规则：
+- Reminder 默认可以没有 remindAt；它会进入提醒池，由提醒模块按项目优先级和注意力排序。
+- 只有用户要求定时触达、自动化明确需要在某个时间提醒、或该项需要出现在“接下来”时间窗口时，才填写 remindAt / --remind-at。
+- Todo 只有在存在截止时间、执行窗口或复核时间时才填写 dueAt / --due-at；不要为了时间线而编造截止时间。
+- 相对时间必须先按当前日期和 Asia/Shanghai 时区换算为 ISO 8601 时间再写入。
+- 如果时间不明确，会话里先询问用户；自动化里保持无时间 Reminder，或说明未创建 timed item 的原因。`
 
 // ─── 第一层：系统级提示 ────────────────────────────────────────────────────
 
@@ -53,7 +60,7 @@ export function buildSessionSystemPrompt(
     '',
     '你正在与人类对话。',
     '需要执行独立自动化工作时，把当前 Quest 切换为任务态，或创建新的任务态 Quest。',
-    '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions。',
+    '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions；只有存在明确时间窗口时才写入 dueAt。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')
@@ -82,7 +89,7 @@ export function buildTaskSystemPrompt(
     '',
     '你正在执行一个自动化任务。',
     '执行配置来自当前 Quest 的任务配置。',
-    '需要人类介入时，创建 Todo 并说明原因。',
+    '需要人类介入时，优先创建 Reminder；只有需要定时触达时才写 remindAt，只有确实是人工执行事项时才创建 Todo。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')

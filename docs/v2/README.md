@@ -35,6 +35,8 @@ Pluse 的职责是提供 Agent 与 Human 协作所需的产品能力、状态语
 docs/v2/
 ├── README.md
 ├── ROADMAP.md
+├── automation/
+│   └── README.md
 ├── roadmap/
 │   └── 0001-human-workload-control.md
 ├── requirements/
@@ -61,12 +63,14 @@ docs/v2/
 - `roadmap/` 只做推进索引，不重复 requirement/design/spec 正文
 - `requirements/` 负责列出当前需求池、优先级和依赖关系
 - `designs/` 与 `specs/` 需引用对应的 requirement 编号，避免脱节
+- `automation/` 只记录自动化接入 playbook 和 prompt 草稿，稳定后再进入正式 requirement/design/spec
 - 如果一个想法还只是临时记录，不足以形成独立 requirement，应先记入 Todo 或讨论，不直接污染正式文档树
 
 ## 当前入口
 
 - v2 结构说明：`README.md`
 - 路线图总览：`ROADMAP.md`
+- 自动化接入草稿：`automation/README.md`
 - 主线进度：`roadmap/0001-human-workload-control.md`
 - 需求索引：`requirements/README.md`
 - 设计索引：`designs/README.md`

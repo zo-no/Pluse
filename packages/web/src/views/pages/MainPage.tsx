@@ -90,6 +90,11 @@ function questLabel(quest: Quest, t?: (key: string) => string): string {
 
 type AutomationSectionKey = 'running' | 'attention' | 'recurring' | 'scheduled' | 'manual'
 type AutomationHealthKey = 'attention' | 'running' | 'scheduled' | 'manual' | 'empty'
+type AutomationTimelineGroup = {
+  key: string
+  label: string
+  items: Array<{ quest: Quest; runAt: string }>
+}
 
 type ProjectAutomationSummary = {
   total: number
@@ -174,6 +179,14 @@ function automationSectionLabel(key: AutomationSectionKey, t: (key: string) => s
   return t('手动')
 }
 
+function automationSectionHint(key: AutomationSectionKey, t: (key: string) => string): string {
+  if (key === 'running') return t('正在执行的自动化')
+  if (key === 'attention') return t('需要处理失败或取消')
+  if (key === 'recurring') return t('按周期运行')
+  if (key === 'scheduled') return t('等待定时触发')
+  return t('手动触发')
+}
+
 function automationScheduleKindLabel(quest: Quest, t: (key: string) => string): string {
   if (quest.scheduleKind === 'recurring') return t('周期')
   if (quest.scheduleKind === 'scheduled') return t('定时')
@@ -207,6 +220,52 @@ function automationTimeTitle(
   if (nextRunAt) return `${t('下次运行')} · ${formatDateTime(nextRunAt, t, locale)}`
   if (quest.scheduleConfig?.lastRunAt) return `${t('最近')} · ${formatDateTime(quest.scheduleConfig.lastRunAt, t, locale)}`
   return formatDateTime(quest.updatedAt, t, locale)
+}
+
+function automationClockLabel(value: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function localDayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function automationDayLabel(value: string, locale: string, t: (key: string) => string): string {
+  const date = new Date(value)
+  const today = new Date()
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  const key = localDayKey(date)
+  if (key === localDayKey(today)) return t('今天')
+  if (key === localDayKey(tomorrow)) return t('明天')
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    month: 'numeric',
+    day: 'numeric',
+  }).format(date)
+}
+
+function buildAutomationTimelineGroups(tasks: Quest[], locale: string, t: (key: string) => string): AutomationTimelineGroup[] {
+  const timedItems = tasks
+    .map((quest) => ({ quest, runAt: automationNextRunAt(quest) }))
+    .filter((item): item is { quest: Quest; runAt: string } => Boolean(item.runAt))
+    .sort((left, right) => safeDateValue(left.runAt) - safeDateValue(right.runAt))
+  const grouped = new Map<string, AutomationTimelineGroup>()
+  for (const item of timedItems) {
+    const key = localDayKey(new Date(item.runAt))
+    const existing = grouped.get(key)
+    if (existing) existing.items.push(item)
+    else grouped.set(key, {
+      key,
+      label: automationDayLabel(item.runAt, locale, t),
+      items: [item],
+    })
+  }
+  return [...grouped.values()]
 }
 
 function sortAutomationItems(tasks: Quest[]): Quest[] {
@@ -657,12 +716,31 @@ function ProjectAutomationPanel({
     [overview.tasks],
   )
   const summary = useMemo(() => summarizeProjectAutomations(tasks), [tasks])
+  const timelineTasks = useMemo(
+    () => tasks.filter((quest) => !isAutomationManual(quest) && Boolean(automationNextRunAt(quest))),
+    [tasks],
+  )
+  const timelineGroups = useMemo(
+    () => buildAutomationTimelineGroups(timelineTasks, locale, t),
+    [locale, t, timelineTasks],
+  )
+  const todayTimelineCount = useMemo(() => {
+    const todayKey = localDayKey(new Date())
+    return timelineGroups
+      .find((group) => group.key === todayKey)
+      ?.items.length ?? 0
+  }, [timelineGroups])
+  const untimedTasks = useMemo(() => {
+    const timelineIds = new Set(timelineTasks.map((quest) => quest.id))
+    return tasks.filter((quest) => !timelineIds.has(quest.id))
+  }, [tasks, timelineTasks])
   const sections = useMemo(
-    () => buildAutomationSections(tasks).map((section) => ({
+    () => buildAutomationSections(untimedTasks).map((section) => ({
       ...section,
       label: automationSectionLabel(section.key, t),
+      hint: automationSectionHint(section.key, t),
     })),
-    [tasks, t],
+    [untimedTasks, t],
   )
   const questLinkState = useMemo(
     () => taskOverlayState(location),
@@ -748,16 +826,98 @@ function ProjectAutomationPanel({
     }
   }
 
+  function renderAutomationRow(quest: Quest, sectionKey: AutomationSectionKey, runAt?: string) {
+    const isPaused = quest.enabled === false
+    const isBusy = busyQuestId === quest.id
+    const canTrigger = !isBusy && !quest.activeRunId && quest.enabled !== false
+    const statusKey = quest.activeRunId ? 'running' : quest.status ?? 'pending'
+    const rowClassName = [
+      'pluse-project-automation-row',
+      runAt ? 'pluse-project-automation-timeline-row' : '',
+      `is-${sectionKey}`,
+      isPaused ? 'is-paused' : '',
+    ].filter(Boolean).join(' ')
+    return (
+      <article key={quest.id} className={rowClassName}>
+        {runAt ? (
+          <div className="pluse-project-automation-time-slot" title={formatDateTime(runAt, t, locale)}>
+            <strong>{automationClockLabel(runAt, locale)}</strong>
+            <span>{automationScheduleKindLabel(quest, t)}</span>
+          </div>
+        ) : null}
+        <Link
+          className="pluse-project-automation-clickzone"
+          to={`/quests/${quest.id}`}
+          state={{ ...questLinkState, initialQuest: quest }}
+        >
+          <div className="pluse-project-automation-main">
+            <div className="pluse-project-automation-title">
+              <span className="pluse-task-kind-badge" aria-label={t('自动化')} title={t('自动化')}>
+                <SparkIcon className="pluse-icon" />
+              </span>
+              <strong>{questLabel(quest, t)}</strong>
+            </div>
+            {quest.description ? <p>{quest.description}</p> : null}
+          </div>
+          <div className="pluse-project-automation-side">
+            <span className={`pluse-automation-state-chip is-${statusKey}`}>
+              {automationStatusLabel(quest, t)}
+            </span>
+            <div className="pluse-project-automation-meta" title={automationTimeTitle(quest, locale, t)}>
+              <span>{automationScheduleKindLabel(quest, t)}</span>
+              <span className="pluse-meta-inline">
+                <ClockIcon className="pluse-icon pluse-inline-icon" />
+                {automationTimeLabel(quest, locale, t)}
+              </span>
+              {isPaused ? <span>{t('已暂停')}</span> : null}
+            </div>
+          </div>
+        </Link>
+        <div className="pluse-project-automation-actions">
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={() => void handleTriggerAutomation(quest)}
+            aria-label={t('立即触发')}
+            title={t('立即触发')}
+            disabled={!canTrigger}
+          >
+            <PlayIcon className="pluse-icon" />
+          </button>
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={() => void handleToggleAutomation(quest)}
+            aria-label={isPaused ? t('恢复自动化') : t('暂停自动化')}
+            title={isPaused ? t('恢复自动化') : t('暂停自动化')}
+            disabled={isBusy}
+          >
+            {isPaused ? <PlayIcon className="pluse-icon" /> : <PauseIcon className="pluse-icon" />}
+          </button>
+          <button
+            type="button"
+            className="pluse-sidebar-action-btn"
+            onClick={() => void handleArchiveAutomation(quest)}
+            aria-label={t('归档')}
+            title={t('归档')}
+            disabled={isBusy}
+          >
+            <ArchiveIcon className="pluse-icon" />
+          </button>
+        </div>
+      </article>
+    )
+  }
+
   const content = (
       <div id="automation" className="pluse-project-automation-panel">
         {standalone ? (
           <header className="pluse-project-automation-page-head">
             <div className="pluse-project-automation-page-title">
+              <span className="pluse-project-automation-kicker">{t('项目自动化')}</span>
               <h2>{t('自动化面板')}</h2>
-              <span>{t('自动化数')} {summary.total}</span>
             </div>
             <div className="pluse-project-automation-page-actions">
-              <strong className={`pluse-automation-health-pill is-${summary.health}`}>{healthLabel}</strong>
               <button
                 type="button"
                 className="pluse-button pluse-button-compact"
@@ -770,26 +930,67 @@ function ProjectAutomationPanel({
           </header>
         ) : null}
         <div className="pluse-project-automation-summary" aria-label={t('自动化面板')}>
-          <div className="pluse-project-automation-summary-cell">
-            <span>{t('自动化数')}</span>
-            <strong>{summary.total}</strong>
+          <div className={`pluse-project-automation-summary-health is-${summary.health}`}>
+            <span>{t('面板状态')}</span>
+            <strong>{healthLabel}</strong>
+            <small>
+              {summary.nextRunAt
+                ? `${t('下次运行')} ${formatDateTime(summary.nextRunAt, t, locale)}`
+                : t('暂无下次运行')}
+            </small>
           </div>
-          <div className="pluse-project-automation-summary-cell">
-            <span>{t('运行中')}</span>
-            <strong>{summary.running}</strong>
-          </div>
-          <div className={`pluse-project-automation-summary-cell${summary.attention > 0 ? ' is-attention' : ''}`}>
-            <span>{t('需要关注')}</span>
-            <strong>{summary.attention}</strong>
-          </div>
-          <div className="pluse-project-automation-summary-cell">
-            <span>{t('已暂停')}</span>
-            <strong>{summary.disabled}</strong>
+          <div className="pluse-project-automation-summary-metrics">
+            <div className="pluse-project-automation-summary-cell">
+              <span>{t('自动化数')}</span>
+              <strong>{summary.total}</strong>
+            </div>
+            <div className="pluse-project-automation-summary-cell">
+              <span>{t('运行中')}</span>
+              <strong>{summary.running}</strong>
+            </div>
+            <div className={`pluse-project-automation-summary-cell${summary.attention > 0 ? ' is-attention' : ''}`}>
+              <span>{t('需要关注')}</span>
+              <strong>{summary.attention}</strong>
+            </div>
+            <div className="pluse-project-automation-summary-cell">
+              <span>{t('已暂停')}</span>
+              <strong>{summary.disabled}</strong>
+            </div>
           </div>
         </div>
 
         {tasks.length > 0 ? (
           <div className="pluse-project-automation-sections">
+            <section className="pluse-project-automation-section pluse-project-automation-timeline">
+              <header className="pluse-project-automation-section-head">
+                <div>
+                  <span>{t('执行时间线')}</span>
+                  <strong>{timelineTasks.length}</strong>
+                </div>
+                <p>
+                  {todayTimelineCount > 0
+                    ? t('今日执行 {{count}} 个', { count: todayTimelineCount })
+                    : t('今天暂无定时执行')}
+                </p>
+              </header>
+              {timelineGroups.length > 0 ? (
+                <div className="pluse-project-automation-timeline-days">
+                  {timelineGroups.map((group) => (
+                    <section key={group.key} className="pluse-project-automation-timeline-day">
+                      <header className="pluse-project-automation-timeline-day-head">
+                        <strong>{group.label}</strong>
+                        <span>{t('{{count}} 个自动化', { count: group.items.length })}</span>
+                      </header>
+                      <div className="pluse-project-automation-list">
+                        {group.items.map((item) => renderAutomationRow(item.quest, automationSectionKey(item.quest), item.runAt))}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <p className="pluse-empty-inline">{t('当前项目暂无定时自动化。')}</p>
+              )}
+            </section>
             {sections.map((section) => (
               <section key={section.key} className={`pluse-project-automation-section is-${section.key}`}>
                 <header className="pluse-project-automation-section-head">
@@ -797,77 +998,10 @@ function ProjectAutomationPanel({
                     <span>{section.label}</span>
                     <strong>{section.items.length}</strong>
                   </div>
+                  <p>{section.hint}</p>
                 </header>
                 <div className="pluse-project-automation-list">
-                  {section.items.map((quest) => {
-                    const isPaused = quest.enabled === false
-                    const isBusy = busyQuestId === quest.id
-                    const canTrigger = !isBusy && !quest.activeRunId && quest.enabled !== false
-                    const statusKey = quest.activeRunId ? 'running' : quest.status ?? 'pending'
-                    return (
-                      <article
-                        key={quest.id}
-                        className={`pluse-project-automation-row is-${section.key}${isPaused ? ' is-paused' : ''}`}
-                      >
-                        <Link
-                          className="pluse-project-automation-main"
-                          to={`/quests/${quest.id}`}
-                          state={{ ...questLinkState, initialQuest: quest }}
-                        >
-                          <div className="pluse-project-automation-title">
-                            <span className="pluse-task-kind-badge" aria-label={t('自动化')} title={t('自动化')}>
-                              <SparkIcon className="pluse-icon" />
-                            </span>
-                            <strong>{questLabel(quest, t)}</strong>
-                            <span className={`pluse-task-list-state is-${statusKey}`}>
-                              {automationStatusLabel(quest, t)}
-                            </span>
-                          </div>
-                          {quest.description ? <p>{quest.description}</p> : null}
-                          <div className="pluse-project-automation-meta" title={automationTimeTitle(quest, locale, t)}>
-                            <span>{automationScheduleKindLabel(quest, t)}</span>
-                            <span className="pluse-meta-inline">
-                              <ClockIcon className="pluse-icon pluse-inline-icon" />
-                              {automationTimeLabel(quest, locale, t)}
-                            </span>
-                            {isPaused ? <span>{t('已暂停')}</span> : null}
-                          </div>
-                        </Link>
-                        <div className="pluse-project-automation-actions">
-                          <button
-                            type="button"
-                            className="pluse-sidebar-action-btn"
-                            onClick={() => void handleTriggerAutomation(quest)}
-                            aria-label={t('立即触发')}
-                            title={t('立即触发')}
-                            disabled={!canTrigger}
-                          >
-                            <PlayIcon className="pluse-icon" />
-                          </button>
-                          <button
-                            type="button"
-                            className="pluse-sidebar-action-btn"
-                            onClick={() => void handleToggleAutomation(quest)}
-                            aria-label={isPaused ? t('恢复自动化') : t('暂停自动化')}
-                            title={isPaused ? t('恢复自动化') : t('暂停自动化')}
-                            disabled={isBusy}
-                          >
-                            {isPaused ? <PlayIcon className="pluse-icon" /> : <PauseIcon className="pluse-icon" />}
-                          </button>
-                          <button
-                            type="button"
-                            className="pluse-sidebar-action-btn"
-                            onClick={() => void handleArchiveAutomation(quest)}
-                            aria-label={t('归档')}
-                            title={t('归档')}
-                            disabled={isBusy}
-                          >
-                            <ArchiveIcon className="pluse-icon" />
-                          </button>
-                        </div>
-                      </article>
-                    )
-                  })}
+                  {section.items.map((quest) => renderAutomationRow(quest, section.key))}
                 </div>
               </section>
             ))}

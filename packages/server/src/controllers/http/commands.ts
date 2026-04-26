@@ -87,9 +87,9 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'todo create',
-            cli: 'pluse todo create --project-id <id> --title <title> [--json]',
+            cli: 'pluse todo create --project-id <id> --title <title> [--due-at <ISO time>] [--waiting <text>] [--priority urgent|high|normal|low] [--json]',
             api: 'POST /api/todos',
-            description: '创建新的 Todo',
+            description: '创建新的 Todo；只有存在截止时间、执行窗口或复核时间时才填写 --due-at',
           },
           {
             name: 'todo done',
@@ -99,7 +99,7 @@ export function getCommandCatalog(): CommandCatalog {
           },
           {
             name: 'todo update',
-            cli: 'pluse todo update <id> [--status pending|done] [--json]',
+            cli: 'pluse todo update <id> [--status pending|done] [--due-at <ISO time>|--clear-due] [--json]',
             api: 'PATCH /api/todos/:id',
             description: '更新 Todo 内容或状态',
           },
@@ -143,7 +143,7 @@ export function getCommandCatalog(): CommandCatalog {
             name: 'reminder create',
             cli: 'pluse reminder create --project-id <id> --title <title> [--type review|custom|follow_up|needs_input|failure] [--remind-at <time>] [--json]',
             api: 'POST /api/reminders',
-            description: '创建新的提醒',
+            description: '创建新的提醒；默认可以无时间，只有需要定时触达或进入时间窗口时才填写 --remind-at',
           },
           {
             name: 'reminder update',

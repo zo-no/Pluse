@@ -8,7 +8,7 @@ import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayQuestName } from '@/views/utils/display'
 import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { DomainSidebar } from './DomainSidebar'
-import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon } from './icons'
+import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, RouteIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
@@ -65,6 +65,12 @@ function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'r
 function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
   if (!project.domainId) return t('未分组')
   return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+}
+
+type ProjectPickerGroup = {
+  key: string
+  label: string
+  projects: Project[]
 }
 
 const QuestItem = memo(function QuestItem({
@@ -191,6 +197,40 @@ export function SessionList({
     if (!activeProject?.domainId) return t('未分组')
     return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
   }, [activeProject, domains, t])
+
+  const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() => {
+    const knownDomainIds = new Set(domains.map((domain) => domain.id))
+    const projectsByDomain = new Map<string, Project[]>()
+    const ungroupedProjects: Project[] = []
+
+    for (const project of projects) {
+      if (project.domainId && knownDomainIds.has(project.domainId)) {
+        const current = projectsByDomain.get(project.domainId)
+        if (current) current.push(project)
+        else projectsByDomain.set(project.domainId, [project])
+      } else {
+        ungroupedProjects.push(project)
+      }
+    }
+
+    const grouped = domains
+      .map((domain) => ({
+        key: domain.id,
+        label: domain.name,
+        projects: projectsByDomain.get(domain.id) ?? [],
+      }))
+      .filter((group) => group.projects.length > 0)
+
+    if (ungroupedProjects.length > 0) {
+      grouped.push({
+        key: 'ungrouped',
+        label: t('未分组'),
+        projects: ungroupedProjects,
+      })
+    }
+
+    return grouped
+  }, [domains, projects, t])
 
   const sidebarContextLabel = useMemo(() => (
     `${t('会话栏')}-${sidebarTab === 'domains' ? t('领域') : t('会话')}`
@@ -613,21 +653,46 @@ export function SessionList({
 
             {projectPickerOpen ? (
               <div className="pluse-project-picker">
-                <div className="pluse-project-picker-list" role="listbox" aria-label={t('选择项目')}>
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
-                      onClick={() => handleSelectProject(project.id)}
-                    >
-                      <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
-                      <div className="pluse-project-picker-item-text">
-                        <strong>{project.name}</strong>
-                        <span>{projectDomainName(project, domains, t)}</span>
+                <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
+                  {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => (
+                    <section key={group.key} className="pluse-project-picker-group">
+                      <div className="pluse-project-picker-group-head">
+                        <strong>{group.label}</strong>
+                        <span>{t('{count} 个项目', { count: group.projects.length })}</span>
                       </div>
-                    </button>
-                  ))}
+                      {group.projects.map((project) => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                          onClick={() => handleSelectProject(project.id)}
+                        >
+                          <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
+                          <div className="pluse-project-picker-item-text">
+                            <strong>{project.name}</strong>
+                            <span>{projectDomainName(project, domains, t)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </section>
+                  )) : (
+                    <p className="pluse-domain-empty">{t('暂无项目')}</p>
+                  )}
+                </div>
+                <div className="pluse-project-picker-footer">
+                  <button
+                    type="button"
+                    className="pluse-project-picker-add"
+                    onClick={() => {
+                      setProjectPickerOpen(false)
+                      setSidebarTab('domains')
+                    }}
+                    aria-label={t('领域管理/项目地图')}
+                    title={t('领域管理/项目地图')}
+                  >
+                    <RouteIcon className="pluse-icon" />
+                    <span>{t('领域管理/项目地图')}</span>
+                  </button>
                 </div>
               </div>
             ) : null}

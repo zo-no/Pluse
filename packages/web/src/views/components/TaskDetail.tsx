@@ -893,18 +893,18 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
               </div>
 
               <div className="pluse-task-detail-body">
-                <section className="pluse-task-detail-section">
+                <section className="pluse-task-detail-section pluse-task-detail-section-core">
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>{t('基础')}</h3>
                     </div>
                   </header>
-                  <div className="pluse-form-grid pluse-task-detail-config-grid">
-                    <label className="pluse-task-detail-field pluse-form-span">
+                  <div className="pluse-form-grid pluse-task-detail-config-grid pluse-task-detail-core-grid">
+                    <label className="pluse-task-detail-field pluse-task-detail-title-field pluse-form-span">
                       <span>{t('标题')}</span>
                       <input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
                     </label>
-                    <label className="pluse-task-detail-field pluse-form-span">
+                    <label className="pluse-task-detail-field pluse-task-detail-description-field pluse-form-span">
                       <span>{t('说明')}</span>
                       <textarea
                         rows={3}
@@ -912,7 +912,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                         onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
                       />
                     </label>
-                    <div className="pluse-task-detail-field pluse-form-span">
+                    <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                       <span>{t('工具')}</span>
                       <SegmentedControl
                         value={form.tool}
@@ -929,7 +929,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                         }}
                       />
                     </div>
-                    <label className="pluse-task-detail-field">
+                    <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                       <span>{t('模型')}</span>
                       <select value={resolvedModelId} onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}>
                         {catalog?.models.map((model) => (
@@ -938,7 +938,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                       </select>
                     </label>
                     {effortChoiceOptions.length > 0 ? (
-                      <div className="pluse-task-detail-field">
+                      <div className="pluse-task-detail-field pluse-task-detail-inline-field">
                         <span>{t('推理强度')}</span>
                         <SegmentedControl
                           value={resolveRuntimeEffortSelection(form.tool, form.effort, catalog)}
@@ -948,7 +948,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                         />
                       </div>
                     ) : null}
-                    <div className="pluse-task-toggle-grid pluse-form-span">
+                    <div className="pluse-task-toggle-grid pluse-task-detail-compact-switches pluse-form-span">
                       <TaskSettingSwitch
                         label={t('继续上下文')}
                         note={t('保留当前 Quest 的上下文继续跑')}
@@ -971,14 +971,14 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                   </div>
                 </section>
 
-                <section className="pluse-task-detail-section">
+                <section className="pluse-task-detail-section pluse-task-detail-section-execution">
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>{t('执行')}</h3>
                     </div>
                   </header>
-                  <div className="pluse-form-grid pluse-task-detail-config-grid">
-                    <div className="pluse-task-detail-field pluse-form-span">
+                  <div className="pluse-form-grid pluse-task-detail-config-grid pluse-task-detail-execution-grid">
+                    <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                       <span>{t('执行类型')}</span>
                       <SegmentedControl
                         value={form.executorKind}
@@ -987,7 +987,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                         onChange={(executorKind) => setForm((current) => ({ ...current, executorKind }))}
                       />
                     </div>
-                    <label className="pluse-task-detail-field">
+                    <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                       <span>{t('超时（秒）')}</span>
                       <input
                         value={form.timeout}
@@ -996,7 +996,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                       />
                     </label>
                     {form.executorKind === 'ai_prompt' ? (
-                      <label className="pluse-task-detail-field pluse-form-span">
+                      <label className="pluse-task-detail-field pluse-task-detail-prompt-field pluse-form-span">
                         <span>{t('提示词')}</span>
                         <textarea
                           rows={9}
@@ -1007,7 +1007,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                       </label>
                     ) : (
                       <>
-                        <label className="pluse-task-detail-field pluse-form-span">
+                        <label className="pluse-task-detail-field pluse-task-detail-prompt-field pluse-form-span">
                           <span>{t('命令')}</span>
                           <textarea
                             rows={4}
@@ -1016,7 +1016,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                             placeholder="pnpm test"
                           />
                         </label>
-                        <label className="pluse-task-detail-field">
+                        <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                           <span>{t('工作目录')}</span>
                           <input
                             value={form.workDir}
@@ -1024,7 +1024,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                             placeholder="/abs/path"
                           />
                         </label>
-                        <label className="pluse-task-detail-field pluse-form-span">
+                        <label className="pluse-task-detail-field pluse-task-detail-prompt-field pluse-form-span">
                           <span>{t('环境变量')}</span>
                           <textarea
                             rows={4}
@@ -1038,14 +1038,14 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                   </div>
                 </section>
 
-                <section className="pluse-task-detail-section">
+                <section className="pluse-task-detail-section pluse-task-detail-section-schedule">
                   <header className="pluse-task-detail-section-head">
                     <div>
                       <h3>{t('调度')}</h3>
                     </div>
                   </header>
-                  <div className="pluse-form-grid pluse-task-detail-config-grid">
-                    <div className="pluse-task-detail-field pluse-form-span">
+                  <div className="pluse-form-grid pluse-task-detail-config-grid pluse-task-detail-schedule-grid">
+                    <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                       <span>{t('调度方式')}</span>
                       <SegmentedControl
                         value={form.scheduleKind}
@@ -1059,7 +1059,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                     ) : null}
                     {form.scheduleKind === 'scheduled' ? (
                       <>
-                        <div className="pluse-task-detail-field pluse-form-span">
+                        <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                           <span>{t('快捷设置')}</span>
                           <div className="pluse-task-quick-presets">
                             {scheduledQuickOptions.map((option) => (
@@ -1074,7 +1074,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                             ))}
                           </div>
                         </div>
-                        <label className="pluse-task-detail-field">
+                        <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                           <span>{t('运行时间')}</span>
                           <input
                             type="datetime-local"
@@ -1089,7 +1089,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                     ) : null}
                     {form.scheduleKind === 'recurring' ? (
                       <>
-                        <div className="pluse-task-detail-field pluse-form-span">
+                        <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                           <span>{t('重复频率')}</span>
                           <SegmentedControl
                             value={form.recurringPreset}
@@ -1099,7 +1099,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                           />
                         </div>
                         {form.recurringPreset === 'custom' ? (
-                          <label className="pluse-task-detail-field pluse-form-span">
+                          <label className="pluse-task-detail-field pluse-task-detail-inline-field pluse-form-span">
                             <span>Cron</span>
                             <input
                               value={form.cron}
@@ -1109,7 +1109,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                           </label>
                         ) : (
                           <>
-                            <label className="pluse-task-detail-field">
+                            <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                               <span>{t('执行时间')}</span>
                               <input
                                 type="time"
@@ -1118,7 +1118,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                               />
                             </label>
                             {form.recurringPreset === 'weekly' ? (
-                              <div className="pluse-task-detail-field pluse-form-span">
+                              <div className="pluse-task-detail-field pluse-task-detail-segment-field pluse-form-span">
                                 <span>{t('星期')}</span>
                                 <SegmentedControl
                                   value={form.recurringWeekday}
@@ -1129,7 +1129,7 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                               </div>
                             ) : null}
                             {form.recurringPreset === 'monthly' ? (
-                              <label className="pluse-task-detail-field">
+                              <label className="pluse-task-detail-field pluse-task-detail-inline-field">
                                 <span>{t('日期')}</span>
                                 <input
                                   type="number"
