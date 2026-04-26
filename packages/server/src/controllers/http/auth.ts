@@ -29,7 +29,13 @@ function sc(n: number): ContentfulStatusCode {
 }
 
 const LoginSchema = z.union([
-  z.object({ username: z.string().trim().min(1).optional(), password: z.string().min(1) }),
+  z.object({
+    username: z.preprocess(
+      (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
+      z.string().trim().min(1).optional(),
+    ),
+    password: z.string().min(1),
+  }),
   z.object({ token: z.string().min(1) }),
 ])
 

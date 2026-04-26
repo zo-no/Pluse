@@ -157,6 +157,7 @@ export interface ListQuestsFilter {
   kind?: QuestKind
   deleted?: boolean
   status?: QuestStatus
+  limit?: number
 }
 
 export type QuestOpKind =

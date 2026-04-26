@@ -19,6 +19,7 @@ import { TaskComposerModal } from './TaskComposerModal'
 
 interface TaskDetailProps {
   questId: string
+  initialQuest?: Quest | null
   onQuestLoaded?: (quest: Quest) => void
   onDataChanged?: () => Promise<void> | void
 }
@@ -328,11 +329,11 @@ function resolveCloseTarget(location: RouterLocation, fallback: string): string 
   return background ? `${background.pathname}${background.search}${background.hash}` : fallback
 }
 
-export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetailProps) {
+export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged }: TaskDetailProps) {
   const { locale, t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
-  const [quest, setQuest] = useState<Quest | null>(null)
+  const [quest, setQuest] = useState<Quest | null>(() => initialQuest?.id === questId ? initialQuest : null)
   const [runs, setRuns] = useState<Run[]>([])
   const [ops, setOps] = useState<QuestOp[]>([])
   const [tools, setTools] = useState<RuntimeTool[]>([])
@@ -367,15 +368,17 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
   const loadRequestSeqRef = useRef(0)
   const pendingReloadRef = useRef(false)
   const pendingProjectRefreshRef = useRef(false)
+  const initialQuestRef = useRef<Quest | null | undefined>(initialQuest)
+  initialQuestRef.current = initialQuest
   const emitQuestLoaded = useEffectEvent((nextQuest: Quest) => {
     onQuestLoaded?.(nextQuest)
   })
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (questOverride?: Quest | null) => {
     const requestId = loadRequestSeqRef.current + 1
     loadRequestSeqRef.current = requestId
     const [questResult, runsResult, opsResult] = await Promise.all([
-      api.getQuest(questId),
+      questOverride ? Promise.resolve({ ok: true as const, data: questOverride }) : api.getQuest(questId),
       api.getQuestRuns(questId),
       api.getQuestOps(questId),
     ])
@@ -423,10 +426,11 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
   }, [questId, t])
 
   useEffect(() => {
-    setQuest(null)
+    const seededQuest = initialQuestRef.current?.id === questId ? initialQuestRef.current : null
+    setQuest(seededQuest)
     setRuns([])
     setOps([])
-    void loadData()
+    void loadData(seededQuest)
     return () => {
       loadRequestSeqRef.current += 1
       pendingReloadRef.current = false
@@ -879,8 +883,8 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                   <button
                     type="button"
                     className="pluse-icon-button"
-                    title={quest.deleted ? t('恢复任务') : t('归档任务')}
-                    aria-label={quest.deleted ? t('恢复任务') : t('归档任务')}
+                    title={quest.deleted ? t('恢复自动化') : t('归档自动化')}
+                    aria-label={quest.deleted ? t('恢复自动化') : t('归档自动化')}
                     onClick={() => void handleArchiveTask()}
                   >
                     {quest.deleted ? <PlusIcon className="pluse-icon" /> : <ArchiveIcon className="pluse-icon" />}
@@ -958,8 +962,8 @@ export function TaskDetail({ questId, onQuestLoaded, onDataChanged }: TaskDetail
                         onChange={(thinking) => setForm((current) => ({ ...current, thinking }))}
                       />
                       <TaskSettingSwitch
-                        label={t('运行后复盘')}
-                        note={t('任务结束后补一条 review todo')}
+                        label={t('运行后提醒')}
+                        note={t('自动化完成后创建一条提醒，确认输出后点勾删除。')}
                         checked={form.reviewOnComplete}
                         onChange={(reviewOnComplete) => setForm((current) => ({ ...current, reviewOnComplete }))}
                       />

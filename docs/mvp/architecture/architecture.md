@@ -15,6 +15,8 @@ Project 的可选上层分组，只负责组织项目，不直接承载 Quest / 
 ### Project（项目）
 文件系统目录，对应一个有目标的活项目。Project 是 Quest 与 Todo 的直接归属容器；Run / QuestOp / UploadedAsset 通过 Quest 归属到 Project。Domain 只是它的可选上层组织层。
 
+内置默认入口 Project 为未分组下的“自我对话”。首次使用时服务端会自动创建该 Project；已有同名 Project 时会优先采用已有项目，并强制移回未分组，同时把旧 `Inbox` 默认入口的数据迁入其中。它用于承接用户尚未归类的自我探索：挖掘真实需求、许下愿望、抒发欲望，并把混沌想法逐步整理成 Quest / Todo。
+
 ### Quest（统一工作容器）
 Project 内统一的 AI 工作容器，是聊天、手动执行、自动执行的共同载体。Quest 有 `kind` 字段（`session` | `task`），用户可手动切换，但同一时刻只能是其中一种。
 
@@ -56,10 +58,26 @@ Domain (optional)
 - **AI 执行**：fork 子进程调用 Codex CLI / Claude CLI
 - **实时推送**：SSE（Server-Sent Events）
 - **国际化**：i18n（Quest 的 kind 在 UI 层翻译为 Session/Task）
+- **鉴权**：CLI 配置凭据，Web 登录后使用 cookie session；CLI / 自动化可用 Bearer token
 
 ---
 
 ## 关键设计决策
+
+### 业务 API 默认必须鉴权
+
+除 `/health` 和 `/api/auth/me` 这类探测接口外，所有 `/api/*` 业务接口都必须通过鉴权后才能访问。系统不允许因为尚未配置密码或 token 而自动放行业务 API。
+
+**登录流程：**
+
+1. 用户先在服务端本机的 Pluse 仓库根目录执行 `pnpm pluse auth setup --password ...` 配置密码，可选配置 username；如果已安装全局 CLI，也可使用 `pluse auth setup ...`。
+2. Web 端通过 `/auth/login` 使用密码或 API token 登录。
+3. 登录成功后服务端写入 `pulse_session` HttpOnly cookie 和 `pulse_csrf` cookie。
+4. 后续浏览器请求依赖 `pulse_session` 识别会话；`POST` / `PATCH` / `PUT` / `DELETE` 还必须带 `X-CSRF-Token`，值与 `pulse_csrf` cookie 及服务端 session 记录一致。
+
+CLI / 自动化调用可以使用 `Authorization: Bearer <token>`，token 由 `pnpm pluse auth token` 或全局 `pluse auth token` 生成并存储在 `auth` 表中。Bearer 调用不走 CSRF，因为它不依赖浏览器 cookie。
+
+**理由：** Pluse 是远程 AI 工作台，会暴露项目路径、运行历史、附件和执行能力；未登录即可使用会形成直接安全隐患。首次凭据通过本机 CLI 配置，而不是 Web 首访注册，避免远程访问者抢先初始化密码。
 
 ### Quest 有 kind 字段，互斥可切换
 

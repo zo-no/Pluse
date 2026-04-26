@@ -1,12 +1,13 @@
 # 0009 — Project Automation Closed Loop Roadmap
 
-**当前状态**: `design`
-**当前焦点**: 生活项目 7 天试点 + 项目自动化接入方法确认
+**当前状态**: `spec`
+**当前焦点**: 自动化面板 Phase 1 spec review + 生活项目 7 天试点
 
 ## 已完成产物
 
 - `requirements/0009-project-automation-closed-loop.md`
 - `designs/0009-project-automation-closed-loop.md`
+- `specs/0009-automation-panel-phase-1.md`
 
 ## 当前试点
 
@@ -44,5 +45,5 @@
 
 - 自动化透出策略还没有结构化字段
 - 自动化成熟度还只是产品口径，没有进入系统模型
-- 右侧栏仍不适合承载多项目自动化管理
-- 需要用户确认自动化控制台的第一期形态后再写 spec
+- 自动化面板 Phase 1 需要用户确认 spec 后再进入编码
+- 后续全局自动化控制台还没有独立 spec

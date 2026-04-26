@@ -1,7 +1,6 @@
 import type { Context, Next } from 'hono'
 import type { ApiResult } from '@pluse/types'
 import {
-  hasAuth,
   parseCsrfCookie,
   parseSessionToken,
   validateAuthSession,
@@ -29,8 +28,6 @@ function extractBearerToken(c: Context): string | null {
 }
 
 export async function requireAuth(c: Context, next: Next): Promise<Response | void> {
-  if (!hasAuth()) return next()
-
   const bearerToken = extractBearerToken(c)
   if (bearerToken) {
     if (!verifyApiToken(bearerToken)) return unauthorized(c)

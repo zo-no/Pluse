@@ -1,13 +1,12 @@
 import { spawn } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Quest } from '@pluse/types'
 import { listEvents } from '../models/history'
 import { getQuest } from '../models/quest'
 import { getProject } from '../models/project'
 import { getSessionCategory } from '../models/session-category'
-import { getManagedCodexHome } from '../support/paths'
+import { syncManagedCodexHome } from '../support/codex-home'
 import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from '../runtime/catalog'
 import { createOrReuseSessionCategory, listSessionCategoryViews } from './session-categories'
 import { updateQuestWithEffects } from './quests'
@@ -20,7 +19,6 @@ type ClassificationDecision =
   | { mode: 'create_or_reuse'; name: string; description?: string }
   | { mode: 'clear' }
 
-const CODEX_AUTH_FILENAME = 'auth.json'
 const SESSION_CLASSIFY_TIMEOUT_MS = parsePositiveInt(
   process.env['PLUSE_SESSION_CLASSIFY_TIMEOUT_MS'] ?? process.env['PULSE_SESSION_CLASSIFY_TIMEOUT_MS'],
   30_000,
@@ -112,7 +110,7 @@ function resolveTool(tool?: string | null): ToolName {
 function resolveModel(tool: ToolName, requested?: string | null): string {
   const next = requested?.trim()
   if (next) return tool === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet[1m]' : 'gpt-5.3-codex-spark')
+  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet[1m]' : 'gpt-5.4')
 }
 
 function resolveToolCommand(tool: ToolName): string {
@@ -122,34 +120,11 @@ function resolveToolCommand(tool: ToolName): string {
   return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex'
 }
 
-function syncManagedCodexAuth(): string {
-  const managedHome = getManagedCodexHome()
-  const sourceHome = process.env['CODEX_HOME']?.trim() || join(homedir(), '.codex')
-  const sourceAuthPath = join(sourceHome, CODEX_AUTH_FILENAME)
-  const targetAuthPath = join(managedHome, CODEX_AUTH_FILENAME)
-
-  if (!existsSync(sourceAuthPath)) return managedHome
-
-  try {
-    const sourceAuth = readFileSync(sourceAuthPath, 'utf8')
-    const targetAuth = existsSync(targetAuthPath) ? readFileSync(targetAuthPath, 'utf8') : null
-    if (sourceAuth !== targetAuth) writeFileSync(targetAuthPath, sourceAuth, 'utf8')
-  } catch {
-    try {
-      copyFileSync(sourceAuthPath, targetAuthPath)
-    } catch {
-      // Let Codex surface auth errors on its own.
-    }
-  }
-
-  return managedHome
-}
-
 function runtimeEnvForTool(tool: ToolName): NodeJS.ProcessEnv {
   if (tool !== 'codex') return process.env
   return {
     ...process.env,
-    CODEX_HOME: syncManagedCodexAuth(),
+    CODEX_HOME: syncManagedCodexHome(),
   }
 }
 

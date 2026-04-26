@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   MessageAttachment,
@@ -36,10 +35,10 @@ import {
   updateRun,
 } from '../models/run'
 import { emit } from '../services/events'
+import { ensureReviewReminderWithEffects } from '../services/reminders'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
-import { ensureReviewTodoWithEffects } from '../services/todos'
 import { runHooks } from '../services/hooks'
-import { getManagedCodexHome } from '../support/paths'
+import { syncManagedCodexHome } from '../support/codex-home'
 import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from './catalog'
 import {
   isClaudeRuntimeTool,
@@ -121,11 +120,9 @@ export interface StartQuestRunResult {
   quest: Quest | null
 }
 
-const RUN_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'], 300_000)
 const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'], 15_000)
 const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'] ?? process.env['PULSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
 const activeRunners = new Map<string, ActiveRunner>()
-const CODEX_AUTH_FILENAME = 'auth.json'
 const AUTO_RENAME_SYSTEM_PROMPT = [
   'You generate short titles for Pluse session quests.',
   'Return only the title text.',
@@ -139,6 +136,11 @@ const AUTO_RENAME_SYSTEM_PROMPT = [
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(raw ?? '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function parseOptionalPositiveInt(raw: string | undefined): number | null {
+  const parsed = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 }
 
 function nowIso(): string {
@@ -208,10 +210,22 @@ function safeJsonParse(value: string): Record<string, unknown> | null {
 
 function normalizeProviderError(value: unknown): string | undefined {
   if (typeof value === 'string') {
-    const line = value
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+
+    const parsed = safeJsonParse(trimmed)
+    if (parsed) {
+      const parsedMessage = normalizeProviderError(parsed)
+      if (parsedMessage) return parsedMessage
+    }
+
+    const messageMatch = trimmed.match(/"message"\s*:\s*"([^"]+)"/)
+    if (messageMatch?.[1]) return messageMatch[1].replace(/^Error:\s*/, '')
+
+    const line = trimmed
       .split('\n')
       .map((part) => part.trim())
-      .find((part) => part && !part.startsWith('at '))
+      .find((part) => part && !part.startsWith('at ') && part !== '{' && part !== '}')
     return line?.replace(/^Error:\s*/, '')
   }
   if (value && typeof value === 'object') {
@@ -280,37 +294,14 @@ function resolveModel(tool: RuntimeToolName, requested?: string | null): string 
   const family = resolveRuntimeToolFamily(tool)
   const next = requested?.trim()
   if (next) return family === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
-  return getRuntimeModelCatalog(tool).defaultModel ?? (family === 'claude' ? 'sonnet[1m]' : 'gpt-5.3-codex-spark')
-}
-
-function syncManagedCodexAuth(): string {
-  const managedHome = getManagedCodexHome()
-  const sourceHome = process.env['CODEX_HOME']?.trim() || join(homedir(), '.codex')
-  const sourceAuthPath = join(sourceHome, CODEX_AUTH_FILENAME)
-  const targetAuthPath = join(managedHome, CODEX_AUTH_FILENAME)
-
-  if (!existsSync(sourceAuthPath)) return managedHome
-
-  try {
-    const sourceAuth = readFileSync(sourceAuthPath, 'utf8')
-    const targetAuth = existsSync(targetAuthPath) ? readFileSync(targetAuthPath, 'utf8') : null
-    if (sourceAuth !== targetAuth) writeFileSync(targetAuthPath, sourceAuth, 'utf8')
-  } catch {
-    try {
-      copyFileSync(sourceAuthPath, targetAuthPath)
-    } catch {
-      // Ignore sync failures and let Codex surface its own auth error.
-    }
-  }
-
-  return managedHome
+  return getRuntimeModelCatalog(tool).defaultModel ?? (family === 'claude' ? 'sonnet[1m]' : 'gpt-5.4')
 }
 
 function runtimeEnvForTool(tool: RuntimeToolName): NodeJS.ProcessEnv {
   if (resolveRuntimeToolFamily(tool) !== 'codex') return process.env
   return {
     ...process.env,
-    CODEX_HOME: syncManagedCodexAuth(),
+    CODEX_HOME: syncManagedCodexHome(),
   }
 }
 
@@ -400,6 +391,17 @@ function validateTaskRunConfig(quest: Quest): string | null {
   return 'Quest executor is not configured'
 }
 
+function resolveProviderRunTimeoutMs(quest: Quest): number | null {
+  if (quest.kind === 'task') {
+    const timeoutSeconds = quest.executorOptions?.timeout
+    if (typeof timeoutSeconds === 'number' && Number.isFinite(timeoutSeconds) && timeoutSeconds > 0) {
+      return Math.floor(timeoutSeconds * 1000)
+    }
+  }
+
+  return parseOptionalPositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'])
+}
+
 function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePreferences>): RuntimePreferences {
   const tool = overrides?.tool ?? resolveTool(quest.tool)
   const family = resolveRuntimeToolFamily(tool)
@@ -442,6 +444,17 @@ function shouldRetryClaudeProxyFailure(
   if (tool !== 'claude' || !failureReason || sawProviderOutput) return false
   if (!fallbackCommand || sameRuntimeCommand(command, fallbackCommand)) return false
   return /429|request rejected|service unavailable|overload|overloaded|capacity/i.test(failureReason)
+}
+
+function shouldRetryCodexModelUnavailable(
+  tool: ToolName,
+  model: string,
+  failureReason: string | undefined,
+): boolean {
+  if (tool !== 'codex' || !failureReason) return false
+  const defaultModel = getRuntimeModelCatalog('codex').defaultModel
+  if (!defaultModel || defaultModel === model) return false
+  return /model .*does not exist|does not have access|not have access|model is not supported|unknown model|tool .* is not supported with|tools? .*not supported/i.test(failureReason)
 }
 
 function describeProviderRun(tool: RuntimeToolName, command: RuntimeCommandSpec, nativeResume: boolean): string {
@@ -692,15 +705,17 @@ function requestTermination(runId: string, reason: 'cancelled' | 'timeout'): voi
   }
 }
 
-function ensureTaskReviewTodo(quest: Quest, succeeded: boolean): void {
+function ensureTaskReviewReminder(quest: Quest, runId: string, succeeded: boolean): void {
   if (!succeeded || !quest.reviewOnComplete || quest.kind !== 'task' || quest.deleted) return
-  ensureReviewTodoWithEffects({
+  const questTitle = quest.title ?? quest.name ?? quest.id
+  ensureReviewReminderWithEffects({
     projectId: quest.projectId,
     originQuestId: quest.id,
+    originRunId: runId,
     createdBy: 'system',
-    title: `Review: ${quest.title ?? quest.name ?? quest.id}`,
-    waitingInstructions: `Task "${quest.title ?? quest.name ?? quest.id}" completed. Please review the output and close the todo when done.`,
-    tags: ['review'],
+    type: 'review',
+    title: `复核：${questTitle}`,
+    body: `自动化「${questTitle}」已完成。查看输出确认无误后，点击勾选即可删除这条提醒。`,
   })
 }
 
@@ -899,7 +914,7 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
     scheduleAutoRename(quest.id)
   }
 
-  ensureTaskReviewTodo(quest, state === 'completed')
+  ensureTaskReviewReminder(quest, runId, state === 'completed')
   emitRunUpdated(runId)
   emitQuestUpdated(quest.id)
   if (quest.kind === 'session') maybeStartNextFollowUp(quest.id)
@@ -1040,6 +1055,7 @@ type ProviderAttemptResult = {
   assistantText?: string
   retryWithHistory?: boolean
   retryWithClaudeProxy?: boolean
+  retryWithModel?: string
   tokenUsage?: TokenUsage
 }
 
@@ -1161,7 +1177,10 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       stderrLines.push(line)
     })
 
-    handle.timeoutId = setTimeout(() => requestTermination(runId, 'timeout'), RUN_TIMEOUT_MS)
+    const timeoutMs = resolveProviderRunTimeoutMs(currentQuest)
+    if (timeoutMs) {
+      handle.timeoutId = setTimeout(() => requestTermination(runId, 'timeout'), timeoutMs)
+    }
 
     child.once('error', (error) => {
       clearRunnerTimers(handle)
@@ -1192,6 +1211,9 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         tokenUsage: capturedTokenUsage,
         retryWithClaudeProxy: shouldRetryClaudeProxyFailure(tool, command, claudeProxyCommand, failureReason, sawProviderOutput),
         retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
+        retryWithModel: shouldRetryCodexModelUnavailable(tool, currentRun.model, failureReason)
+          ? getRuntimeModelCatalog(toolId).defaultModel ?? undefined
+          : undefined,
       })
     })
   })
@@ -1200,10 +1222,18 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   let command = primaryCommand
   let usedHistoryFallback = false
   let usedClaudeProxyFallback = false
+  let usedModelFallback = false
   let finalAttempt: ProviderAttemptResult | null = null
 
   while (!finalAttempt) {
     const nextAttempt = await attempt(nativeResume, command)
+    if (nextAttempt.retryWithModel && !usedModelFallback && nextAttempt.retryWithModel !== getRun(runId)?.model) {
+      appendQuestEvents(questId, [makeStatusEvent(`Codex model ${getRun(runId)?.model} is unavailable, retrying with ${nextAttempt.retryWithModel}`)])
+      updateRun(runId, { model: nextAttempt.retryWithModel })
+      updateQuest(questId, { model: nextAttempt.retryWithModel })
+      usedModelFallback = true
+      continue
+    }
     if (nextAttempt.retryWithClaudeProxy && !usedClaudeProxyFallback && claudeProxyCommand) {
       appendQuestEvents(questId, [makeStatusEvent(`Claude request was rejected, retrying with ${claudeProxyCommand.display}`)])
       command = claudeProxyCommand

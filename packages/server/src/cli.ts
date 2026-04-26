@@ -5,6 +5,7 @@ import { commandsCommand } from './controllers/cli/commands'
 import { domainCommand } from './controllers/cli/domain'
 import { projectCommand } from './controllers/cli/project'
 import { questCommand } from './controllers/cli/quest'
+import { reminderCommand } from './controllers/cli/reminder'
 import { runCommand } from './controllers/cli/run'
 import { sessionCategoryCommand } from './controllers/cli/session-category'
 import { todoCommand } from './controllers/cli/todo'
@@ -21,6 +22,7 @@ program.addCommand(commandsCommand)
 program.addCommand(domainCommand)
 program.addCommand(projectCommand)
 program.addCommand(questCommand)
+program.addCommand(reminderCommand)
 program.addCommand(runCommand)
 program.addCommand(sessionCategoryCommand)
 program.addCommand(todoCommand)

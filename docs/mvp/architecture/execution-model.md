@@ -80,7 +80,8 @@ const proc = Bun.spawn(
 
 ## 超时与取消
 
-- 默认超时：300 秒（task 态可通过 `executorConfig.timeout` 覆盖）
+- AI provider run 默认不设置总时长超时；可通过 `PLUSE_RUN_TIMEOUT_MS` / `PULSE_RUN_TIMEOUT_MS` 显式配置全局超时（单位：毫秒），task 态可通过 `executorOptions.timeout` 覆盖（单位：秒）
+- script executor 默认超时：300 秒（可通过 `executorConfig.timeout` 覆盖，单位：秒）
 - 超时/取消：SIGTERM → 15 秒 grace → SIGKILL
 - 取消后：task 态 quest.status = 'pending'（不算失败）
 

@@ -3,6 +3,7 @@ import type {
   AuthMe,
   CreateDomainInput,
   CreateQuestInput,
+  CreateReminderInput,
   CreateTodoInput,
   Domain,
   OpenProjectInput,
@@ -12,17 +13,23 @@ import type {
   Quest,
   QuestEvent,
   QuestOp,
+  Reminder,
+  ReminderListOrder,
+  ReminderProjectPrioritySetting,
   Run,
   RuntimeModelCatalog,
   RuntimeTool,
   SendMessageInput,
   SessionCategory,
   AppSettings,
+  SetReminderProjectPriorityInput,
+  SetReminderProjectPriorityResult,
   Todo,
   TokenUsageSummary,
   UpdateDomainInput,
   UpdateProjectInput,
   UpdateQuestInput,
+  UpdateReminderInput,
   UpdateTodoInput,
   UpdateAppSettingsInput,
   UploadedAsset,
@@ -207,6 +214,7 @@ export function getQuests(params: {
   status?: Quest['status']
   search?: string
   deleted?: boolean
+  limit?: number
 } = {}): Promise<ApiResult<Quest[]>> {
   const search = new URLSearchParams()
   if (params.projectId) search.set('projectId', params.projectId)
@@ -214,6 +222,7 @@ export function getQuests(params: {
   if (params.status) search.set('status', params.status)
   if (params.search) search.set('search', params.search)
   if (params.deleted !== undefined) search.set('deleted', String(params.deleted))
+  if (params.limit !== undefined) search.set('limit', String(params.limit))
   return request<Quest[]>('GET', `/quests${search.toString() ? `?${search.toString()}` : ''}`)
 }
 
@@ -299,6 +308,53 @@ export function deleteTodo(id: string): Promise<ApiResult<{ deleted: boolean }>>
 
 export function getProjectTags(projectId: string): Promise<ApiResult<{ tags: string[] }>> {
   return request<{ tags: string[] }>('GET', `/todos/tags?projectId=${encodeURIComponent(projectId)}`)
+}
+
+export function getReminders(params: {
+  projectId?: string
+  type?: Reminder['type']
+  priority?: Reminder['priority']
+  originQuestId?: string
+  originRunId?: string
+  time?: 'all' | 'due' | 'future'
+  order?: ReminderListOrder
+} = {}): Promise<ApiResult<Reminder[]>> {
+  const search = new URLSearchParams()
+  if (params.projectId) search.set('projectId', params.projectId)
+  if (params.type) search.set('type', params.type)
+  if (params.priority) search.set('priority', params.priority)
+  if (params.originQuestId) search.set('originQuestId', params.originQuestId)
+  if (params.originRunId) search.set('originRunId', params.originRunId)
+  if (params.time) search.set('time', params.time)
+  if (params.order) search.set('order', params.order)
+  return request<Reminder[]>('GET', `/reminders${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
+export function getReminderProjectPriorities(): Promise<ApiResult<ReminderProjectPrioritySetting[]>> {
+  return request<ReminderProjectPrioritySetting[]>('GET', '/reminders/project-priorities')
+}
+
+export function setReminderProjectPriority(
+  projectId: string,
+  input: SetReminderProjectPriorityInput,
+): Promise<ApiResult<SetReminderProjectPriorityResult>> {
+  return request<SetReminderProjectPriorityResult>('PATCH', `/reminders/project-priorities/${projectId}`, input)
+}
+
+export function getReminder(id: string): Promise<ApiResult<Reminder>> {
+  return request<Reminder>('GET', `/reminders/${id}`)
+}
+
+export function createReminder(input: CreateReminderInput): Promise<ApiResult<Reminder>> {
+  return request<Reminder>('POST', '/reminders', input)
+}
+
+export function updateReminder(id: string, input: UpdateReminderInput): Promise<ApiResult<Reminder>> {
+  return request<Reminder>('PATCH', `/reminders/${id}`, input)
+}
+
+export function deleteReminder(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/reminders/${id}`)
 }
 
 export async function uploadAsset(questId: string, file: File): Promise<ApiResult<UploadedAsset>> {

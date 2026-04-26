@@ -24,6 +24,7 @@ const DRAWING_TOOL_RESULT_IMAGE_REGEX = /\b\.(?:png|jpe?g|gif|webp|svg|bmp)\b/i
 
 interface ChatViewProps {
   questId: string
+  initialQuest?: Quest | null
   onQuestLoaded?: (quest: Quest) => void
   onDataChanged?: () => Promise<void> | void
 }
@@ -349,9 +350,9 @@ function MetaEventGroup({
   )
 }
 
-export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProps) {
+export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }: ChatViewProps) {
   const { locale, t } = useI18n()
-  const [quest, setQuest] = useState<Quest | null>(null)
+  const [quest, setQuest] = useState<Quest | null>(() => initialQuest?.id === questId ? initialQuest : null)
   const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
   const [events, setEvents] = useState<QuestEvent[]>([])
   const [runs, setRuns] = useState<Run[]>([])
@@ -385,6 +386,8 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   const pendingQuestRefreshRef = useRef(false)
   const pendingThreadRefreshRef = useRef(false)
   const pendingProjectRefreshRef = useRef(false)
+  const initialQuestRef = useRef<Quest | null | undefined>(initialQuest)
+  initialQuestRef.current = initialQuest
   const emitQuestLoaded = useEffectEvent((nextQuest: Quest) => {
     onQuestLoaded?.(nextQuest)
   })
@@ -481,10 +484,16 @@ export function ChatView({ questId, onQuestLoaded, onDataChanged }: ChatViewProp
   }, [questId])
 
   useEffect(() => {
-    setQuest(null)
+    const seededQuest = initialQuestRef.current?.id === questId ? initialQuestRef.current : null
+    setQuest(seededQuest)
     setEvents([])
     setRuns([])
-    void refreshQuest()
+    if (seededQuest) {
+      setError(null)
+      emitQuestLoaded(seededQuest)
+    } else {
+      void refreshQuest()
+    }
     void refreshThread(true)
     return () => {
       questRequestSeqRef.current += 1

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 import {
@@ -8,6 +8,7 @@ import {
   resolveRuntimeCommandSpec,
   type RuntimeToolName,
 } from './command'
+import { getSourceCodexHome } from '../support/codex-home'
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
 const CLAUDE_MODELS = [
@@ -17,11 +18,20 @@ const CLAUDE_MODELS = [
 ]
 const DEFAULT_CLAUDE_MODEL = 'sonnet[1m]'
 
-const CODEX_DEFAULT_MODEL = 'gpt-5.3-codex-spark'
+const CODEX_DEFAULT_MODEL = 'gpt-5.4'
 const DEFAULT_CODEX_EFFORT = 'high'
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh']
+const CODEX_MODEL_CATALOG_REFRESH_MS = parsePositiveInt(
+  process.env['PLUSE_CODEX_MODEL_CATALOG_REFRESH_MS']?.trim()
+    || process.env['PULSE_CODEX_MODEL_CATALOG_REFRESH_MS']?.trim(),
+  60 * 60 * 1000,
+)
+const CODEX_MODEL_CATALOG_RETRY_MS = 60 * 1000
 const CODEX_MODEL_ALIASES: Record<string, string> = {
-  '5.3-codex-spark': 'gpt-5.3-codex-spark',
+  '5.5': 'gpt-5.5',
+  'codex5.5': 'gpt-5.5',
+  'codex-5.5': 'gpt-5.5',
+  '5.3-codex-spark': 'gpt-5.3-codex',
   '5.3-codex': 'gpt-5.3-codex',
   '5.2-codex': 'gpt-5.2-codex',
   '5.1-codex-max': 'gpt-5.1-codex-max',
@@ -33,7 +43,6 @@ const KNOWN_CODEX_MODELS: CatalogModel[] = [
   { id: 'gpt-5.1-codex-max', label: 'GPT-5.1-Codex-Max', defaultEffort: 'medium', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
   { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini', defaultEffort: 'medium', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
   { id: 'gpt-5.3-codex', label: 'GPT-5.3-Codex', defaultEffort: 'medium', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
-  { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3-Codex-Spark', defaultEffort: 'high', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
   { id: 'gpt-5.2', label: 'GPT-5.2', defaultEffort: 'medium', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
   { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1-Codex-Mini', defaultEffort: 'medium', effortLevels: DEFAULT_CODEX_REASONING_LEVELS },
 ]
@@ -66,6 +75,13 @@ const BUILTIN_TOOLS: Array<Omit<RuntimeTool, 'available' | 'command'>> = [
 ]
 
 let cachedCodexCatalog: RuntimeModelCatalog | null = null
+let cachedCodexCatalogSignature: string | null = null
+let lastCodexCatalogRefreshAttemptAt = 0
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(raw ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
 
 export function normalizeCodexModelId(value?: string | null): string {
   const trimmed = value?.trim().toLowerCase()
@@ -130,7 +146,52 @@ function buildClaudeCatalog(): RuntimeModelCatalog {
 }
 
 function getCodexModelsCachePath(): string {
-  return join(homedir(), '.codex', 'models_cache.json')
+  return join(getSourceCodexHome(), 'models_cache.json')
+}
+
+function getCodexModelsCacheSignature(): string {
+  try {
+    const stats = statSync(getCodexModelsCachePath())
+    return `${stats.mtimeMs}:${stats.size}`
+  } catch {
+    return 'missing'
+  }
+}
+
+function isCodexModelsCacheStale(now: number): boolean {
+  try {
+    const stats = statSync(getCodexModelsCachePath())
+    return now - stats.mtimeMs >= CODEX_MODEL_CATALOG_REFRESH_MS
+  } catch {
+    return true
+  }
+}
+
+function refreshCodexModelsCacheIfNeeded(): void {
+  const now = Date.now()
+  if (!isCodexModelsCacheStale(now)) return
+  if (now - lastCodexCatalogRefreshAttemptAt < CODEX_MODEL_CATALOG_RETRY_MS) return
+  lastCodexCatalogRefreshAttemptAt = now
+
+  const command = resolveRuntimeCommandSpec('codex')
+  if (!isRuntimeCommandAvailable(command)) return
+
+  try {
+    const result = spawnSync(command.file, [...command.args, 'debug', 'models'], {
+      encoding: 'utf8',
+      env: { ...process.env, CODEX_HOME: getSourceCodexHome() },
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 10_000,
+    })
+    if (result.status !== 0 || !result.stdout.trim()) return
+
+    const parsed = JSON.parse(result.stdout) as { models?: unknown }
+    if (!Array.isArray(parsed.models)) return
+
+    writeFileSync(getCodexModelsCachePath(), JSON.stringify(parsed), 'utf8')
+  } catch {
+    // Keep the last known Codex catalog if refresh fails.
+  }
 }
 
 function toStringArray(value: unknown): string[] {
@@ -163,17 +224,13 @@ function mergeKnownCodexModels(models: CatalogModel[]): CatalogModel[] {
   }
   for (const model of KNOWN_CODEX_MODELS) {
     const existing = merged.get(model.id)
-    merged.set(
-      model.id,
-      existing
-        ? {
-            ...existing,
-            label: codexModelLabel(model.id, existing.label),
-            defaultEffort: existing.defaultEffort || model.defaultEffort,
-            effortLevels: existing.effortLevels?.length ? existing.effortLevels : model.effortLevels,
-          }
-        : { ...model },
-    )
+    if (!existing) continue
+    merged.set(model.id, {
+      ...existing,
+      label: codexModelLabel(model.id, existing.label),
+      defaultEffort: existing.defaultEffort || model.defaultEffort,
+      effortLevels: existing.effortLevels?.length ? existing.effortLevels : model.effortLevels,
+    })
   }
 
   return [...merged.values()].sort((a, b) => {
@@ -209,7 +266,9 @@ function buildFallbackCodexCatalog(): RuntimeModelCatalog {
 }
 
 function buildCodexCatalog(): RuntimeModelCatalog {
-  if (cachedCodexCatalog) return cachedCodexCatalog
+  refreshCodexModelsCacheIfNeeded()
+  const signature = getCodexModelsCacheSignature()
+  if (cachedCodexCatalog && cachedCodexCatalogSignature === signature) return cachedCodexCatalog
 
   try {
     const raw = readFileSync(getCodexModelsCachePath(), 'utf8')
@@ -236,6 +295,8 @@ function buildCodexCatalog(): RuntimeModelCatalog {
         effortLevels,
       })
     }
+    if (models.length === 0) throw new Error('empty codex model catalog')
+
     const mergedModels = mergeKnownCodexModels(models)
 
     const effortLevels = [...new Set([
@@ -256,9 +317,11 @@ function buildCodexCatalog(): RuntimeModelCatalog {
         default: defaultEffort || effortLevels[0] || DEFAULT_CODEX_EFFORT,
       },
     }
+    cachedCodexCatalogSignature = signature
     return cachedCodexCatalog
   } catch {
     cachedCodexCatalog = buildFallbackCodexCatalog()
+    cachedCodexCatalogSignature = signature
     return cachedCodexCatalog
   }
 }

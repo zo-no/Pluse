@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ApiResult } from '@pluse/types'
 import { setDb } from '../db'
+import { getOrCreateApiToken } from '../models/auth'
 import { app } from '../server'
 
 let mem: Database | null = null
@@ -55,6 +56,7 @@ export function makeWorkDir(name: string): string {
 }
 
 type ApiRequestOptions = {
+  auth?: boolean
   headers?: HeadersInit
 }
 
@@ -65,6 +67,15 @@ export async function apiReq<T = unknown>(
   options: ApiRequestOptions = {},
 ): Promise<{ status: number; json: ApiResult<T>; headers: Headers }> {
   const headers = new Headers(options.headers ?? {})
+  if (
+    options.auth !== false
+    && path.startsWith('/api/')
+    && path !== '/api/auth/me'
+    && !headers.has('Authorization')
+    && !headers.has('Cookie')
+  ) {
+    headers.set('Authorization', `Bearer ${getOrCreateApiToken()}`)
+  }
   const init: RequestInit = { method, headers }
   if (body !== undefined) {
     if (body instanceof FormData) {

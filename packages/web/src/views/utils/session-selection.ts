@@ -73,8 +73,33 @@ export function getPreferredSessionFromList(
   return sessions[0]?.id ?? null
 }
 
-export async function getPreferredSessionId(projectId: string): Promise<string | null> {
-  const result = await api.getQuests({ projectId, kind: 'session', deleted: false })
+export async function getPreferredSession(projectId: string): Promise<Quest | null> {
+  const current = readStoredSelections()
+  const rememberedQuestId = current[projectId]
+
+  if (rememberedQuestId) {
+    const remembered = await api.getQuest(rememberedQuestId)
+    if (
+      remembered.ok
+      && remembered.data.projectId === projectId
+      && remembered.data.kind === 'session'
+      && !remembered.data.deleted
+    ) {
+      return remembered.data
+    }
+
+    delete current[projectId]
+    writeStoredSelections(current)
+  }
+
+  const result = await api.getQuests({ projectId, kind: 'session', deleted: false, limit: 1 })
   if (!result.ok) return null
-  return getPreferredSessionFromList(projectId, result.data)
+  const nextQuest = result.data[0] ?? null
+  if (!nextQuest) clearRememberedSession(projectId)
+  return nextQuest
+}
+
+export async function getPreferredSessionId(projectId: string): Promise<string | null> {
+  const quest = await getPreferredSession(projectId)
+  return quest?.id ?? null
 }

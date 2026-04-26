@@ -5,7 +5,8 @@ import type { Run } from '@pluse/types'
 import { getGlobalHooksPath, getProjectHooksPath } from '../support/paths'
 import { getRunsByQuest } from '../models/run'
 import { updateQuest } from '../models/quest'
-import { createTodoWithEffects, ensureReviewTodoWithEffects } from './todos'
+import { ensureReviewReminderWithEffects } from './reminders'
+import { createTodoWithEffects } from './todos'
 import { getProject } from '../models/project'
 import { runSessionClassificationInBackground } from './session-classifier'
 
@@ -220,7 +221,15 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
           tags: action.tags,
         }
         if ((action.tags ?? []).some((tag) => tag.trim().toLowerCase() === 'review')) {
-          ensureReviewTodoWithEffects(todoInput)
+          ensureReviewReminderWithEffects({
+            projectId: todoInput.projectId,
+            originQuestId: todoInput.originQuestId,
+            originRunId: run.id,
+            createdBy: todoInput.createdBy,
+            type: 'review',
+            title: todoInput.title,
+            body: todoInput.description,
+          })
         } else {
           createTodoWithEffects(todoInput)
         }

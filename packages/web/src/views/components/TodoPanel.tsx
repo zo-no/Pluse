@@ -1,38 +1,38 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useLocation, useNavigate, type Location as RouterLocation } from 'react-router-dom'
-import type { Project, Quest, Todo, UpdateTodoInput } from '@pluse/types'
+import { Link } from 'react-router-dom'
+import type {
+  Project,
+  Reminder,
+  ReminderProjectPriority,
+  ReminderProjectPrioritySetting,
+  Todo,
+  UpdateTodoInput,
+} from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
-import { displayTaskName } from '@/views/utils/display'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
-import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlayIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
-import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
+import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, PlusIcon, RouteIcon } from './icons'
+import { TaskComposerModal } from './TaskComposerModal'
 
 interface TodoPanelProps {
   projectId: string | null
   projectName?: string | null
-  projectWorkDir?: string | null
   projects: Project[]
   activeQuestId?: string | null
-  onSelectProject?: (projectId: string) => void
   onRequestClose?: () => void
   onDataChanged?: () => Promise<void> | void
 }
 
-type ScopeTab = 'global' | 'project'
-type SourceTab = 'human' | 'ai'
-type AutomationSectionKey = 'running' | 'attention' | 'recurring' | 'scheduled' | 'manual'
+type SourceTab = 'human' | 'reminder'
 
-type RailTaskItem =
-  | { entityType: 'quest'; quest: Quest; archived: boolean }
-  | { entityType: 'todo'; todo: Todo; archived: boolean }
-
-function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
-  // If already in an overlay, reuse the existing background to avoid nesting overlays
-  const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
-  return { backgroundLocation: existingBackground ?? location }
+type ProjectRailGroup = {
+  key: string
+  label: string
+  reminderPriority: ReminderProjectPriority
+  openTodos: Todo[]
+  reminders: Reminder[]
 }
 
 function formatDateTime(value?: string, locale = 'zh-CN', t?: (key: string) => string): string {
@@ -60,23 +60,42 @@ function formatSidebarTime(value?: string, t?: (key: string, values?: Record<str
   return t ? t('{count} 周', { count: Math.max(1, Math.floor(delta / week)) }) : `${Math.max(1, Math.floor(delta / week))} 周`
 }
 
-function taskLabel(quest: Quest, t?: (key: string) => string): string {
-  return displayTaskName(quest.title || quest.name, t)
-}
-
-function taskStatusLabel(status?: Quest['status'], t?: (key: string) => string): string {
-  if (status === 'running') return t ? t('运行中') : '运行中'
-  if (status === 'pending') return t ? t('待触发') : '待触发'
-  if (status === 'done') return t ? t('已执行') : '已执行'
-  if (status === 'failed') return t ? t('失败') : '失败'
-  if (status === 'cancelled') return t ? t('已取消') : '已取消'
-  return t ? t('待触发') : '待触发'
-}
-
 function todoStatusLabel(status: Todo['status'], t?: (key: string) => string): string {
   if (status === 'done') return t ? t('已完成') : '已完成'
   if (status === 'cancelled') return t ? t('已取消') : '已取消'
   return t ? t('待处理') : '待处理'
+}
+
+const REMINDER_PROJECT_PRIORITY_RANK: Record<ReminderProjectPriority, number> = {
+  mainline: 0,
+  priority: 1,
+  normal: 2,
+}
+
+const REMINDER_PRIORITY_RANK: Record<Reminder['priority'], number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+}
+
+function reminderReadyRank(reminder: Reminder): number {
+  if (!reminder.remindAt) return 0
+  return Date.parse(reminder.remindAt) <= Date.now() ? 0 : 1
+}
+
+function reminderTimeValue(reminder: Reminder): number {
+  return reminder.remindAt ? Date.parse(reminder.remindAt) : Number.POSITIVE_INFINITY
+}
+
+function compareRemindersByAttention(left: Reminder, right: Reminder): number {
+  const readyDelta = reminderReadyRank(left) - reminderReadyRank(right)
+  if (readyDelta !== 0) return readyDelta
+  const priorityDelta = REMINDER_PRIORITY_RANK[left.priority] - REMINDER_PRIORITY_RANK[right.priority]
+  if (priorityDelta !== 0) return priorityDelta
+  const timeDelta = reminderTimeValue(left) - reminderTimeValue(right)
+  if (timeDelta !== 0) return timeDelta
+  return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
 }
 
 function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]): T[] {
@@ -92,199 +111,64 @@ function sortOpenTodos(items: Todo[]): Todo[] {
   })
 }
 
-function railTaskUpdatedAt(item: RailTaskItem): string {
-  return item.entityType === 'todo' ? item.todo.updatedAt : item.quest.updatedAt
+function sortReminders(items: Reminder[]): Reminder[] {
+  return [...items].sort(compareRemindersByAttention)
 }
 
-function sortRailTaskItems(items: RailTaskItem[]): RailTaskItem[] {
-  return [...items].sort((left, right) => Date.parse(railTaskUpdatedAt(right)) - Date.parse(railTaskUpdatedAt(left)))
-}
-
-function createTodoItems(items: Todo[], archived = false): RailTaskItem[] {
-  return items.map((todo) => ({ entityType: 'todo', todo, archived }))
-}
-
-function createQuestItems(items: Quest[], archived = false): RailTaskItem[] {
-  return items.map((quest) => ({ entityType: 'quest', quest, archived }))
-}
-
-function resolveScopeData(params: {
-  scope: ScopeTab
-  projectTasks: Quest[]
-  projectArchivedTasks: Quest[]
-  projectTodos: Todo[]
-  projectArchivedTodos: Todo[]
-  globalTasks: Quest[]
-  globalArchivedTasks: Quest[]
-  globalTodos: Todo[]
-  globalArchivedTodos: Todo[]
-}): { tasks: Quest[]; archivedTasks: Quest[]; todos: Todo[]; archivedTodos: Todo[] } {
-  if (params.scope === 'global') {
-    return {
-      tasks: params.globalTasks,
-      archivedTasks: params.globalArchivedTasks,
-      todos: params.globalTodos,
-      archivedTodos: params.globalArchivedTodos,
-    }
-  }
-  return {
-    tasks: params.projectTasks,
-    archivedTasks: params.projectArchivedTasks,
-    todos: params.projectTodos,
-    archivedTodos: params.projectArchivedTodos,
-  }
-}
-
-function formatScopeEmptyMessage(
-  _scope: ScopeTab,
+function formatEmptyMessage(
   source: SourceTab,
   t?: (key: string) => string,
 ): string {
-  return source === 'ai'
-    ? (t ? t('当前范围暂无自动化。') : '当前范围暂无自动化。')
-    : (t ? t('当前范围暂无待办。') : '当前范围暂无待办。')
+  if (source === 'reminder') return t ? t('当前范围暂无提醒。') : '当前范围暂无提醒。'
+  return t ? t('当前范围暂无待办。') : '当前范围暂无待办。'
 }
 
-function automationSectionKey(quest: Quest): AutomationSectionKey {
-  if (quest.activeRunId || quest.status === 'running') return 'running'
-  if (quest.status === 'failed' || quest.status === 'cancelled') return 'attention'
-  if (quest.scheduleKind === 'recurring') return 'recurring'
-  if (quest.scheduleKind === 'scheduled') return 'scheduled'
-  return 'manual'
-}
+function buildProjectRailGroups(params: {
+  projects: Project[]
+  activeProjectId: string | null
+  activeProjectName?: string | null
+  openTodos: Todo[]
+  reminders: Reminder[]
+  source: SourceTab
+  reminderProjectPriorities?: Map<string, ReminderProjectPriority>
+  t: (key: string) => string
+}): ProjectRailGroup[] {
+  const projectMap = new Map(params.projects.map((project) => [project.id, project] as const))
+  const keys = new Set<string>()
+  for (const project of params.projects) keys.add(project.id)
+  for (const todo of params.openTodos) keys.add(todo.projectId)
+  for (const reminder of params.reminders) keys.add(reminder.projectId)
+  if (params.activeProjectId) keys.add(params.activeProjectId)
 
-function automationSectionLabel(key: AutomationSectionKey, t: (key: string) => string): string {
-  if (key === 'running') return t('运行中')
-  if (key === 'attention') return t('异常')
-  if (key === 'recurring') return t('周期')
-  if (key === 'scheduled') return t('定时')
-  return t('手动')
-}
-
-function buildAutomationSections(tasks: Quest[]): Array<{ key: AutomationSectionKey; items: Quest[] }> {
-  const order: AutomationSectionKey[] = ['running', 'attention', 'recurring', 'scheduled', 'manual']
-  const grouped = new Map<AutomationSectionKey, Quest[]>()
-  for (const quest of sortByUpdatedAt(tasks)) {
-    const key = automationSectionKey(quest)
-    grouped.set(key, [...(grouped.get(key) ?? []), quest])
-  }
-  return order
-    .map((key) => ({ key, items: grouped.get(key) ?? [] }))
-    .filter((entry) => entry.items.length > 0)
-}
-
-function groupTodosByProject(
-  todos: Todo[],
-  projects: Project[],
-  t: (key: string) => string,
-): Array<{ key: string; label: string; items: Todo[] }> {
-  const projectMap = new Map(projects.map((project) => [project.id, project] as const))
-  const groups = new Map<string, Todo[]>()
-
-  for (const todo of todos) {
-    groups.set(todo.projectId, [...(groups.get(todo.projectId) ?? []), todo])
-  }
-
-  return Array.from(groups.entries())
-    .sort(([leftId], [rightId]) => {
-      const left = projectMap.get(leftId)
-      const right = projectMap.get(rightId)
-      if (left && right) return left.name.localeCompare(right.name, 'zh-Hans-CN')
-      if (left) return -1
-      if (right) return 1
-      return leftId.localeCompare(rightId)
+  return Array.from(keys)
+    .map((key) => {
+      const project = projectMap.get(key)
+      return {
+        key,
+        label: project?.name ?? (key === params.activeProjectId && params.activeProjectName ? params.activeProjectName : `${params.t('项目')} ${key}`),
+        reminderPriority: params.reminderProjectPriorities?.get(key) ?? 'normal',
+        openTodos: params.openTodos.filter((todo) => todo.projectId === key),
+        reminders: params.reminders.filter((reminder) => reminder.projectId === key),
+      }
     })
-    .map(([projectId, items]) => ({
-      key: projectId,
-      label: projectMap.get(projectId)?.name ?? `${t('项目')} ${projectId}`,
-      items,
-    }))
+    .filter((group) => {
+      const hasItems = group.openTodos.length > 0 || group.reminders.length > 0
+      return hasItems || group.key === params.activeProjectId
+    })
+    .sort((left, right) => {
+      if (left.key === params.activeProjectId) return -1
+      if (right.key === params.activeProjectId) return 1
+      if (params.source === 'reminder') {
+        const priorityDelta = REMINDER_PROJECT_PRIORITY_RANK[left.reminderPriority] - REMINDER_PROJECT_PRIORITY_RANK[right.reminderPriority]
+        if (priorityDelta !== 0) return priorityDelta
+        if (left.reminders[0] && right.reminders[0]) {
+          const reminderDelta = compareRemindersByAttention(left.reminders[0], right.reminders[0])
+          if (reminderDelta !== 0) return reminderDelta
+        }
+      }
+      return left.label.localeCompare(right.label, 'zh-Hans-CN')
+    })
 }
-
-const QuestRailItem = memo(function QuestRailItem({
-  quest,
-  archived,
-  activeQuestId,
-  locale,
-  t,
-  questLinkState,
-  onRequestClose,
-  onTriggerQuest,
-  onArchiveQuest,
-}: {
-  quest: Quest
-  archived: boolean
-  activeQuestId?: string | null
-  locale: string
-  t: (key: string, values?: Record<string, string | number>) => string
-  questLinkState: { backgroundLocation: RouterLocation }
-  onRequestClose?: () => void
-  onTriggerQuest: (quest: Quest) => void
-  onArchiveQuest: (questId: string, archived: boolean) => void
-}) {
-  const isActive = activeQuestId === quest.id
-  const canTrigger = !archived && !quest.activeRunId && quest.enabled !== false
-
-  return (
-    <article
-      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}`}
-    >
-      <Link
-        className="pluse-sidebar-item-main pluse-task-list-main"
-        to={`/quests/${quest.id}`}
-        state={questLinkState}
-        onClick={() => onRequestClose?.()}
-      >
-        <div className="pluse-task-list-copy">
-          <div className="pluse-sidebar-item-title">
-            <span className="pluse-task-kind-badge" aria-label={t('自动化')} title={t('自动化')}>
-              <SparkIcon className="pluse-icon" />
-            </span>
-            <strong>{taskLabel(quest, t)}</strong>
-          </div>
-          <div className="pluse-task-list-meta" title={formatDateTime(quest.updatedAt, locale, t)}>
-            <span className={`pluse-task-list-state is-${quest.activeRunId ? 'running' : quest.status ?? 'pending'}`}>
-              {quest.activeRunId ? t('运行中') : taskStatusLabel(quest.status, t)}
-            </span>
-            <span className="pluse-task-list-dot" aria-hidden="true">·</span>
-            <span className="pluse-meta-inline">
-              <ClockIcon className="pluse-icon pluse-inline-icon" />
-              {formatSidebarTime(quest.updatedAt, t)}
-            </span>
-          </div>
-        </div>
-      </Link>
-      <div className="pluse-sidebar-item-actions">
-        {canTrigger ? (
-          <button
-            type="button"
-            className="pluse-sidebar-action-btn"
-            onClick={(event) => {
-              event.preventDefault()
-              onTriggerQuest(quest)
-            }}
-            aria-label={t('立即触发')}
-            title={t('立即触发')}
-          >
-            <PlayIcon className="pluse-icon" />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="pluse-sidebar-action-btn"
-          onClick={(event) => {
-            event.preventDefault()
-            onArchiveQuest(quest.id, !archived)
-          }}
-          aria-label={archived ? t('恢复任务') : t('归档任务')}
-          title={archived ? t('恢复任务') : t('归档任务')}
-        >
-          <ArchiveIcon className="pluse-icon" />
-        </button>
-      </div>
-    </article>
-  )
-})
 
 const TodoRailItem = memo(function TodoRailItem({
   todo,
@@ -407,6 +291,77 @@ const TodoRailItem = memo(function TodoRailItem({
   )
 })
 
+const ReminderRailItem = memo(function ReminderRailItem({
+  reminder,
+  activeQuestId,
+  locale,
+  t,
+  onDeleteReminder,
+  onRequestClose,
+}: {
+  reminder: Reminder
+  activeQuestId?: string | null
+  locale: string
+  t: (key: string, values?: Record<string, string | number>) => string
+  onDeleteReminder: (reminder: Reminder) => void
+  onRequestClose?: () => void
+}) {
+  const hasSource = Boolean(reminder.originQuestId)
+  const isActive = hasSource && reminder.originQuestId === activeQuestId
+  const timeValue = reminder.remindAt ?? reminder.updatedAt
+  const timeLabel = reminder.remindAt
+    ? `${t('提醒')} ${formatDateTime(reminder.remindAt, locale, t)}`
+    : formatSidebarTime(reminder.updatedAt, t)
+
+  const copy = (
+    <div className="pluse-task-list-copy">
+      <div className="pluse-sidebar-item-title">
+        {reminder.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${reminder.priority}`} aria-label={reminder.priority} /> : null}
+        <strong>{reminder.title}</strong>
+      </div>
+      <div className="pluse-task-list-meta" title={formatDateTime(timeValue, locale, t)}>
+        <span className="pluse-meta-inline">
+          <ClockIcon className="pluse-icon pluse-inline-icon" />
+          {timeLabel}
+        </span>
+      </div>
+      {reminder.body ? <p className="pluse-task-list-note">{reminder.body}</p> : null}
+    </div>
+  )
+
+  return (
+    <article
+      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-reminder${isActive ? ' is-active' : ''}`}
+    >
+      {reminder.originQuestId ? (
+        <Link
+          className="pluse-sidebar-item-main pluse-task-list-main"
+          to={`/quests/${reminder.originQuestId}`}
+          onClick={() => onRequestClose?.()}
+          aria-label={`${t('来源会话')} · ${reminder.title}`}
+        >
+          {copy}
+        </Link>
+      ) : (
+        <div className="pluse-sidebar-item-main pluse-task-list-main">
+          {copy}
+        </div>
+      )}
+      <div className="pluse-sidebar-item-actions">
+        <button
+          type="button"
+          className="pluse-sidebar-action-btn"
+          onClick={() => onDeleteReminder(reminder)}
+          aria-label={t('删除提醒')}
+          title={t('删除提醒')}
+        >
+          <CheckIcon className="pluse-icon" />
+        </button>
+      </div>
+    </article>
+  )
+})
+
 export function TodoPanel({
   projectId,
   projectName,
@@ -416,26 +371,16 @@ export function TodoPanel({
   onDataChanged,
 }: TodoPanelProps) {
   const { locale, t } = useI18n()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [tasks, setTasks] = useState<Quest[]>([])
-  const [archivedTasks, setArchivedTasks] = useState<Quest[]>([])
-  const [todos, setTodos] = useState<Todo[]>([])
-  const [archivedTodos, setArchivedTodos] = useState<Todo[]>([])
-  const [globalTasks, setGlobalTasks] = useState<Quest[]>([])
-  const [globalArchivedTasks, setGlobalArchivedTasks] = useState<Quest[]>([])
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
-  const [scopeTab, setScopeTab] = useState<ScopeTab>('project')
-  const [scopeModes, setScopeModes] = useState<Record<ScopeTab, SourceTab>>({
-    global: 'human',
-    project: 'human',
-  })
-  const [sectionExpandedByKey, setSectionExpandedByKey] = useState<Record<string, boolean>>({})
-  const [historyExpandedByView, setHistoryExpandedByView] = useState<Record<string, boolean>>({})
+  const [globalReminders, setGlobalReminders] = useState<Reminder[]>([])
+  const [reminderProjectPriorities, setReminderProjectPriorities] = useState<ReminderProjectPrioritySetting[]>([])
+  const [sourceTab, setSourceTab] = useState<SourceTab>('human')
+  const [expandedProjectGroupKey, setExpandedProjectGroupKey] = useState<string | null>(projectId)
+  const [collapsedReminderProjectKeys, setCollapsedReminderProjectKeys] = useState<string[]>([])
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
-  const [createModalKind, setCreateModalKind] = useState<TaskComposerKind>('human')
+  const [createReminderOpen, setCreateReminderOpen] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
   const [todoEditOpen, setTodoEditOpen] = useState(false)
   const [todoDraft, setTodoDraft] = useState({
@@ -448,7 +393,14 @@ export function TodoPanel({
     tags: [] as string[],
     tagInput: '',
   })
+  const [reminderDraft, setReminderDraft] = useState({
+    title: '',
+    body: '',
+    remindAt: '',
+    priority: 'normal' as Reminder['priority'],
+  })
   const [todoSaving, setTodoSaving] = useState(false)
+  const [reminderSaving, setReminderSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const [filterTags, setFilterTags] = useState<string[]>([])
@@ -460,22 +412,29 @@ export function TodoPanel({
   const loadData = useCallback(async () => {
     const requestId = dataRequestSeqRef.current + 1
     dataRequestSeqRef.current = requestId
-    const [globalTaskResult, globalArchivedTaskResult, globalTodoResult, globalArchivedTodoResult] = await Promise.all([
-      api.getQuests({ kind: 'task', deleted: false }),
-      api.getQuests({ kind: 'task', deleted: true }),
-      api.getTodos({ deleted: false }),
-      api.getTodos({ deleted: true }),
+    const [
+      [
+        globalTodoResult,
+        globalArchivedTodoResult,
+        globalReminderResult,
+        reminderProjectPriorityResult,
+      ],
+      projectResults,
+    ] = await Promise.all([
+      Promise.all([
+        api.getTodos({ deleted: false }),
+        api.getTodos({ deleted: true }),
+        api.getReminders({ order: 'attention' }),
+        api.getReminderProjectPriorities(),
+      ]),
+      projectId
+        ? Promise.all([
+            api.getProjectTags(projectId),
+          ])
+        : Promise.resolve(null),
     ])
     if (requestId !== dataRequestSeqRef.current) return
 
-    if (!globalTaskResult.ok) {
-      setError(globalTaskResult.error)
-      return
-    }
-    if (!globalArchivedTaskResult.ok) {
-      setError(globalArchivedTaskResult.error)
-      return
-    }
     if (!globalTodoResult.ok) {
       setError(globalTodoResult.error)
       return
@@ -484,72 +443,30 @@ export function TodoPanel({
       setError(globalArchivedTodoResult.error)
       return
     }
+    if (!globalReminderResult.ok) {
+      setError(globalReminderResult.error)
+      return
+    }
+    if (!reminderProjectPriorityResult.ok) {
+      setError(reminderProjectPriorityResult.error)
+      return
+    }
 
-    setGlobalTasks(globalTaskResult.data)
-    setGlobalArchivedTasks(globalArchivedTaskResult.data)
     setGlobalTodos(globalTodoResult.data)
     setGlobalArchivedTodos(globalArchivedTodoResult.data)
+    setGlobalReminders(globalReminderResult.data)
+    setReminderProjectPriorities(reminderProjectPriorityResult.data)
 
-    if (!projectId) {
-      setTasks([])
-      setArchivedTasks([])
-      setTodos([])
-      setArchivedTodos([])
+    if (!projectResults) {
       setProjectTags([])
       setError(null)
       return
     }
 
-    const [taskResult, archivedTaskResult, todoResult, archivedTodoResult] = await Promise.all([
-      api.getQuests({ projectId, kind: 'task', deleted: false }),
-      api.getQuests({ projectId, kind: 'task', deleted: true }),
-      api.getTodos({ projectId, deleted: false }),
-      api.getTodos({ projectId, deleted: true }),
-    ])
-    if (requestId !== dataRequestSeqRef.current) return
-
-    if (!taskResult.ok) {
-      setError(taskResult.error)
-      return
-    }
-    if (!archivedTaskResult.ok) {
-      setError(archivedTaskResult.error)
-      return
-    }
-    if (!todoResult.ok) {
-      setError(todoResult.error)
-      return
-    }
-    if (!archivedTodoResult.ok) {
-      setError(archivedTodoResult.error)
-      return
-    }
-
-    setTasks(taskResult.data)
-    setArchivedTasks(archivedTaskResult.data)
-    setTodos(todoResult.data)
-    setArchivedTodos(archivedTodoResult.data)
+    const [tagsResult] = projectResults
     setError(null)
-
-    const tagsResult = await api.getProjectTags(projectId)
-    if (requestId !== dataRequestSeqRef.current) return
-    if (tagsResult.ok) setProjectTags(tagsResult.data.tags)
+    setProjectTags(tagsResult.ok ? tagsResult.data.tags : [])
   }, [projectId])
-
-  function setSourceTab(tab: ScopeTab, source: SourceTab) {
-    setScopeModes((current) => ({ ...current, [tab]: source }))
-  }
-
-  function isSectionExpanded(key: string, defaultExpanded = true): boolean {
-    return sectionExpandedByKey[key] ?? defaultExpanded
-  }
-
-  function toggleSectionExpanded(key: string, defaultExpanded = true): void {
-    setSectionExpandedByKey((current) => ({
-      ...current,
-      [key]: !(current[key] ?? defaultExpanded),
-    }))
-  }
 
   useEffect(() => {
     void loadData()
@@ -582,14 +499,18 @@ export function TodoPanel({
     ))
   }, [projectTags])
 
+  useEffect(() => {
+    setExpandedProjectGroupKey(projectId)
+  }, [projectId, sourceTab])
+
   useSseEvent(
     (event) => {
-      const shouldReloadData = (
-        event.type === 'quest_updated'
-        || event.type === 'quest_deleted'
-        || event.type === 'todo_updated'
+      const shouldReloadData = event.type === 'reminder_project_priority_updated' || (
+        event.type === 'todo_updated'
         || event.type === 'todo_deleted'
-      ) && (projectId == null || event.data.projectId === projectId)
+        || event.type === 'reminder_updated'
+        || event.type === 'reminder_deleted'
+      )
       if (!shouldReloadData) return
 
       if (shouldReloadData) pendingDataReloadRef.current = true
@@ -644,8 +565,8 @@ export function TodoPanel({
     await onDataChanged?.()
   }, [loadData, onDataChanged])
 
-  const handleTriggerQuest = useCallback(async (quest: Quest) => {
-    const result = await api.startQuestRun(quest.id, { trigger: 'manual', triggeredBy: 'human' })
+  const handleDeleteReminder = useCallback(async (reminder: Reminder) => {
+    const result = await api.deleteReminder(reminder.id)
     if (!result.ok) {
       setError(result.error)
       return
@@ -654,159 +575,99 @@ export function TodoPanel({
     await onDataChanged?.()
   }, [loadData, onDataChanged])
 
-  const handleArchiveQuest = useCallback(async (questId: string, archived: boolean) => {
-    const allKnownTasks = [...tasks, ...archivedTasks, ...globalTasks, ...globalArchivedTasks]
-    const unarchivedNavigationPool = [...tasks, ...globalTasks]
-      .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
-    const quest = allKnownTasks.find((item) => item.id === questId)
-    if (!quest) return
-    if (archived && quest.activeRunId) {
-      const confirmed = window.confirm(t('当前任务正在运行，归档前会先取消当前执行。继续吗？'))
-      if (!confirmed) return
-      const cancelled = await api.cancelRun(quest.activeRunId)
-      if (!cancelled.ok) {
-        setError(cancelled.error)
-        return
-      }
-      let cleared = false
-      for (let attempt = 0; attempt < 40; attempt += 1) {
-        const current = await api.getQuest(questId)
-        if (current.ok && !current.data.activeRunId) {
-          cleared = true
-          break
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 150))
-      }
-      if (!cleared) {
-        setError(t('当前执行尚未完全停止，请稍后再试'))
-        return
-      }
-    }
-    const result = await api.updateQuest(questId, { deleted: archived })
+  const handleReminderProjectPriorityChange = useCallback(async (
+    projectId: string,
+    priority: ReminderProjectPriority,
+  ) => {
+    const result = await api.setReminderProjectPriority(projectId, { priority })
     if (!result.ok) {
       setError(result.error)
       return
     }
-    if (archived && activeQuestId === questId && projectId) {
-      const index = unarchivedNavigationPool.findIndex((item) => item.id === questId)
-      const nextQuest = index >= 0 ? (unarchivedNavigationPool[index + 1] || unarchivedNavigationPool[index - 1]) : null
-      if (nextQuest) navigate(`/quests/${nextQuest.id}`)
-      else navigate(`/projects/${projectId}`)
-    }
+    setReminderProjectPriorities(result.data.settings)
     await loadData()
     await onDataChanged?.()
-  }, [activeQuestId, archivedTasks, globalArchivedTasks, globalTasks, loadData, navigate, onDataChanged, projectId, t, tasks])
-
-  const sourceTab = scopeModes[scopeTab]
-  const scopeData = useMemo(
-    () => resolveScopeData({
-      scope: scopeTab,
-      projectTasks: tasks,
-      projectArchivedTasks: archivedTasks,
-      projectTodos: todos,
-      projectArchivedTodos: archivedTodos,
-      globalTasks,
-      globalArchivedTasks,
-      globalTodos,
-      globalArchivedTodos,
-    }),
-    [scopeTab, tasks, archivedTasks, todos, archivedTodos, globalTasks, globalArchivedTasks, globalTodos, globalArchivedTodos],
-  )
+  }, [loadData, onDataChanged])
 
   const visibleTodos = useMemo(() => {
-    if (sourceTab === 'ai') return []
-    const base = scopeData.todos
+    const base = globalTodos
     if (filterTags.length === 0) return base
     return base.filter((todo) =>
       filterTags.some((ft) => todo.tags.some((tag) => tag.toLowerCase() === ft.toLowerCase()))
     )
-  }, [scopeData.todos, sourceTab, filterTags])
+  }, [filterTags, globalTodos])
 
-  const visibleTasks = useMemo(
-    () => sourceTab === 'human' ? [] : scopeData.tasks,
-    [scopeData.tasks, sourceTab],
-  )
-
-  const visibleArchivedTasks = useMemo(
-    () => sourceTab === 'human' ? [] : scopeData.archivedTasks,
-    [scopeData.archivedTasks, sourceTab],
-  )
+  const visibleReminders = useMemo(() => {
+    if (sourceTab !== 'reminder') return []
+    return globalReminders
+  }, [globalReminders, sourceTab])
 
   const visibleArchivedTodos = useMemo(
-    () => sourceTab === 'ai' ? [] : scopeData.archivedTodos,
-    [scopeData.archivedTodos, sourceTab],
+    () => sourceTab === 'human' ? globalArchivedTodos : [],
+    [globalArchivedTodos, sourceTab],
   )
-  const hasActiveTagFilter = filterTags.length > 0
+  const hasActiveTagFilter = sourceTab === 'human' && filterTags.length > 0
 
   const humanCount = useMemo(
-    () => scopeData.todos.filter((t) => t.status === 'pending').length,
-    [scopeData.todos],
+    () => globalTodos.filter((todo) => todo.status === 'pending').length,
+    [globalTodos],
   )
 
-  const aiCount = useMemo(
-    () => scopeData.tasks.length,
-    [scopeData.tasks],
+  const reminderCount = useMemo(
+    () => globalReminders.length,
+    [globalReminders],
   )
 
   const openHumanTodos = useMemo(
     () => sortOpenTodos(visibleTodos.filter((todo) => todo.status === 'pending')),
     [visibleTodos],
   )
-  const groupedOpenHumanTodos = useMemo(
-    () => scopeTab === 'global' ? groupTodosByProject(openHumanTodos, projects, t) : [],
-    [scopeTab, openHumanTodos, projects, t],
+
+  const sortedReminders = useMemo(
+    () => sortReminders(visibleReminders),
+    [visibleReminders],
   )
 
-  const historyHumanTodos = useMemo(
-    () => sortByUpdatedAt(visibleTodos.filter((todo) => todo.status !== 'pending')),
-    [visibleTodos],
-  )
-  const groupedHistoryHumanTodos = useMemo(
-    () => scopeTab === 'global' ? groupTodosByProject(historyHumanTodos, projects, t) : [],
-    [scopeTab, historyHumanTodos, projects, t],
+  const reminderProjectPriorityMap = useMemo(
+    () => new Map(reminderProjectPriorities.map((setting) => [setting.projectId, setting.priority] as const)),
+    [reminderProjectPriorities],
   )
 
-  const automationSections = useMemo(
-    () => buildAutomationSections(visibleTasks).map((entry) => ({
-      ...entry,
-      label: automationSectionLabel(entry.key, t),
-    })),
-    [t, visibleTasks],
+  const projectRailGroups = useMemo(
+    () => buildProjectRailGroups({
+      projects,
+      activeProjectId: sourceTab === 'reminder' ? null : projectId,
+      activeProjectName: sourceTab === 'reminder' ? null : projectName,
+      openTodos: sourceTab === 'human' ? openHumanTodos : [],
+      reminders: sourceTab === 'reminder' ? sortedReminders : [],
+      source: sourceTab,
+      reminderProjectPriorities: reminderProjectPriorityMap,
+      t,
+    }),
+    [openHumanTodos, projectId, projectName, projects, reminderProjectPriorityMap, sortedReminders, sourceTab, t],
   )
 
-  const visibleArchivedItems = useMemo(
-    () => hasActiveTagFilter
-      ? []
-      : sortRailTaskItems([
-          ...createTodoItems(visibleArchivedTodos, true),
-          ...createQuestItems(visibleArchivedTasks, true),
-        ]),
-    [hasActiveTagFilter, visibleArchivedTasks, visibleArchivedTodos],
+  const visibleArchivedTodosSorted = useMemo(
+    () => hasActiveTagFilter ? [] : sortByUpdatedAt(visibleArchivedTodos),
+    [hasActiveTagFilter, visibleArchivedTodos],
   )
 
   const allKnownTodos = useMemo(() => {
     const deduped = new Map<string, Todo>()
-    for (const item of [...todos, ...archivedTodos, ...globalTodos, ...globalArchivedTodos]) {
+    for (const item of [...globalTodos, ...globalArchivedTodos]) {
       deduped.set(item.id, item)
     }
     return Array.from(deduped.values())
-  }, [todos, archivedTodos, globalTodos, globalArchivedTodos])
+  }, [globalTodos, globalArchivedTodos])
   const selectedTodo = useMemo(
     () => (selectedTodoId ? allKnownTodos.find((todo) => todo.id === selectedTodoId) ?? null : null),
     [allKnownTodos, selectedTodoId],
   )
   const modalRoot = typeof document !== 'undefined' ? document.body : null
 
-  const questLinkState = useMemo(
-    () => taskOverlayState(location),
-    [location],
-  )
-  const historySectionKey = `${scopeTab}:${sourceTab}:todos`
-  const historyExpanded = historyExpandedByView[historySectionKey] ?? false
   const hasVisibleContent = (
     openHumanTodos.length > 0
-    || historyHumanTodos.length > 0
-    || automationSections.length > 0
+    || sortedReminders.length > 0
   )
 
   useEffect(() => {
@@ -846,8 +707,7 @@ export function TodoPanel({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedTodoId])
 
-  function openCreateModal(kind: TaskComposerKind) {
-    setCreateModalKind(kind)
+  function openCreateModal() {
     setCreateModalOpen(true)
   }
 
@@ -872,6 +732,50 @@ export function TodoPanel({
     if (ok) setTodoEditOpen(false)
   }
 
+  async function handleCreateReminder() {
+    if (!projectId) return
+    const nextTitle = reminderDraft.title.trim()
+    if (!nextTitle) {
+      setError(t('提醒标题不能为空'))
+      return
+    }
+    setReminderSaving(true)
+    const result = await api.createReminder({
+      projectId,
+      createdBy: 'human',
+      originQuestId: activeQuestId || undefined,
+      title: nextTitle,
+      body: reminderDraft.body.trim() || undefined,
+      remindAt: reminderDraft.remindAt.trim() ? fromDateTimeLocalValue(reminderDraft.remindAt) ?? undefined : undefined,
+      priority: reminderDraft.priority,
+    })
+    setReminderSaving(false)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    setReminderDraft({
+      title: '',
+      body: '',
+      remindAt: '',
+      priority: 'normal',
+    })
+    setCreateReminderOpen(false)
+    await loadData()
+    await onDataChanged?.()
+  }
+
+  function closeCreateReminder() {
+    if (reminderSaving) return
+    setCreateReminderOpen(false)
+    setReminderDraft({
+      title: '',
+      body: '',
+      remindAt: '',
+      priority: 'normal',
+    })
+  }
+
   const handleOpenTodo = useCallback((todoId: string) => {
     setSelectedTodoId(todoId)
   }, [])
@@ -888,14 +792,14 @@ export function TodoPanel({
     <>
       <aside className="pluse-rail">
         <div className="pluse-mobile-panel-header">
-          <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭任务面板')} title={t('关闭任务面板')}>
+          <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭工作台')} title={t('关闭工作台')}>
             <CloseIcon className="pluse-icon" />
           </button>
         </div>
 
         <div className="pluse-rail-head pluse-rail-head-sidebar">
           <div className="pluse-sidebar-project-context">
-            <span className="pluse-sidebar-project-context-domain">{`${t('任务栏')}-${t('项目')}`}</span>
+            <span className="pluse-sidebar-project-context-domain">{t('工作台')}</span>
             <div className="pluse-project-switcher">
               <button
                 type="button"
@@ -910,17 +814,29 @@ export function TodoPanel({
               </button>
             </div>
           </div>
-          <div className="pluse-sidebar-tabs pluse-task-panel-tabs" role="tablist" aria-label={t('任务视图')}>
-            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'global' ? ' is-active' : ''}`} onClick={() => setScopeTab('global')}>
-              {t('全局')}
+          <div className="pluse-sidebar-tabs pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
+            <button
+              type="button"
+              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
+              onClick={() => setSourceTab('human')}
+              aria-selected={sourceTab === 'human'}
+            >
+              {t('待办')}
+              {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
             </button>
-            <button type="button" className={`pluse-sidebar-tab pluse-task-panel-tab${scopeTab === 'project' ? ' is-active' : ''}`} onClick={() => setScopeTab('project')}>
-              {t('项目')}
+            <button
+              type="button"
+              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
+              onClick={() => setSourceTab('reminder')}
+              aria-selected={sourceTab === 'reminder'}
+            >
+              {t('提醒')}
+              {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
             </button>
           </div>
         </div>
 
-        {projectTags.length > 0 ? (
+        {sourceTab === 'human' && projectTags.length > 0 ? (
           <div className="pluse-sidebar-search pluse-todo-tag-filter-row">
             {projectTags.map((tag) => (
               <button
@@ -938,239 +854,121 @@ export function TodoPanel({
         ) : null}
 
         <div className="pluse-task-list">
-
-          {sourceTab !== 'ai' && scopeTab === 'global' ? (
-            <>
-              {groupedOpenHumanTodos.map((group) => {
-                const sectionKey = `global:human:open:${group.key}`
-                const expanded = isSectionExpanded(sectionKey)
-                return (
-                <section key={`global-open-${group.key}`} className="pluse-domain-group pluse-task-stream">
-                  <div className="pluse-domain-group-head">
-                    <button
-                      type="button"
-                      className="pluse-domain-group-toggle"
-                      onClick={() => toggleSectionExpanded(sectionKey)}
-                    >
-                      <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                      <div className="pluse-domain-group-copy">
-                        <strong>{group.label}</strong>
-                        <span>{group.items.length}</span>
-                      </div>
-                    </button>
-                  </div>
-                  {expanded ? (
-                    <div className="pluse-note-list">
-                      {group.items.map((todo) => (
-                        <TodoRailItem
-                          key={todo.id}
-                          todo={todo}
-                          archived={false}
-                          activeQuestId={activeQuestId}
-                          locale={locale}
-                          t={t}
-                          onOpenTodo={handleOpenTodo}
-                          onToggleTodoStatus={handleToggleTodoStatus}
-                          onArchiveTodo={handleArchiveTodo}
-                          onOpenTodoSource={handleOpenTodoSource}
-                          onRequestClose={onRequestClose}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-                )
-              })}
-
-              {groupedHistoryHumanTodos.length > 0 ? (
-                <section className="pluse-domain-group pluse-task-history">
-                  <div className="pluse-domain-group-head">
-                    <button
-                      type="button"
-                      className="pluse-domain-group-toggle"
-                      onClick={() => toggleSectionExpanded('global:human:history', false)}
-                    >
-                      <span className="pluse-domain-group-chevron" aria-hidden="true">{isSectionExpanded('global:human:history', false) ? '▾' : '▸'}</span>
-                      <div className="pluse-domain-group-copy">
-                        <strong>{t('历史')}</strong>
-                        <span>{historyHumanTodos.length}</span>
-                      </div>
-                    </button>
-                  </div>
-                  {isSectionExpanded('global:human:history', false) ? (
-                    <div className="pluse-task-history-list">
-                      {groupedHistoryHumanTodos.map((group) => {
-                        const sectionKey = `global:human:history:${group.key}`
-                        const expanded = isSectionExpanded(sectionKey, false)
-                        return (
-                          <section key={`global-history-${group.key}`} className="pluse-domain-group pluse-task-history">
-                            <div className="pluse-domain-group-head">
-                              <button
-                                type="button"
-                                className="pluse-domain-group-toggle"
-                                onClick={() => toggleSectionExpanded(sectionKey, false)}
-                              >
-                                <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-                                <div className="pluse-domain-group-copy">
-                                  <strong>{group.label}</strong>
-                                  <span>{group.items.length}</span>
-                                </div>
-                              </button>
-                            </div>
-                            {expanded ? (
-                              <div className="pluse-note-list pluse-task-history-list">
-                                {group.items.map((todo) => (
-                                  <TodoRailItem
-                                    key={todo.id}
-                                    todo={todo}
-                                    archived={false}
-                                    activeQuestId={activeQuestId}
-                                    locale={locale}
-                                    t={t}
-                                    onOpenTodo={handleOpenTodo}
-                                    onToggleTodoStatus={handleToggleTodoStatus}
-                                    onArchiveTodo={handleArchiveTodo}
-                                    onOpenTodoSource={handleOpenTodoSource}
-                                    onRequestClose={onRequestClose}
-                                  />
-                                ))}
-                              </div>
-                            ) : null}
-                          </section>
-                        )
-                      })}
-                    </div>
-                  ) : null}
-                </section>
-              ) : null}
-            </>
-          ) : null}
-
-          {sourceTab !== 'ai' && scopeTab !== 'global' && openHumanTodos.length > 0 ? (
-            <section className="pluse-domain-group pluse-task-stream">
-              <div className="pluse-domain-group-head">
-                <button
-                  type="button"
-                  className="pluse-domain-group-toggle"
-                  onClick={() => toggleSectionExpanded(`${scopeTab}:${sourceTab}:open`)}
-                >
-                  <span className="pluse-domain-group-chevron" aria-hidden="true">{isSectionExpanded(`${scopeTab}:${sourceTab}:open`) ? '▾' : '▸'}</span>
-                  <div className="pluse-domain-group-copy">
-                    <strong>{t('待办')}</strong>
-                    <span>{openHumanTodos.length}</span>
-                  </div>
-                </button>
-              </div>
-              {isSectionExpanded(`${scopeTab}:${sourceTab}:open`) ? (
-                <div className="pluse-note-list">
-                  {openHumanTodos.map((todo) => (
-                    <TodoRailItem
-                      key={todo.id}
-                      todo={todo}
-                      archived={false}
-                      activeQuestId={activeQuestId}
-                      locale={locale}
-                      t={t}
-                      onOpenTodo={handleOpenTodo}
-                      onToggleTodoStatus={handleToggleTodoStatus}
-                      onArchiveTodo={handleArchiveTodo}
-                      onOpenTodoSource={handleOpenTodoSource}
-                      onRequestClose={onRequestClose}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {sourceTab !== 'ai' && scopeTab !== 'global' && historyHumanTodos.length > 0 ? (
-            <section className="pluse-domain-group pluse-task-history">
-              <div className="pluse-domain-group-head">
-                <button
-                  type="button"
-                  className="pluse-domain-group-toggle"
-                  onClick={() => setHistoryExpandedByView((current) => ({
-                    ...current,
-                    [historySectionKey]: !historyExpanded,
-                  }))}
-                >
-                  <span className="pluse-domain-group-chevron" aria-hidden="true">{historyExpanded ? '▾' : '▸'}</span>
-                  <div className="pluse-domain-group-copy">
-                    <strong>{t('历史')}</strong>
-                    <span>{historyHumanTodos.length}</span>
-                  </div>
-                </button>
-              </div>
-              {historyExpanded ? (
-                <div className="pluse-note-list pluse-task-history-list">
-                  {historyHumanTodos.map((todo) => (
-                    <TodoRailItem
-                      key={todo.id}
-                      todo={todo}
-                      archived={false}
-                      activeQuestId={activeQuestId}
-                      locale={locale}
-                      t={t}
-                      onOpenTodo={handleOpenTodo}
-                      onToggleTodoStatus={handleToggleTodoStatus}
-                      onArchiveTodo={handleArchiveTodo}
-                      onOpenTodoSource={handleOpenTodoSource}
-                      onRequestClose={onRequestClose}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {sourceTab !== 'human' ? automationSections.map((section) => {
-            const sectionKey = `${scopeTab}:${sourceTab}:automation:${section.key}`
-            const expanded = isSectionExpanded(sectionKey)
+          {projectRailGroups.map((group) => {
+            const reminderCollapsed = sourceTab === 'reminder' && collapsedReminderProjectKeys.includes(group.key)
+            const expanded = sourceTab === 'reminder'
+              ? !reminderCollapsed
+              : expandedProjectGroupKey === group.key
+            const groupCount = sourceTab === 'human'
+              ? group.openTodos.length
+              : group.reminders.length
+            const hasGroupContent = groupCount > 0
             return (
-            <section key={section.key} className="pluse-domain-group pluse-task-stream">
+            <section
+              key={group.key}
+              className="pluse-domain-group pluse-task-project-group"
+            >
               <div className="pluse-domain-group-head">
                 <button
                   type="button"
                   className="pluse-domain-group-toggle"
-                  onClick={() => toggleSectionExpanded(sectionKey)}
+                  onClick={() => {
+                    if (sourceTab === 'reminder') {
+                      setCollapsedReminderProjectKeys((current) =>
+                        current.includes(group.key)
+                          ? current.filter((key) => key !== group.key)
+                          : [...current, group.key]
+                      )
+                    } else {
+                      setExpandedProjectGroupKey((current) => current === group.key ? null : group.key)
+                    }
+                  }}
                 >
                   <span className="pluse-domain-group-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
                   <div className="pluse-domain-group-copy">
-                    <strong>{section.label}</strong>
-                    <span>{section.items.length}</span>
+                    <strong>{group.label}</strong>
+                    <span>{groupCount}</span>
                   </div>
                 </button>
+                {sourceTab === 'reminder' ? (
+                  <select
+                    className={`pluse-reminder-project-priority-select is-${group.reminderPriority}`}
+                    value={group.reminderPriority}
+                    aria-label={t('项目提醒优先级')}
+                    title={t('项目提醒优先级')}
+                    onChange={(event) => void handleReminderProjectPriorityChange(
+                      group.key,
+                      event.currentTarget.value as ReminderProjectPriority,
+                    )}
+                  >
+                    <option value="mainline">{t('主线')}</option>
+                    <option value="priority">{t('优先')}</option>
+                    <option value="normal">{t('普通')}</option>
+                  </select>
+                ) : null}
               </div>
               {expanded ? (
-                <div className="pluse-note-list">
-                  {section.items.map((quest) => (
-                    <QuestRailItem
-                      key={quest.id}
-                      quest={quest}
-                      archived={false}
-                      activeQuestId={activeQuestId}
-                      locale={locale}
-                      t={t}
-                      questLinkState={questLinkState}
-                      onRequestClose={onRequestClose}
-                      onTriggerQuest={handleTriggerQuest}
-                      onArchiveQuest={handleArchiveQuest}
-                    />
-                  ))}
+                <div className="pluse-task-project-folder">
+                  {sourceTab === 'human' && group.openTodos.length > 0 ? (
+                    <div className="pluse-task-folder-section">
+                      <div className="pluse-note-list">
+                        {group.openTodos.map((todo) => (
+                          <TodoRailItem
+                            key={todo.id}
+                            todo={todo}
+                            archived={false}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            onOpenTodo={handleOpenTodo}
+                            onToggleTodoStatus={handleToggleTodoStatus}
+                            onArchiveTodo={handleArchiveTodo}
+                            onOpenTodoSource={handleOpenTodoSource}
+                            onRequestClose={onRequestClose}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {sourceTab === 'reminder' && group.reminders.length > 0 ? (
+                    <div className="pluse-task-folder-section">
+                      <div className="pluse-note-list">
+                        {group.reminders.map((reminder) => (
+                          <ReminderRailItem
+                            key={reminder.id}
+                            reminder={reminder}
+                            activeQuestId={activeQuestId}
+                            locale={locale}
+                            t={t}
+                            onDeleteReminder={handleDeleteReminder}
+                            onRequestClose={onRequestClose}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {!hasGroupContent ? (
+                    <div className="pluse-rail-empty pluse-task-empty-state">
+                      <strong>{t('暂无任务')}</strong>
+                      <p>{formatEmptyMessage(sourceTab, t)}</p>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>
             )
-          }) : null}
+          })}
 
-          {!hasVisibleContent ? (
+          {!hasVisibleContent && projectRailGroups.length === 0 ? (
             <div className="pluse-rail-empty pluse-task-empty-state">
               <strong>{t('暂无任务')}</strong>
-              <p>{formatScopeEmptyMessage(scopeTab, sourceTab, t)}</p>
+              <p>{formatEmptyMessage(sourceTab, t)}</p>
             </div>
           ) : null}
 
-          {visibleArchivedItems.length > 0 ? (
+          {visibleArchivedTodosSorted.length > 0 ? (
             <section className="pluse-domain-group pluse-task-archive">
               <div className="pluse-domain-group-head">
                 <button
@@ -1181,43 +979,26 @@ export function TodoPanel({
                   <span className="pluse-domain-group-chevron" aria-hidden="true">{archivedExpanded ? '▾' : '▸'}</span>
                   <div className="pluse-domain-group-copy">
                     <strong>{t('归档')}</strong>
-                    <span>{visibleArchivedItems.length}</span>
+                    {archivedExpanded ? <span>{visibleArchivedTodosSorted.length}</span> : null}
                   </div>
                 </button>
               </div>
               {archivedExpanded ? (
                 <div className="pluse-note-list" style={{ marginTop: 8 }}>
-                  {visibleArchivedItems.map((item) => (
-                    item.entityType === 'todo'
-                      ? (
-                          <TodoRailItem
-                            key={item.todo.id}
-                            todo={item.todo}
-                            archived={item.archived}
-                            activeQuestId={activeQuestId}
-                            locale={locale}
-                            t={t}
-                            onOpenTodo={handleOpenTodo}
-                            onToggleTodoStatus={handleToggleTodoStatus}
-                            onArchiveTodo={handleArchiveTodo}
-                            onOpenTodoSource={handleOpenTodoSource}
-                            onRequestClose={onRequestClose}
-                          />
-                        )
-                      : (
-                          <QuestRailItem
-                            key={item.quest.id}
-                            quest={item.quest}
-                            archived={item.archived}
-                            activeQuestId={activeQuestId}
-                            locale={locale}
-                            t={t}
-                            questLinkState={questLinkState}
-                            onRequestClose={onRequestClose}
-                            onTriggerQuest={handleTriggerQuest}
-                            onArchiveQuest={handleArchiveQuest}
-                          />
-                        )
+                  {visibleArchivedTodosSorted.map((todo) => (
+                    <TodoRailItem
+                      key={todo.id}
+                      todo={todo}
+                      archived
+                      activeQuestId={activeQuestId}
+                      locale={locale}
+                      t={t}
+                      onOpenTodo={handleOpenTodo}
+                      onToggleTodoStatus={handleToggleTodoStatus}
+                      onArchiveTodo={handleArchiveTodo}
+                      onOpenTodoSource={handleOpenTodoSource}
+                      onRequestClose={onRequestClose}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -1226,33 +1007,18 @@ export function TodoPanel({
         </div>
 
         <section className="pluse-rail-section-new-task">
-          <div className="pluse-rail-source-switch" role="tablist" aria-label={t('对象类型')}>
-            <button
-              type="button"
-              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'human' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab(scopeTab, 'human')}
-            >
-              {t('待办')}
-              {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
-            </button>
-            <button
-              type="button"
-              className={`pluse-tab pluse-rail-source-tab${sourceTab === 'ai' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab(scopeTab, 'ai')}
-            >
-              {t('自动化')}
-              {aiCount > 0 ? <span className="pluse-tab-count">{aiCount}</span> : null}
-            </button>
-          </div>
           <button
             type="button"
             className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
-            onClick={() => openCreateModal(sourceTab)}
-            aria-label={sourceTab === 'human' ? t('新建待办') : t('新建自动化')}
+            onClick={() => {
+              if (sourceTab === 'reminder') setCreateReminderOpen(true)
+              else openCreateModal()
+            }}
+            aria-label={sourceTab === 'reminder' ? t('新建提醒') : t('新建待办')}
             disabled={!projectId}
           >
             <PlusIcon className="pluse-icon" />
-            <span>{sourceTab === 'human' ? t('新建待办') : t('新建自动化')}</span>
+            <span>{sourceTab === 'reminder' ? t('新建提醒') : t('新建待办')}</span>
           </button>
         </section>
 
@@ -1263,14 +1029,112 @@ export function TodoPanel({
         open={createModalOpen}
         projectId={projectId}
         projectName={projectName}
-        initialKind={createModalKind}
+        initialKind="human"
+        showKindSwitch={false}
         onClose={() => setCreateModalOpen(false)}
-        onCreated={async ({ kind }) => {
+        onCreated={async () => {
           await loadData()
           await onDataChanged?.()
-          if (kind === 'ai') onRequestClose?.()
         }}
       />
+
+      {createReminderOpen && modalRoot ? createPortal(
+        <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={closeCreateReminder}>
+          <section
+            className="pluse-modal-panel pluse-todo-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reminder-create-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="pluse-todo-detail-head">
+              <div className="pluse-todo-detail-identity">
+                <span className="pluse-task-detail-kicker">{t('提醒')}</span>
+                <div className="pluse-task-detail-title-row">
+                  <h2 id="reminder-create-title">{t('新建提醒')}</h2>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="pluse-icon-button"
+                onClick={closeCreateReminder}
+                aria-label={t('关闭')}
+                title={t('关闭')}
+                disabled={reminderSaving}
+              >
+                <CloseIcon className="pluse-icon" />
+              </button>
+            </header>
+
+            <div className="pluse-todo-detail-body">
+              <div className="pluse-form-grid pluse-todo-detail-form">
+                <label>
+                  <span>{t('标题')}</span>
+                  <input
+                    value={reminderDraft.title}
+                    onChange={(event) => setReminderDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder={t('输入提醒标题')}
+                    maxLength={160}
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  <span>{t('时间')}</span>
+                  <input
+                    type="datetime-local"
+                    value={reminderDraft.remindAt}
+                    onChange={(event) => setReminderDraft((current) => ({ ...current, remindAt: event.target.value }))}
+                  />
+                </label>
+                <div className="pluse-form-field">
+                  <span>{t('优先级')}</span>
+                  <div className="pluse-priority-selector">
+                    {(['urgent', 'high', 'normal', 'low'] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        className={`pluse-priority-option is-${p}${reminderDraft.priority === p ? ' is-active' : ''}`}
+                        onClick={() => setReminderDraft((current) => ({ ...current, priority: p }))}
+                      >
+                        {p === 'urgent' ? t('紧急') : p === 'high' ? t('高') : p === 'normal' ? t('普通') : t('低')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label>
+                  <span>{t('内容')}</span>
+                  <textarea
+                    value={reminderDraft.body}
+                    onChange={(event) => setReminderDraft((current) => ({ ...current, body: event.target.value }))}
+                    placeholder={t('补充提醒内容')}
+                    rows={5}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <footer className="pluse-todo-detail-actions">
+              <button
+                type="button"
+                className="pluse-button"
+                onClick={() => void handleCreateReminder()}
+                disabled={reminderSaving || !reminderDraft.title.trim()}
+              >
+                {reminderSaving ? t('保存中…') : t('创建提醒')}
+              </button>
+              <button
+                type="button"
+                className="pluse-button pluse-button-ghost"
+                onClick={closeCreateReminder}
+                disabled={reminderSaving}
+              >
+                {t('取消')}
+              </button>
+            </footer>
+          </section>
+        </div>,
+        modalRoot,
+      ) : null}
 
       {selectedTodo && modalRoot ? createPortal(
         <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={() => setSelectedTodoId(null)}>

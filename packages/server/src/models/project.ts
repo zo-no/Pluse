@@ -84,6 +84,17 @@ export function getProjectByWorkDir(workDir: string): Project | null {
   return row ? rowToProject(row) : null
 }
 
+export function getActiveProjectByName(name: string): Project | null {
+  const db = getDb()
+  const row = db.query<ProjectRow, [string]>(
+    `SELECT * FROM projects
+     WHERE name = ? AND archived = 0 AND visibility = 'user'
+     ORDER BY pinned DESC, updated_at DESC
+     LIMIT 1`
+  ).get(name)
+  return row ? rowToProject(row) : null
+}
+
 export function createProjectRecord(
   input: CreateProjectInput & {
     id?: string

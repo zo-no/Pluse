@@ -7,12 +7,13 @@ import { MoonIcon, SunIcon } from '@/views/components/icons'
 import type { ThemeMode } from '@/views/utils/theme'
 
 interface LoginPageProps {
+  setupRequired?: boolean
   onAuthenticated?: (auth: AuthMe) => void
   theme: ThemeMode
   onToggleTheme: () => void
 }
 
-export function LoginPage({ onAuthenticated, theme, onToggleTheme }: LoginPageProps) {
+export function LoginPage({ setupRequired = false, onAuthenticated, theme, onToggleTheme }: LoginPageProps) {
   const { locale, setLocale, t } = useI18n()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
@@ -33,7 +34,11 @@ export function LoginPage({ onAuthenticated, theme, onToggleTheme }: LoginPagePr
   async function handlePasswordLogin(event: React.FormEvent) {
     event.preventDefault()
     setError(null)
-    const result = await api.login({ username, password })
+    const trimmedUsername = username.trim()
+    const result = await api.login({
+      ...(trimmedUsername ? { username: trimmedUsername } : {}),
+      password,
+    })
     if (!result.ok) {
       setError(result.error)
       return
@@ -77,6 +82,13 @@ export function LoginPage({ onAuthenticated, theme, onToggleTheme }: LoginPagePr
           </div>
           <h1>Pluse</h1>
           <p>{t('单端口、本地优先，项目、会话、任务与 Todo 共用同一个工作域。')}</p>
+          {setupRequired ? (
+            <div className="pluse-login-notice">
+              <p>{t('尚未配置登录凭据。请先在服务器本机执行以下命令，然后刷新本页登录。')}</p>
+              <code>pnpm pluse auth setup --password &quot;your-password&quot;</code>
+              <code>pnpm pluse auth token</code>
+            </div>
+          ) : null}
 
         <form className="pluse-login-form" onSubmit={handlePasswordLogin}>
           <label>{t('用户名')}</label>

@@ -155,7 +155,7 @@ export function listQuests(filter: ListQuestsFilter = {}): Quest[] {
   ).all(...params)
 
   const quests = rows.map(rowToQuest)
-  return quests.sort((a, b) => {
+  const sorted = quests.sort((a, b) => {
     if (a.kind === 'session' && b.kind === 'session') {
       if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1
       return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
@@ -171,6 +171,8 @@ export function listQuests(filter: ListQuestsFilter = {}): Quest[] {
     }
     return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
   })
+
+  return filter.limit && filter.limit > 0 ? sorted.slice(0, filter.limit) : sorted
 }
 
 export function getQuest(id: string): Quest | null {

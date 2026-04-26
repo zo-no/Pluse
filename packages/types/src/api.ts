@@ -98,7 +98,7 @@ export interface ProjectOverview {
   }
 }
 
-export type ProjectActivitySubjectType = 'session' | 'task' | 'todo'
+export type ProjectActivitySubjectType = 'session' | 'task' | 'todo' | 'reminder'
 
 export type ProjectActivityOp =
   | 'created'
@@ -154,5 +154,8 @@ export type SseMessage =
   | { type: 'domain_updated' | 'domain_deleted'; data: { domainId: string } }
   | { type: 'quest_updated' | 'quest_deleted'; data: { questId: string; projectId: string } }
   | { type: 'todo_updated' | 'todo_deleted'; data: { todoId: string; projectId: string; originQuestId?: string } }
+  | { type: 'reminder_updated' | 'reminder_deleted'; data: { reminderId: string; projectId: string; originQuestId?: string } }
+  | { type: 'reminder_project_priority_updated'; data: { projectId: string } }
+  | { type: 'notification_updated' | 'notification_deleted'; data: { notificationId: string; projectId: string; originQuestId?: string } }
   | { type: 'run_updated'; data: { runId: string; questId: string; projectId: string } }
   | { type: 'run_line'; data: { runId: string; questId: string; projectId: string; line: string; ts: string } }

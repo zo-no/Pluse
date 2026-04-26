@@ -123,16 +123,19 @@ export const questsRouter = new Hono()
 
 questsRouter.get('/quests', (c) => {
   const search = c.req.query('search')?.trim().toLowerCase()
+  const rawLimit = Number.parseInt(c.req.query('limit') || '', 10)
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : undefined
   const items = listQuestViews({
     projectId: c.req.query('projectId') || undefined,
     kind: (c.req.query('kind') as Quest['kind'] | undefined) || undefined,
     deleted: c.req.query('deleted') === 'true',
     status: (c.req.query('status') as Quest['status'] | undefined) || undefined,
+    limit: search ? undefined : limit,
   })
   const filtered = search
     ? items.filter((quest) => `${quest.name ?? ''} ${quest.title ?? ''} ${quest.description ?? ''}`.toLowerCase().includes(search))
     : items
-  return c.json(ok<Quest[]>(filtered))
+  return c.json(ok<Quest[]>(search && limit ? filtered.slice(0, limit) : filtered))
 })
 
 questsRouter.get('/quests/:id', (c) => {

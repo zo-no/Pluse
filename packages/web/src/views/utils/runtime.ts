@@ -2,11 +2,14 @@ import type { RuntimeModelCatalog } from '@pluse/types'
 
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
-export const DEFAULT_CODEX_MODEL_ID = 'gpt-5.3-codex-spark'
+export const DEFAULT_CODEX_MODEL_ID = 'gpt-5.4'
 export const DEFAULT_CLAUDE_MODEL_ID = 'sonnet[1m]'
 
 const FALLBACK_CODEX_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh']
 const CODEX_MODEL_ALIASES: Record<string, string> = {
+  '5.5': 'gpt-5.5',
+  'codex5.5': 'gpt-5.5',
+  'codex-5.5': 'gpt-5.5',
   '5.3-codex-spark': 'gpt-5.3-codex-spark',
   '5.3-codex': 'gpt-5.3-codex',
   '5.2-codex': 'gpt-5.2-codex',
@@ -14,6 +17,7 @@ const CODEX_MODEL_ALIASES: Record<string, string> = {
   '5.1-codex-mini': 'gpt-5.1-codex-mini',
 }
 const FALLBACK_CODEX_MODELS: CatalogModel[] = [
+  { id: 'gpt-5.5', label: 'GPT-5.5', defaultEffort: 'medium', effortLevels: FALLBACK_CODEX_EFFORT_LEVELS },
   { id: 'gpt-5.4', label: 'GPT-5.4', defaultEffort: 'medium', effortLevels: FALLBACK_CODEX_EFFORT_LEVELS },
   { id: 'gpt-5.2-codex', label: 'GPT-5.2-Codex', defaultEffort: 'medium', effortLevels: FALLBACK_CODEX_EFFORT_LEVELS },
   { id: 'gpt-5.1-codex-max', label: 'GPT-5.1-Codex-Max', defaultEffort: 'medium', effortLevels: FALLBACK_CODEX_EFFORT_LEVELS },

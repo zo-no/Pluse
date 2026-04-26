@@ -48,6 +48,10 @@ export function getInboxDir(): string {
   return ensureDir(join(getPluseRoot(), 'inbox'))
 }
 
+export function getDefaultEntryProjectDir(): string {
+  return ensureDir(join(getPluseRoot(), 'self-dialogue'))
+}
+
 export function getSystemRuntimeDir(): string {
   return ensureDir(join(getPluseRoot(), 'system', 'runtime'))
 }

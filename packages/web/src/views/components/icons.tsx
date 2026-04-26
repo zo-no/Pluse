@@ -154,6 +154,15 @@ export function PlayIcon(props: IconProps) {
   )
 }
 
+export function PauseIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M9 6.5v11" />
+      <path d="M15 6.5v11" />
+    </BaseIcon>
+  )
+}
+
 export function CheckIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

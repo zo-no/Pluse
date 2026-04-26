@@ -10,12 +10,59 @@ function makeCookieHeader(sessionToken: string, csrfToken: string): string {
   return `pulse_session=${sessionToken}; pulse_csrf=${csrfToken}`
 }
 
+function cookieHeaderFromSetCookie(headers: Headers): string {
+  const value = headers.get('set-cookie') ?? ''
+  return value
+    .split(/,(?=\s*pulse_)/)
+    .map((part) => part.trim().split(';')[0])
+    .filter(Boolean)
+    .join('; ')
+}
+
 describe('auth middleware', () => {
+  it('rejects business API access before auth is configured', async () => {
+    const opened = await POST<Project>(
+      '/api/projects/open',
+      { workDir: makeWorkDir('no-auth'), name: 'No Auth' },
+      { auth: false },
+    )
+    expect(opened.status).toBe(401)
+    expect(opened.json.ok).toBe(false)
+  })
+
+  it('accepts password login without a username when username auth is not configured', async () => {
+    setPassword('secret')
+
+    const login = await POST<{ ok: true }>('/auth/login', {
+      username: '',
+      password: 'secret',
+    })
+    expect(login.status).toBe(200)
+    expect(login.json.ok).toBe(true)
+  })
+
+  it('sets cookies on web login and accepts them for API reads', async () => {
+    setPassword('secret')
+
+    const login = await POST<{ ok: true }>('/auth/login', { password: 'secret' })
+    expect(login.status).toBe(200)
+
+    const cookie = cookieHeaderFromSetCookie(login.headers)
+    expect(cookie).toContain('pulse_session=')
+    expect(cookie).toContain('pulse_csrf=')
+
+    const projects = await GET<Project[]>('/api/projects', {
+      headers: { Cookie: cookie },
+    })
+    expect(projects.status).toBe(200)
+    expect(projects.json.ok).toBe(true)
+  })
+
   it('accepts bearer tokens for authenticated API access', async () => {
     setPassword('secret')
     const token = getOrCreateApiToken()
 
-    const unauthorized = await GET<Project[]>('/api/projects')
+    const unauthorized = await GET<Project[]>('/api/projects', { auth: false })
     expect(unauthorized.status).toBe(401)
 
     const authorized = await GET<Project[]>('/api/projects', {

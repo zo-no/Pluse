@@ -279,12 +279,18 @@ Automation 的 `executorOptions.continueQuest` 控制每次执行是否复用 Qu
 
 ### 超时
 
-```
-每个 Run 创建时设置超时（默认 300 秒，可通过 quest.executorOptions.timeout 覆盖，仅 task 态有效）：
-  超时后：
-    SIGTERM → 等 15 秒 grace period → SIGKILL
-    Run state = 'failed', failureReason = 'timeout'
-    quest.status = 'failed'（仅 task 态）
+AI provider run 默认不设置总时长超时。只有显式配置时才设置超时：
+
+- `PLUSE_RUN_TIMEOUT_MS` / `PULSE_RUN_TIMEOUT_MS`：全局 provider run 超时，单位毫秒
+- `quest.executorOptions.timeout`：task 态 provider run 超时，单位秒，优先级高于全局 provider run 超时
+- script executor 默认仍为 300 秒，可通过 `executorConfig.timeout` 覆盖
+
+触发超时后：
+
+```text
+SIGTERM → 等 15 秒 grace period → SIGKILL
+Run state = 'failed', failureReason = 'timeout'
+quest.status = 'failed'（仅 task 态）
 ```
 
 ### 取消

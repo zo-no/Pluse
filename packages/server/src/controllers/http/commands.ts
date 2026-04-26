@@ -112,6 +112,60 @@ export function getCommandCatalog(): CommandCatalog {
         ],
       },
       {
+        name: 'reminder',
+        description: '提醒管理',
+        commands: [
+          {
+            name: 'reminder list',
+            cli: 'pluse reminder list --project-id <id> [--order attention|time] [--type review|custom|follow_up|needs_input|failure] [--json]',
+            api: 'GET /api/reminders?projectId=<id>&order=attention',
+            description: '按提醒模块触达顺序列出项目下所有提醒',
+          },
+          {
+            name: 'reminder project-priority list',
+            cli: 'pluse reminder project-priority list [--json]',
+            api: 'GET /api/reminders/project-priorities',
+            description: '列出提醒模块的项目优先级',
+          },
+          {
+            name: 'reminder project-priority set',
+            cli: 'pluse reminder project-priority set <project-id> --priority mainline|priority|normal [--json]',
+            api: 'PATCH /api/reminders/project-priorities/:projectId',
+            description: '设置提醒模块的项目优先级',
+          },
+          {
+            name: 'reminder get',
+            cli: 'pluse reminder get <id> [--json]',
+            api: 'GET /api/reminders/<id>',
+            description: '获取提醒详情',
+          },
+          {
+            name: 'reminder create',
+            cli: 'pluse reminder create --project-id <id> --title <title> [--type review|custom|follow_up|needs_input|failure] [--remind-at <time>] [--json]',
+            api: 'POST /api/reminders',
+            description: '创建新的提醒',
+          },
+          {
+            name: 'reminder update',
+            cli: 'pluse reminder update <id> [--remind-at <time>] [--json]',
+            api: 'PATCH /api/reminders/:id',
+            description: '更新提醒内容或时间',
+          },
+          {
+            name: 'reminder snooze',
+            cli: 'pluse reminder snooze <id> --until <time> [--json]',
+            api: 'PATCH /api/reminders/:id',
+            description: '稍后提醒',
+          },
+          {
+            name: 'reminder delete',
+            cli: 'pluse reminder delete <id> --confirm [--json]',
+            api: 'DELETE /api/reminders/:id',
+            description: '删除提醒',
+          },
+        ],
+      },
+      {
         name: 'run',
         description: '执行记录',
         commands: [

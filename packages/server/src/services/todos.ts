@@ -53,30 +53,6 @@ export function createTodoWithEffects(input: CreateTodoInput): Todo {
   return todo
 }
 
-function hasTag(tags: string[] | undefined, value: string): boolean {
-  return (tags ?? []).some((tag) => tag.trim().toLowerCase() === value)
-}
-
-export function findOpenReviewTodoForQuest(projectId: string, questId: string): Todo | null {
-  const todos = listTodos({
-    projectId,
-    status: 'pending',
-    deleted: false,
-    tags: ['review'],
-  })
-  return todos.find((todo) => todo.originQuestId === questId) ?? null
-}
-
-export function ensureReviewTodoWithEffects(input: CreateTodoInput): Todo {
-  if (!input.originQuestId || !hasTag(input.tags, 'review')) {
-    return createTodoWithEffects(input)
-  }
-
-  const existing = findOpenReviewTodoForQuest(input.projectId, input.originQuestId)
-  if (existing) return existing
-  return createTodoWithEffects(input)
-}
-
 export function updateTodoWithEffects(id: string, input: UpdateTodoInput): Todo {
   const before = getTodo(id)
   if (!before) throw new Error(`Todo not found: ${id}`)

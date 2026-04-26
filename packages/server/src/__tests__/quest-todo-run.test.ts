@@ -9,8 +9,10 @@ import type {
   Quest,
   QuestEvent,
   QuestOp,
+  Reminder,
   Run,
   SessionCategory,
+  SetReminderProjectPriorityResult,
   Todo,
   UploadedAsset,
 } from '@pluse/types'
@@ -19,10 +21,11 @@ import { appendEvent } from '../models/history'
 import { getQuest, updateQuest } from '../models/quest'
 import { createRun, getRun, getRunsByQuest, updateRun } from '../models/run'
 import { recoverPendingSessionAutoRenames } from '../runtime/session-runner'
+import { listReminders } from '../models/reminder'
 import { listProjectTags, listTodos } from '../models/todo'
 import { loadGlobalHooksConfig, saveGlobalHooksConfig } from '../services/hooks'
 import { stopScheduler } from '../services/scheduler'
-import { updateTodoWithEffects } from '../services/todos'
+import { deleteReminderWithEffects } from '../services/reminders'
 import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
 
@@ -48,6 +51,10 @@ const RUNTIME_ENV_KEYS = [
   'PLUSE_FAKE_CODEX_FAIL_ON_RESUME',
   'PLUSE_FAKE_CODEX_REPLY',
   'PLUSE_FAKE_CODEX_THREAD_ID',
+  'PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL',
+  'PLUSE_FAKE_CODEX_UNAVAILABLE_MODEL',
+  'PLUSE_RUN_TIMEOUT_MS',
+  'PULSE_RUN_TIMEOUT_MS',
 ]
 
 function resetRuntimeEnv(): void {
@@ -102,6 +109,22 @@ if [ "\${PLUSE_FAKE_CODEX_FAIL_ON_RESUME:-}" = "1" ]; then
   case " $* " in
     *" resume "*)
       printf '%s\\n' "resume thread expired" >&2
+      exit 1
+      ;;
+  esac
+fi
+if [ -n "\${PLUSE_FAKE_CODEX_UNAVAILABLE_MODEL:-}" ]; then
+  case " $* " in
+    *" -m \${PLUSE_FAKE_CODEX_UNAVAILABLE_MODEL} "*)
+      printf '%s\\n' "The model \\\`\${PLUSE_FAKE_CODEX_UNAVAILABLE_MODEL}\\\` does not exist or you do not have access to it." >&2
+      exit 1
+      ;;
+  esac
+fi
+if [ -n "\${PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL:-}" ]; then
+  case " $* " in
+    *" -m \${PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL} "*)
+      printf '{"type":"error","message":"{\\\\"error\\\\":{\\\\"message\\\\":\\\\"Tool '"'"'image_generation'"'"' is not supported with %s.\\\\"}}"}\\n' "\${PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL}"
       exit 1
       ;;
   esac
@@ -227,7 +250,7 @@ afterAll(() => {
 })
 
 describe('quest/todo/run APIs', () => {
-  it('creates quests, updates kind/state, and exposes only quest/todo command modules', async () => {
+  it('creates quests, updates kind/state, and exposes current command modules', async () => {
     const project = await openProject('quests')
 
     const session = await createQuest({
@@ -369,7 +392,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'run', 'project', 'domain', 'session-category', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'run', 'project', 'domain', 'session-category', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
@@ -381,6 +404,113 @@ describe('quest/todo/run APIs', () => {
     expect(todoModule?.commands.map((command) => command.name)).toEqual(['todo list', 'todo get', 'todo create', 'todo done', 'todo update', 'todo delete'])
     expect(todoModule?.commands.some((command) => command.api.includes('/cancel'))).toBe(false)
     expect(todoModule?.commands.some((command) => command.api.includes('/done'))).toBe(false)
+    const reminderModule = commandCatalog.modules.find((module) => module.name === 'reminder')
+    expect(reminderModule?.commands.map((command) => command.name)).toEqual([
+      'reminder list',
+      'reminder project-priority list',
+      'reminder project-priority set',
+      'reminder get',
+      'reminder create',
+      'reminder update',
+      'reminder snooze',
+      'reminder delete',
+    ])
+    expect(reminderModule?.commands.some((command) => command.name === 'reminder snooze')).toBe(true)
+    expect(reminderModule?.commands.find((command) => command.name === 'reminder create')?.api).toBe('POST /api/reminders')
+  })
+
+  it('supports reminder api lifecycle and source links', async () => {
+    const project = await openProject('reminder-api')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Reminder Source',
+    })
+    const run = createRun({
+      questId: quest.id,
+      projectId: project.id,
+      requestId: 'reminder-run',
+      trigger: 'manual',
+      triggeredBy: 'api',
+      model: 'gpt-5.4',
+      tool: 'codex',
+    })
+
+    const created = await POST<Reminder>('/api/reminders', {
+      projectId: project.id,
+      originQuestId: quest.id,
+      originRunId: run.id,
+      type: 'review',
+      title: 'Review reminder',
+      body: 'Check the latest output.',
+      remindAt: '2026-04-27T09:00:00.000Z',
+      priority: 'high',
+    })
+    expect(created.status).toBe(201)
+    const createdData = mustOk(created)
+    expect(createdData.id).toStartWith('rmd_')
+    expect(createdData.originQuestId).toBe(quest.id)
+    expect(createdData.originRunId).toBe(run.id)
+
+    const future = await GET<Reminder[]>(`/api/reminders?projectId=${project.id}&time=future&type=review`)
+    expect(future.status).toBe(200)
+    expect(mustOk(future).map((item) => item.id)).toEqual([createdData.id])
+
+    const updated = await PATCH<Reminder>(`/api/reminders/${createdData.id}`, {
+      body: 'Reviewed once.',
+      remindAt: '2026-04-28T09:00:00.000Z',
+    })
+    expect(updated.status).toBe(200)
+    expect(mustOk(updated).body).toBe('Reviewed once.')
+    expect(mustOk(updated).remindAt).toBe('2026-04-28T09:00:00.000Z')
+
+    const deleted = await DEL<{ deleted: true }>(`/api/reminders/${createdData.id}`)
+    expect(deleted.status).toBe(200)
+    expect(mustOk(deleted).deleted).toBe(true)
+    expect((await GET(`/api/reminders/${createdData.id}`)).status).toBe(404)
+    const activeList = await GET<Reminder[]>(`/api/reminders?projectId=${project.id}`)
+    expect(activeList.status).toBe(200)
+    expect(mustOk(activeList).some((item) => item.id === createdData.id)).toBe(false)
+
+    const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
+    expect(overview.status).toBe(200)
+    expect(mustOk(overview).recentActivity.some((item) => item.subjectType === 'reminder' && item.subjectId === createdData.id)).toBe(true)
+  })
+
+  it('orders reminders by reminder project priority and keeps one mainline project', async () => {
+    const mainProject = await openProject('reminder-mainline')
+    const otherProject = await openProject('reminder-other')
+
+    const otherReminder = mustOk(await POST<Reminder>('/api/reminders', {
+      projectId: otherProject.id,
+      title: 'Other urgent reminder',
+      priority: 'urgent',
+    }))
+    const mainReminder = mustOk(await POST<Reminder>('/api/reminders', {
+      projectId: mainProject.id,
+      title: 'Mainline normal reminder',
+      priority: 'normal',
+    }))
+
+    const mainlineResult = await PATCH<SetReminderProjectPriorityResult>(
+      `/api/reminders/project-priorities/${mainProject.id}`,
+      { priority: 'mainline' },
+    )
+    expect(mainlineResult.status).toBe(200)
+    expect(mustOk(mainlineResult).setting.priority).toBe('mainline')
+
+    const ordered = await GET<Reminder[]>('/api/reminders?order=attention')
+    expect(ordered.status).toBe(200)
+    expect(mustOk(ordered).map((item) => item.id)).toEqual([mainReminder.id, otherReminder.id])
+
+    const movedMainline = await PATCH<SetReminderProjectPriorityResult>(
+      `/api/reminders/project-priorities/${otherProject.id}`,
+      { priority: 'mainline' },
+    )
+    expect(movedMainline.status).toBe(200)
+    const settings = mustOk(movedMainline).settings
+    expect(settings.find((setting) => setting.projectId === otherProject.id)?.priority).toBe('mainline')
+    expect(settings.find((setting) => setting.projectId === mainProject.id)?.priority).toBe('priority')
   })
 
   it('filters deleted=false tasks from active list', async () => {
@@ -828,6 +958,7 @@ describe('quest/todo/run APIs', () => {
     const sourceHome = join(getTestRoot(), 'personal-codex')
     mkdirSync(sourceHome, { recursive: true })
     writeFileSync(join(sourceHome, 'auth.json'), '{"token":"abc"}')
+    writeFileSync(join(sourceHome, 'models_cache.json'), '{"models":[{"slug":"gpt-5.5"}]}')
     process.env['CODEX_HOME'] = sourceHome
 
     const project = await openProject('managed-codex-home')
@@ -854,6 +985,98 @@ describe('quest/todo/run APIs', () => {
     const loggedHome = readFileSync(homeLogPath, 'utf8').split('\n').map((line) => line.trim()).find(Boolean)
     expect(loggedHome).toBe(managedHome)
     expect(readFileSync(join(managedHome, 'auth.json'), 'utf8')).toBe('{"token":"abc"}')
+    expect(readFileSync(join(managedHome, 'models_cache.json'), 'utf8')).toBe('{"models":[{"slug":"gpt-5.5"}]}')
+  })
+
+  it('honors explicit provider run timeout configuration', async () => {
+    installFakeCodex()
+    process.env['PLUSE_RUN_TIMEOUT_MS'] = '50'
+    process.env['PLUSE_FAKE_CODEX_DELAY_SECONDS'] = '2'
+
+    const project = await openProject('provider-timeout-env')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'This run should hit the explicit timeout',
+      requestId: 'provider-timeout-1',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('failed')
+      expect(freshRun?.failureReason).toBe('codex run timed out')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+  })
+
+  it('falls back to the default Codex model when the selected model is unavailable', async () => {
+    const { argsLogPath } = installFakeCodex()
+    process.env['PLUSE_FAKE_CODEX_UNAVAILABLE_MODEL'] = 'gpt-5.5'
+
+    const project = await openProject('codex-model-fallback')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+      model: 'gpt-5.5',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Use fallback model',
+      requestId: 'model-fallback-1',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      expect(freshRun?.model).toBe('gpt-5.4')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    expect(getQuest(quest.id)?.model).toBe('gpt-5.4')
+    const argsLog = readFileSync(argsLogPath, 'utf8')
+    expect(argsLog).toContain('-m gpt-5.5')
+    expect(argsLog).toContain('-m gpt-5.4')
+  })
+
+  it('falls back to the default Codex model when the selected model has unsupported tools', async () => {
+    const { argsLogPath } = installFakeCodex()
+    process.env['PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL'] = 'gpt-5.3-codex-spark'
+
+    const project = await openProject('codex-tool-fallback')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      tool: 'codex',
+      model: 'gpt-5.3-codex-spark',
+    })
+
+    const started = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
+      text: 'Use fallback model when a configured tool is not supported',
+      requestId: 'tool-fallback-1',
+    })
+    expect(started.status).toBe(200)
+    expect(mustOk(started).queued).toBe(false)
+
+    await waitFor(() => {
+      const freshRun = getRunsByQuest(quest.id)[0]
+      expect(freshRun?.state).toBe('completed')
+      expect(freshRun?.model).toBe('gpt-5.4')
+      return freshRun
+    }, { timeoutMs: 6_000 })
+
+    expect(getQuest(quest.id)?.model).toBe('gpt-5.4')
+    const argsLog = readFileSync(argsLogPath, 'utf8')
+    expect(argsLog).toContain('-m gpt-5.3-codex-spark')
+    expect(argsLog).toContain('-m gpt-5.4')
   })
 
   it('runs Claude chat messages in print stream-json mode and persists think sessions', async () => {
@@ -1020,7 +1243,7 @@ describe('quest/todo/run APIs', () => {
     expect(eventItems.some((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'Proxy Claude reply')).toBe(true)
   })
 
-  it('enforces manual task run conflicts, skips overlapping automation runs, and records review todos', async () => {
+  it('enforces manual task run conflicts, skips overlapping automation runs, and records review reminders', async () => {
     const project = await openProject('script-task')
     const task = await createQuest({
       projectId: project.id,
@@ -1080,14 +1303,15 @@ describe('quest/todo/run APIs', () => {
     expect(questOpsData.some((entry) => entry.op === 'done')).toBe(true)
 
     await waitFor(() => {
-      const todos = listTodos({ projectId: project.id, status: 'pending' })
-      expect(todos.some((todo) => todo.originQuestId === task.id && todo.title.includes('Review: Nightly Build'))).toBe(true)
-      return todos
+      const reminders = listReminders({ projectId: project.id, type: 'review' })
+      expect(reminders.some((reminder) => reminder.originQuestId === task.id && reminder.title.includes('复核：Nightly Build'))).toBe(true)
+      return reminders
     })
 
-    const firstReviewTodo = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
-      .find((todo) => todo.originQuestId === task.id)
-    expect(firstReviewTodo?.title).toContain('Review: Nightly Build')
+    const firstReviewReminder = listReminders({ projectId: project.id, type: 'review' })
+      .find((reminder) => reminder.originQuestId === task.id)
+    expect(firstReviewReminder?.title).toContain('复核：Nightly Build')
+    expect(firstReviewReminder?.originRunId).toBe(startedData.run!.id)
 
     const rerun = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
       requestId: 'task-4',
@@ -1103,40 +1327,42 @@ describe('quest/todo/run APIs', () => {
       return run
     }, { timeoutMs: 6_000 })
 
-    const pendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
-      .filter((todo) => todo.originQuestId === task.id)
-    expect(pendingReviewTodos).toHaveLength(1)
+    const pendingReviewReminders = listReminders({ projectId: project.id, type: 'review' })
+      .filter((reminder) => reminder.originQuestId === task.id)
+    expect(pendingReviewReminders).toHaveLength(1)
+    expect(pendingReviewReminders[0]?.id).toBe(firstReviewReminder!.id)
+    expect(pendingReviewReminders[0]?.originRunId).toBe(mustOk(rerun).run!.id)
 
-    updateTodoWithEffects(firstReviewTodo!.id, { status: 'done' })
+    deleteReminderWithEffects(firstReviewReminder!.id)
 
-    const rerunAfterDone = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
+    const rerunAfterDelete = await POST<StartQuestRunResult>(`/api/quests/${task.id}/run`, {
       requestId: 'task-5',
       trigger: 'manual',
       triggeredBy: 'api',
     })
-    expect(rerunAfterDone.status).toBe(200)
-    expect(mustOk(rerunAfterDone).skipped).toBe(false)
+    expect(rerunAfterDelete.status).toBe(200)
+    expect(mustOk(rerunAfterDelete).skipped).toBe(false)
 
     await waitFor(() => {
-      const run = getRun(mustOk(rerunAfterDone).run!.id)
+      const run = getRun(mustOk(rerunAfterDelete).run!.id)
       expect(run?.state).toBe('completed')
       return run
     }, { timeoutMs: 6_000 })
 
-    const nextPendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
-      .filter((todo) => todo.originQuestId === task.id)
-    expect(nextPendingReviewTodos).toHaveLength(1)
-    expect(nextPendingReviewTodos[0]?.id).not.toBe(firstReviewTodo!.id)
+    const nextPendingReviewReminders = listReminders({ projectId: project.id, type: 'review' })
+      .filter((reminder) => reminder.originQuestId === task.id)
+    expect(nextPendingReviewReminders).toHaveLength(1)
+    expect(nextPendingReviewReminders[0]?.id).not.toBe(firstReviewReminder!.id)
 
     const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
     expect(overview.status).toBe(200)
     const overviewData = mustOk(overview)
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'triggered' && item.subjectId === task.id)).toBe(true)
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'task' && item.op === 'done' && item.subjectId === task.id)).toBe(true)
-    expect(overviewData.recentActivity.some((item) => item.subjectType === 'todo' && item.op === 'created' && item.questId === task.id)).toBe(true)
+    expect(overviewData.recentActivity.some((item) => item.subjectType === 'reminder' && item.op === 'created' && item.questId === task.id)).toBe(true)
   })
 
-  it('deduplicates session review todos created by run_completed hooks', async () => {
+  it('deduplicates session review reminders created by run_completed hooks', async () => {
     const { commandPath } = installFakeCodex()
     process.env['PLUSE_CODEX_COMMAND'] = commandPath
     process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Session reply'
@@ -1166,10 +1392,10 @@ describe('quest/todo/run APIs', () => {
     }, { timeoutMs: 6_000 })
 
     await waitFor(() => {
-      const todos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
-        .filter((todo) => todo.originQuestId === quest.id)
-      expect(todos).toHaveLength(1)
-      return todos
+      const reminders = listReminders({ projectId: project.id, type: 'review' })
+        .filter((reminder) => reminder.originQuestId === quest.id)
+      expect(reminders).toHaveLength(1)
+      return reminders
     })
 
     const second = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
@@ -1187,9 +1413,9 @@ describe('quest/todo/run APIs', () => {
       return runs
     }, { timeoutMs: 6_000 })
 
-    const pendingReviewTodos = listTodos({ projectId: project.id, status: 'pending', tags: ['review'] })
-      .filter((todo) => todo.originQuestId === quest.id)
-    expect(pendingReviewTodos).toHaveLength(1)
+    const pendingReviewReminders = listReminders({ projectId: project.id, type: 'review' })
+      .filter((reminder) => reminder.originQuestId === quest.id)
+    expect(pendingReviewReminders).toHaveLength(1)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

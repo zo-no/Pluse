@@ -43,6 +43,8 @@ interface Project {
 
 `domainId` 可为空；为空时，Project 归入“未分组”。
 
+默认入口 Project 名为“自我对话”，并固定归入“未分组”。服务端通过内置项目保障首次使用时一定存在该 Project；升级旧数据时，旧 `Inbox` 默认入口会被迁移或隐藏，关联 Quest / Todo / Run 归入“自我对话”。
+
 ---
 
 ## Quest

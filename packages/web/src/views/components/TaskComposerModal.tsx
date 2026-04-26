@@ -22,6 +22,7 @@ interface TaskComposerModalProps {
   projectId: string | null
   projectName?: string | null
   initialKind?: TaskComposerKind
+  showKindSwitch?: boolean
   conversionQuestId?: string | null
   conversionQuestName?: string | null
   conversionQuestDescription?: string | null
@@ -279,6 +280,7 @@ export function TaskComposerModal({
   projectId,
   projectName,
   initialKind = 'human',
+  showKindSwitch = true,
   conversionQuestId,
   conversionQuestName,
   conversionQuestDescription,
@@ -653,7 +655,7 @@ export function TaskComposerModal({
             {originQuestId ? <span className="pluse-sidebar-badge">{originQuestLabel || t('来源会话')}</span> : null}
           </div>
 
-          {isConversionMode ? null : (
+          {isConversionMode || !showKindSwitch ? null : (
             <div className="pluse-task-modal-modes" role="tablist" aria-label={t('对象类型')}>
               <button
                 type="button"
@@ -801,8 +803,8 @@ export function TaskComposerModal({
                       onChange={setThinking}
                     />
                     <TaskSettingSwitch
-                      label={t('运行后复盘')}
-                      note={t('任务结束后补一条 review todo')}
+                      label={t('运行后提醒')}
+                      note={t('自动化完成后创建一条提醒，确认输出后点勾删除。')}
                       checked={reviewOnComplete}
                       onChange={setReviewOnComplete}
                     />

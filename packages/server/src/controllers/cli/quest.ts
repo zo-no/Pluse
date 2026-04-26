@@ -390,8 +390,8 @@ function addSharedTaskOptions(command: Command): Command {
       }
       return parsed
     })
-    .option('--review-on-complete', 'Create a review todo when the task completes')
-    .option('--no-review-on-complete', 'Do not create a review todo when the task completes')
+    .option('--review-on-complete', 'Create a review reminder when the task completes')
+    .option('--no-review-on-complete', 'Do not create a review reminder when the task completes')
     .option('--order <n>', 'Task sort order', (value: string) => {
       const parsed = Number.parseInt(value, 10)
       if (!Number.isInteger(parsed)) {
@@ -443,7 +443,7 @@ questCommand
 const taskQuestCreateExample = [
   'Example task quest:',
   '  pluse quest create --project-id proj_music --kind task --title "Music Essay"',
-  '    --tool codex --model gpt-5.3-codex-spark --schedule-kind recurring --cron "*/30 * * * *"',
+  '    --tool codex --model gpt-5.4 --schedule-kind recurring --cron "*/30 * * * *"',
   '    --timezone Asia/Shanghai --executor-kind ai_prompt',
   '    --prompt "Use the local NetEase CLI in this project to read the current song, then write a short Chinese essay about the mood of the track."',
   '    --continue-quest --review-on-complete --enable',

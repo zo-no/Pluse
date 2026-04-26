@@ -7,6 +7,7 @@ import { listProjectActivity } from '../models/project-activity'
 import {
   createProjectRecord,
   deleteProjectRecord,
+  getActiveProjectByName,
   getProject,
   getProjectByWorkDir,
   listProjects,
@@ -19,7 +20,7 @@ import { listTodos } from '../models/todo'
 import { emit } from './events'
 import {
   ensureDir,
-  getInboxDir,
+  getDefaultEntryProjectDir,
   getProjectManifestDir,
   getProjectManifestPath,
   getSystemRuntimeDir,
@@ -27,7 +28,14 @@ import {
 } from '../support/paths'
 
 export const INBOX_PROJECT_ID = 'proj_inbox'
+export const LEGACY_INBOX_PROJECT_ID = INBOX_PROJECT_ID
+export const DEFAULT_ENTRY_PROJECT_ID = 'proj_self_dialogue'
+export const DEFAULT_ENTRY_PROJECT_NAME = '自我对话'
 export const SYSTEM_PROJECT_ID = 'proj_system'
+
+const DEFAULT_ENTRY_PROJECT_ICON = '人'
+const DEFAULT_ENTRY_PROJECT_GOAL = '在这里和 AI 一起挖掘真实需求、许下愿望、抒发欲望，并把混沌的想法整理成可以继续推进的 Quest / Todo。'
+const DEFAULT_ENTRY_PROJECT_DESCRIPTION = '自我对话是 Pluse 的默认入口。首次使用和回到首页时，用户会优先进入这里，把还没有归属的念头、冲动、焦虑、愿望和需求先说出来，再逐步澄清它们是否要变成具体项目、会话、自动化或待办。'
 
 function now(): string {
   return new Date().toISOString()
@@ -126,8 +134,60 @@ function reassignProjectReferences(fromId: string, toId: string): void {
   const tx = db.transaction(() => {
     db.run(`UPDATE quests SET project_id = ? WHERE project_id = ?`, [toId, fromId])
     db.run(`UPDATE todos SET project_id = ? WHERE project_id = ?`, [toId, fromId])
+    db.run(`UPDATE reminders SET project_id = ? WHERE project_id = ?`, [toId, fromId])
     db.run(`UPDATE runs SET project_id = ? WHERE project_id = ?`, [toId, fromId])
     db.run(`DELETE FROM projects WHERE id = ?`, [fromId])
+  })
+  tx()
+}
+
+function mergeProjectReferences(fromId: string, toId: string): void {
+  if (fromId === toId) return
+  const db = getDb()
+  const tx = db.transaction(() => {
+    const legacyCategories = db.query<{ id: string; name: string }, [string]>(
+      'SELECT id, name FROM session_categories WHERE project_id = ?'
+    ).all(fromId)
+
+    for (const category of legacyCategories) {
+      const existing = db.query<{ id: string }, [string, string]>(
+        'SELECT id FROM session_categories WHERE project_id = ? AND name = ? LIMIT 1'
+      ).get(toId, category.name)
+      if (existing) {
+        db.run('UPDATE quests SET session_category_id = ? WHERE session_category_id = ?', [existing.id, category.id])
+        db.run('DELETE FROM session_categories WHERE id = ?', [category.id])
+      } else {
+        db.run('UPDATE session_categories SET project_id = ?, updated_at = ? WHERE id = ?', [toId, now(), category.id])
+      }
+    }
+
+    db.run(
+      `UPDATE quests
+       SET codex_thread_id = NULL
+       WHERE project_id = ?
+         AND codex_thread_id IS NOT NULL
+         AND codex_thread_id IN (
+           SELECT codex_thread_id FROM quests WHERE project_id = ? AND codex_thread_id IS NOT NULL
+         )`,
+      [fromId, toId],
+    )
+    db.run(
+      `UPDATE quests
+       SET claude_session_id = NULL
+       WHERE project_id = ?
+         AND claude_session_id IS NOT NULL
+         AND claude_session_id IN (
+           SELECT claude_session_id FROM quests WHERE project_id = ? AND claude_session_id IS NOT NULL
+         )`,
+      [fromId, toId],
+    )
+
+    db.run('UPDATE quests SET project_id = ? WHERE project_id = ?', [toId, fromId])
+    db.run('UPDATE todos SET project_id = ? WHERE project_id = ?', [toId, fromId])
+    db.run('UPDATE reminders SET project_id = ? WHERE project_id = ?', [toId, fromId])
+    db.run('UPDATE runs SET project_id = ? WHERE project_id = ?', [toId, fromId])
+    db.run('UPDATE project_activity SET project_id = ? WHERE project_id = ?', [toId, fromId])
+    db.run('UPDATE notifications SET project_id = ? WHERE project_id = ?', [toId, fromId])
   })
   tx()
 }
@@ -168,19 +228,7 @@ function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<Open
 
 export function ensureBuiltinProjects(): void {
   const ts = now()
-  const inboxWorkDir = getInboxDir()
-  const inbox = upsertProjectRecord({
-    id: INBOX_PROJECT_ID,
-    name: 'Inbox',
-    goal: '默认收纳临时会话和短期跟进事项。',
-    workDir: inboxWorkDir,
-    archived: false,
-    pinned: true,
-    visibility: 'user',
-    createdAt: getProject(INBOX_PROJECT_ID)?.createdAt ?? ts,
-    updatedAt: ts,
-  })
-  writeManifest(manifestFromProject(inbox))
+  ensureDefaultEntryProject(ts)
 
   upsertProjectRecord({
     id: SYSTEM_PROJECT_ID,
@@ -193,6 +241,71 @@ export function ensureBuiltinProjects(): void {
     createdAt: getProject(SYSTEM_PROJECT_ID)?.createdAt ?? ts,
     updatedAt: ts,
   })
+}
+
+function ensureDefaultEntryProject(ts: string): Project {
+  const existingEntry = getActiveProjectByName(DEFAULT_ENTRY_PROJECT_NAME)
+    ?? getProject(DEFAULT_ENTRY_PROJECT_ID)
+  const legacyInbox = getProject(LEGACY_INBOX_PROJECT_ID)
+
+  if (existingEntry && existingEntry.id !== legacyInbox?.id) {
+    const entry = updateProjectRecord(existingEntry.id, {
+      name: DEFAULT_ENTRY_PROJECT_NAME,
+      icon: existingEntry.icon ?? DEFAULT_ENTRY_PROJECT_ICON,
+      goal: DEFAULT_ENTRY_PROJECT_GOAL,
+      description: DEFAULT_ENTRY_PROJECT_DESCRIPTION,
+      domainId: null,
+      pinned: true,
+      archived: false,
+    })
+    if (legacyInbox) {
+      mergeProjectReferences(legacyInbox.id, entry.id)
+      upsertProjectRecord({
+        ...legacyInbox,
+        name: 'Legacy Inbox',
+        goal: '旧默认入口，关联数据已迁移到自我对话。',
+        description: '保留这条隐藏记录是为了避免旧 manifest 或外部引用立即失效。',
+        archived: true,
+        pinned: false,
+        visibility: 'system',
+        updatedAt: ts,
+      })
+    }
+    writeManifest(manifestFromProject(entry))
+    return entry
+  }
+
+  if (legacyInbox) {
+    const entry = updateProjectRecord(legacyInbox.id, {
+      name: DEFAULT_ENTRY_PROJECT_NAME,
+      icon: legacyInbox.icon ?? DEFAULT_ENTRY_PROJECT_ICON,
+      goal: DEFAULT_ENTRY_PROJECT_GOAL,
+      description: DEFAULT_ENTRY_PROJECT_DESCRIPTION,
+      workDir: getDefaultEntryProjectDir(),
+      domainId: null,
+      pinned: true,
+      archived: false,
+    })
+    writeManifest(manifestFromProject(entry))
+    return entry
+  }
+
+  const entry = upsertProjectRecord({
+    id: DEFAULT_ENTRY_PROJECT_ID,
+    name: DEFAULT_ENTRY_PROJECT_NAME,
+    icon: DEFAULT_ENTRY_PROJECT_ICON,
+    goal: DEFAULT_ENTRY_PROJECT_GOAL,
+    description: DEFAULT_ENTRY_PROJECT_DESCRIPTION,
+    workDir: getDefaultEntryProjectDir(),
+    domainId: undefined,
+    archived: false,
+    pinned: true,
+    visibility: 'user',
+    createdAt: getProject(DEFAULT_ENTRY_PROJECT_ID)?.createdAt ?? ts,
+    updatedAt: ts,
+  })
+  writeManifest(manifestFromProject(entry))
+  return entry
 }
 
 export function listVisibleProjects(): Project[] {
@@ -326,6 +439,16 @@ export function updateProject(id: string, input: UpdateProjectInput): Project {
   if (project.id === SYSTEM_PROJECT_ID && input.archived) {
     throw new Error('System project cannot be archived')
   }
+  if (
+    input.archived
+    && (
+      project.id === DEFAULT_ENTRY_PROJECT_ID
+      || project.id === LEGACY_INBOX_PROJECT_ID
+      || project.name === DEFAULT_ENTRY_PROJECT_NAME
+    )
+  ) {
+    throw new Error('Default entry project cannot be archived')
+  }
   assertDomainAssignable(input.domainId)
   const updated = updateProjectRecord(id, input)
   if (updated.visibility === 'user') {
@@ -336,7 +459,13 @@ export function updateProject(id: string, input: UpdateProjectInput): Project {
 }
 
 export function archiveProject(id: string): Project {
-  if (id === INBOX_PROJECT_ID || id === SYSTEM_PROJECT_ID) {
+  const project = getProject(id)
+  if (
+    id === LEGACY_INBOX_PROJECT_ID
+    || id === DEFAULT_ENTRY_PROJECT_ID
+    || id === SYSTEM_PROJECT_ID
+    || project?.name === DEFAULT_ENTRY_PROJECT_NAME
+  ) {
     throw new Error('Built-in projects cannot be archived')
   }
   return updateProject(id, { archived: true })

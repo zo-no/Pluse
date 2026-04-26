@@ -185,6 +185,54 @@ function initSchema(db: Database): void {
   ensureColumn(db, 'runs', 'cache_creation_tokens', 'ALTER TABLE runs ADD COLUMN cache_creation_tokens INTEGER')
   ensureColumn(db, 'runs', 'cost_usd',              'ALTER TABLE runs ADD COLUMN cost_usd REAL')
 
+  db.run(`CREATE TABLE IF NOT EXISTS reminders (
+    id              TEXT PRIMARY KEY NOT NULL,
+    project_id      TEXT NOT NULL REFERENCES projects(id),
+    created_by      TEXT NOT NULL DEFAULT 'human',
+    origin_quest_id TEXT REFERENCES quests(id),
+    origin_run_id   TEXT REFERENCES runs(id),
+    type            TEXT NOT NULL DEFAULT 'custom',
+    title           TEXT NOT NULL,
+    body            TEXT,
+    remind_at       TEXT,
+    priority        TEXT NOT NULL DEFAULT 'normal',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_reminders_project
+    ON reminders (project_id, remind_at, updated_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_reminders_origin_quest
+    ON reminders (origin_quest_id, type, updated_at DESC)`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS reminder_project_priorities (
+    project_id      TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),
+    priority        TEXT NOT NULL DEFAULT 'normal',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_reminder_project_priorities_priority
+    ON reminder_project_priorities (priority, updated_at DESC)`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS notifications (
+    id              TEXT PRIMARY KEY NOT NULL,
+    project_id      TEXT NOT NULL REFERENCES projects(id),
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    origin_quest_id TEXT REFERENCES quests(id),
+    origin_run_id   TEXT REFERENCES runs(id),
+    type            TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    body            TEXT,
+    status          TEXT NOT NULL DEFAULT 'unread',
+    deleted         INTEGER NOT NULL DEFAULT 0,
+    deleted_at      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_project
+    ON notifications (project_id, deleted, status, updated_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_origin_quest
+    ON notifications (origin_quest_id, type, deleted, status, updated_at DESC)`)
+
   db.run(`CREATE TABLE IF NOT EXISTS run_spool (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id  TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,

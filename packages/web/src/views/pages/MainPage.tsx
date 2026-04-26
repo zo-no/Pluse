@@ -3,11 +3,12 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, typ
 import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
-import { ClockIcon, MenuIcon, MoonIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SunIcon } from '@/views/components/icons'
+import { ArchiveIcon, ClockIcon, MenuIcon, MoonIcon, PauseIcon, PlayIcon, PlusIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SparkIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TodoPanel } from '@/views/components/TodoPanel'
+import { TaskComposerModal } from '@/views/components/TaskComposerModal'
 import { displayQuestName } from '@/views/utils/display'
-import { getPreferredSessionId, rememberLastSession } from '@/views/utils/session-selection'
+import { getPreferredSession, rememberLastSession } from '@/views/utils/session-selection'
 import { formatTodoScheduleSummary } from '@/views/utils/todo'
 import { THEME_STORAGE_KEY, applyTheme, resolveInitialTheme, type ThemeMode } from '@/views/utils/theme'
 import { LoginPage } from './LoginPage'
@@ -87,10 +88,159 @@ function questLabel(quest: Quest, t?: (key: string) => string): string {
   return displayQuestName(quest, t)
 }
 
+type AutomationSectionKey = 'running' | 'attention' | 'recurring' | 'scheduled' | 'manual'
+type AutomationHealthKey = 'attention' | 'running' | 'scheduled' | 'manual' | 'empty'
+
+type ProjectAutomationSummary = {
+  total: number
+  running: number
+  attention: number
+  disabled: number
+  nextRunAt?: string
+  health: AutomationHealthKey
+}
+
+function automationNextRunAt(quest: Quest): string | undefined {
+  return quest.scheduleConfig?.nextRunAt
+    ?? (quest.scheduleKind === 'scheduled' ? quest.scheduleConfig?.runAt : undefined)
+}
+
+function safeDateValue(value?: string): number {
+  if (!value) return Number.POSITIVE_INFINITY
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY
+}
+
+function isAutomationRunning(quest: Quest): boolean {
+  return Boolean(quest.activeRunId) || quest.status === 'running'
+}
+
+function isAutomationAttention(quest: Quest): boolean {
+  return quest.status === 'failed' || quest.status === 'cancelled'
+}
+
+function isAutomationManual(quest: Quest): boolean {
+  return quest.scheduleKind === 'once' || !quest.scheduleKind
+}
+
+function summarizeProjectAutomations(tasks: Quest[]): ProjectAutomationSummary {
+  const running = tasks.filter(isAutomationRunning).length
+  const attention = tasks.filter(isAutomationAttention).length
+  const disabled = tasks.filter((quest) => quest.enabled === false).length
+  const now = Date.now()
+  const nextRunAt = tasks
+    .map(automationNextRunAt)
+    .filter((value): value is string => Boolean(value))
+    .filter((value) => safeDateValue(value) >= now)
+    .sort((left, right) => safeDateValue(left) - safeDateValue(right))[0]
+
+  let health: AutomationHealthKey = 'empty'
+  if (attention > 0) health = 'attention'
+  else if (running > 0) health = 'running'
+  else if (nextRunAt) health = 'scheduled'
+  else if (tasks.length > 0) health = tasks.every(isAutomationManual) ? 'manual' : 'scheduled'
+
+  return {
+    total: tasks.length,
+    running,
+    attention,
+    disabled,
+    nextRunAt,
+    health,
+  }
+}
+
+function automationHealthLabel(health: AutomationHealthKey, t: (key: string) => string): string {
+  if (health === 'attention') return t('需要关注')
+  if (health === 'running') return t('运行中')
+  if (health === 'scheduled') return t('已排程')
+  if (health === 'manual') return t('手动')
+  return t('未配置')
+}
+
+function automationSectionKey(quest: Quest): AutomationSectionKey {
+  if (isAutomationRunning(quest)) return 'running'
+  if (isAutomationAttention(quest)) return 'attention'
+  if (quest.scheduleKind === 'recurring') return 'recurring'
+  if (quest.scheduleKind === 'scheduled') return 'scheduled'
+  return 'manual'
+}
+
+function automationSectionLabel(key: AutomationSectionKey, t: (key: string) => string): string {
+  if (key === 'running') return t('运行中')
+  if (key === 'attention') return t('异常')
+  if (key === 'recurring') return t('周期')
+  if (key === 'scheduled') return t('定时')
+  return t('手动')
+}
+
+function automationScheduleKindLabel(quest: Quest, t: (key: string) => string): string {
+  if (quest.scheduleKind === 'recurring') return t('周期')
+  if (quest.scheduleKind === 'scheduled') return t('定时')
+  return t('手动')
+}
+
+function automationStatusLabel(quest: Quest, t: (key: string) => string): string {
+  return isAutomationRunning(quest) ? t('运行中') : formatOutputStatus(quest.status ?? 'pending', t)
+}
+
+function automationTimeLabel(
+  quest: Quest,
+  locale: string,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  if (isAutomationRunning(quest)) return t('运行中')
+  if (quest.enabled === false) return t('已暂停')
+  const nextRunAt = automationNextRunAt(quest)
+  if (nextRunAt) return t('下次 {{time}}', { time: formatDateTime(nextRunAt, t, locale) })
+  if (quest.scheduleConfig?.lastRunAt) return t('最近 {{time}}', { time: formatDateTime(quest.scheduleConfig.lastRunAt, t, locale) })
+  if (isAutomationManual(quest)) return t('手动')
+  return formatRelativeTime(quest.updatedAt, t)
+}
+
+function automationTimeTitle(
+  quest: Quest,
+  locale: string,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  const nextRunAt = automationNextRunAt(quest)
+  if (nextRunAt) return `${t('下次运行')} · ${formatDateTime(nextRunAt, t, locale)}`
+  if (quest.scheduleConfig?.lastRunAt) return `${t('最近')} · ${formatDateTime(quest.scheduleConfig.lastRunAt, t, locale)}`
+  return formatDateTime(quest.updatedAt, t, locale)
+}
+
+function sortAutomationItems(tasks: Quest[]): Quest[] {
+  return [...tasks].sort((left, right) => {
+    const leftNext = safeDateValue(automationNextRunAt(left))
+    const rightNext = safeDateValue(automationNextRunAt(right))
+    if (leftNext !== rightNext) return leftNext - rightNext
+    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })
+}
+
+function buildAutomationSections(tasks: Quest[]): Array<{ key: AutomationSectionKey; items: Quest[] }> {
+  const order: AutomationSectionKey[] = ['running', 'attention', 'recurring', 'scheduled', 'manual']
+  const grouped = new Map<AutomationSectionKey, Quest[]>()
+  for (const quest of sortAutomationItems(tasks)) {
+    const key = automationSectionKey(quest)
+    grouped.set(key, [...(grouped.get(key) ?? []), quest])
+  }
+  return order
+    .map((key) => ({ key, items: grouped.get(key) ?? [] }))
+    .filter((entry) => entry.items.length > 0)
+}
+
 function taskOverlayState(location: RouterLocation): { backgroundLocation: RouterLocation } {
   const existingBackground = (location.state as { backgroundLocation?: RouterLocation } | null)?.backgroundLocation
   return { backgroundLocation: existingBackground ?? location }
 }
+
+type QuestRouteState = {
+  backgroundLocation?: RouterLocation
+  initialQuest?: Quest | null
+}
+
+type ProjectPageTab = 'overview' | 'automation' | 'settings'
 
 function WorkspaceSection(props: {
   title: string
@@ -337,18 +487,19 @@ function ProjectOverviewHero({
 function formatActivitySubjectType(type: ProjectActivityItem['subjectType'], t: (key: string, values?: Record<string, string>) => string): string {
   if (type === 'session') return t('会话')
   if (type === 'task') return t('自动化')
+  if (type === 'reminder') return t('提醒')
   return t('待办')
 }
 
 function formatActivityOp(item: ProjectActivityItem, t: (key: string, values?: Record<string, string>) => string): string {
-  if (item.op === 'created') return item.subjectType === 'session' ? t('创建会话') : item.subjectType === 'task' ? t('创建自动化') : t('创建待办')
+  if (item.op === 'created') return item.subjectType === 'session' ? t('创建会话') : item.subjectType === 'task' ? t('创建自动化') : item.subjectType === 'reminder' ? t('创建提醒') : t('创建待办')
   if (item.op === 'kind_changed') return item.toKind === 'task' ? t('转为自动化') : t('转为会话')
   if (item.op === 'project_changed_in') return t('移入项目')
   if (item.op === 'project_changed_out') return t('移出项目')
   if (item.op === 'triggered') return t('开始执行')
-  if (item.op === 'done') return item.subjectType === 'todo' ? t('待办完成') : t('运行完成')
+  if (item.op === 'done') return item.subjectType === 'todo' ? t('待办完成') : item.subjectType === 'reminder' ? t('提醒完成') : t('运行完成')
   if (item.op === 'failed') return t('执行失败')
-  if (item.op === 'cancelled') return item.subjectType === 'todo' ? t('待办取消') : t('执行取消')
+  if (item.op === 'cancelled') return item.subjectType === 'todo' ? t('待办取消') : item.subjectType === 'reminder' ? t('提醒取消') : t('执行取消')
   if (item.op === 'deleted') return t('已归档')
   return t('状态变更')
 }
@@ -384,7 +535,11 @@ function ActivityRow({
   compact?: boolean
 }) {
   const location = useLocation()
-  const target = item.subjectType === 'todo' ? undefined : `/quests/${item.subjectId}`
+  const target = item.subjectType === 'todo'
+    ? undefined
+    : item.subjectType === 'reminder'
+      ? item.questId ? `/quests/${item.questId}` : undefined
+      : `/quests/${item.subjectId}`
   const detail = formatActivityDetail(item, t)
   const className = `pluse-output-row pluse-activity-row${compact ? ' is-compact' : ''}`
   const content = (
@@ -479,6 +634,282 @@ function WaitingTodoRow({
   )
 }
 
+function ProjectAutomationPanel({
+  overview,
+  locale,
+  t,
+  onChanged,
+  onError,
+  standalone = false,
+}: {
+  overview: ProjectOverview
+  locale: string
+  t: (key: string, values?: Record<string, string | number>) => string
+  onChanged: () => Promise<void>
+  onError: (message: string | null) => void
+  standalone?: boolean
+}) {
+  const location = useLocation()
+  const [busyQuestId, setBusyQuestId] = useState<string | null>(null)
+  const [createAutomationOpen, setCreateAutomationOpen] = useState(false)
+  const tasks = useMemo(
+    () => sortAutomationItems(overview.tasks.filter((quest) => !quest.deleted)),
+    [overview.tasks],
+  )
+  const summary = useMemo(() => summarizeProjectAutomations(tasks), [tasks])
+  const sections = useMemo(
+    () => buildAutomationSections(tasks).map((section) => ({
+      ...section,
+      label: automationSectionLabel(section.key, t),
+    })),
+    [tasks, t],
+  )
+  const questLinkState = useMemo(
+    () => taskOverlayState(location),
+    [location],
+  )
+  const healthLabel = automationHealthLabel(summary.health, t)
+
+  async function waitForQuestRunCleared(questId: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const current = await api.getQuest(questId)
+      if (current.ok && !current.data.activeRunId) return true
+      await new Promise((resolve) => window.setTimeout(resolve, 150))
+    }
+    return false
+  }
+
+  async function cancelActiveRunIfNeeded(quest: Quest, message: string): Promise<boolean> {
+    if (!quest.activeRunId) return true
+    const confirmed = window.confirm(message)
+    if (!confirmed) return false
+    const cancelled = await api.cancelRun(quest.activeRunId)
+    if (!cancelled.ok) {
+      onError(cancelled.error)
+      return false
+    }
+    const cleared = await waitForQuestRunCleared(quest.id)
+    if (!cleared) {
+      onError(t('当前执行尚未完全停止，请稍后再试'))
+      return false
+    }
+    return true
+  }
+
+  async function handleTriggerAutomation(quest: Quest) {
+    setBusyQuestId(quest.id)
+    onError(null)
+    try {
+      const result = await api.startQuestRun(quest.id, { trigger: 'manual', triggeredBy: 'human' })
+      if (!result.ok) {
+        onError(result.error)
+        return
+      }
+      await onChanged()
+    } finally {
+      setBusyQuestId(null)
+    }
+  }
+
+  async function handleToggleAutomation(quest: Quest) {
+    const nextEnabled = quest.enabled === false
+    setBusyQuestId(quest.id)
+    onError(null)
+    try {
+      if (!nextEnabled) {
+        const canContinue = await cancelActiveRunIfNeeded(quest, t('当前任务正在运行，停用前会先取消当前执行。继续吗？'))
+        if (!canContinue) return
+      }
+      const result = await api.updateQuest(quest.id, { enabled: nextEnabled })
+      if (!result.ok) {
+        onError(result.error)
+        return
+      }
+      await onChanged()
+    } finally {
+      setBusyQuestId(null)
+    }
+  }
+
+  async function handleArchiveAutomation(quest: Quest) {
+    setBusyQuestId(quest.id)
+    onError(null)
+    try {
+      const canContinue = await cancelActiveRunIfNeeded(quest, t('当前任务正在运行，归档前会先取消当前执行。继续吗？'))
+      if (!canContinue) return
+      const result = await api.updateQuest(quest.id, { deleted: true })
+      if (!result.ok) {
+        onError(result.error)
+        return
+      }
+      await onChanged()
+    } finally {
+      setBusyQuestId(null)
+    }
+  }
+
+  const content = (
+      <div id="automation" className="pluse-project-automation-panel">
+        {standalone ? (
+          <header className="pluse-project-automation-page-head">
+            <div className="pluse-project-automation-page-title">
+              <h2>{t('自动化面板')}</h2>
+              <span>{t('自动化数')} {summary.total}</span>
+            </div>
+            <div className="pluse-project-automation-page-actions">
+              <strong className={`pluse-automation-health-pill is-${summary.health}`}>{healthLabel}</strong>
+              <button
+                type="button"
+                className="pluse-button pluse-button-compact"
+                onClick={() => setCreateAutomationOpen(true)}
+              >
+                <PlusIcon className="pluse-icon" />
+                {t('新建自动化')}
+              </button>
+            </div>
+          </header>
+        ) : null}
+        <div className="pluse-project-automation-summary" aria-label={t('自动化面板')}>
+          <div className="pluse-project-automation-summary-cell">
+            <span>{t('自动化数')}</span>
+            <strong>{summary.total}</strong>
+          </div>
+          <div className="pluse-project-automation-summary-cell">
+            <span>{t('运行中')}</span>
+            <strong>{summary.running}</strong>
+          </div>
+          <div className={`pluse-project-automation-summary-cell${summary.attention > 0 ? ' is-attention' : ''}`}>
+            <span>{t('需要关注')}</span>
+            <strong>{summary.attention}</strong>
+          </div>
+          <div className="pluse-project-automation-summary-cell">
+            <span>{t('已暂停')}</span>
+            <strong>{summary.disabled}</strong>
+          </div>
+        </div>
+
+        {tasks.length > 0 ? (
+          <div className="pluse-project-automation-sections">
+            {sections.map((section) => (
+              <section key={section.key} className={`pluse-project-automation-section is-${section.key}`}>
+                <header className="pluse-project-automation-section-head">
+                  <div>
+                    <span>{section.label}</span>
+                    <strong>{section.items.length}</strong>
+                  </div>
+                </header>
+                <div className="pluse-project-automation-list">
+                  {section.items.map((quest) => {
+                    const isPaused = quest.enabled === false
+                    const isBusy = busyQuestId === quest.id
+                    const canTrigger = !isBusy && !quest.activeRunId && quest.enabled !== false
+                    const statusKey = quest.activeRunId ? 'running' : quest.status ?? 'pending'
+                    return (
+                      <article
+                        key={quest.id}
+                        className={`pluse-project-automation-row is-${section.key}${isPaused ? ' is-paused' : ''}`}
+                      >
+                        <Link
+                          className="pluse-project-automation-main"
+                          to={`/quests/${quest.id}`}
+                          state={{ ...questLinkState, initialQuest: quest }}
+                        >
+                          <div className="pluse-project-automation-title">
+                            <span className="pluse-task-kind-badge" aria-label={t('自动化')} title={t('自动化')}>
+                              <SparkIcon className="pluse-icon" />
+                            </span>
+                            <strong>{questLabel(quest, t)}</strong>
+                            <span className={`pluse-task-list-state is-${statusKey}`}>
+                              {automationStatusLabel(quest, t)}
+                            </span>
+                          </div>
+                          {quest.description ? <p>{quest.description}</p> : null}
+                          <div className="pluse-project-automation-meta" title={automationTimeTitle(quest, locale, t)}>
+                            <span>{automationScheduleKindLabel(quest, t)}</span>
+                            <span className="pluse-meta-inline">
+                              <ClockIcon className="pluse-icon pluse-inline-icon" />
+                              {automationTimeLabel(quest, locale, t)}
+                            </span>
+                            {isPaused ? <span>{t('已暂停')}</span> : null}
+                          </div>
+                        </Link>
+                        <div className="pluse-project-automation-actions">
+                          <button
+                            type="button"
+                            className="pluse-sidebar-action-btn"
+                            onClick={() => void handleTriggerAutomation(quest)}
+                            aria-label={t('立即触发')}
+                            title={t('立即触发')}
+                            disabled={!canTrigger}
+                          >
+                            <PlayIcon className="pluse-icon" />
+                          </button>
+                          <button
+                            type="button"
+                            className="pluse-sidebar-action-btn"
+                            onClick={() => void handleToggleAutomation(quest)}
+                            aria-label={isPaused ? t('恢复自动化') : t('暂停自动化')}
+                            title={isPaused ? t('恢复自动化') : t('暂停自动化')}
+                            disabled={isBusy}
+                          >
+                            {isPaused ? <PlayIcon className="pluse-icon" /> : <PauseIcon className="pluse-icon" />}
+                          </button>
+                          <button
+                            type="button"
+                            className="pluse-sidebar-action-btn"
+                            onClick={() => void handleArchiveAutomation(quest)}
+                            aria-label={t('归档')}
+                            title={t('归档')}
+                            disabled={isBusy}
+                          >
+                            <ArchiveIcon className="pluse-icon" />
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : (
+          <p className="pluse-empty-inline">{t('当前项目暂无自动化。')}</p>
+        )}
+      </div>
+  )
+
+  if (standalone) {
+    return (
+      <>
+        <section className="pluse-project-automation-page">{content}</section>
+        <TaskComposerModal
+          open={createAutomationOpen}
+          projectId={overview.project.id}
+          projectName={overview.project.name}
+          initialKind="ai"
+          onClose={() => setCreateAutomationOpen(false)}
+          onCreated={async () => {
+            setCreateAutomationOpen(false)
+            await onChanged()
+          }}
+        />
+      </>
+    )
+  }
+
+  return (
+    <ProjectCompactSection
+      key={`automation-${overview.project.id}`}
+      title={t('自动化面板')}
+      count={summary.total}
+      defaultOpen
+      note={healthLabel}
+    >
+      {content}
+    </ProjectCompactSection>
+  )
+}
+
 function ProjectPage({
   projectId,
   onProjectLoaded,
@@ -490,10 +921,11 @@ function ProjectPage({
 }) {
   const { locale, t } = useI18n()
   const navigate = useNavigate()
+  const location = useLocation()
   const [overview, setOverview] = useState<ProjectOverview | null>(null)
   const [tokenSummary, setTokenSummary] = useState<TokenUsageSummary | null>(null)
   const [domains, setDomains] = useState<Domain[]>([])
-  const [tab, setTab] = useState<'overview' | 'settings'>('overview')
+  const [tab, setTab] = useState<ProjectPageTab>(() => location.hash === '#automation' ? 'automation' : 'overview')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -511,6 +943,17 @@ function ProjectPage({
   const overviewRequestSeqRef = useRef(0)
   const domainsRequestSeqRef = useRef(0)
   const tokenSummaryRequestSeqRef = useRef(0)
+
+  function selectProjectTab(nextTab: ProjectPageTab) {
+    setTab(nextTab)
+    const nextHash = nextTab === 'automation' ? '#automation' : ''
+    if (location.hash === nextHash) return
+    navigate({
+      pathname: location.pathname,
+      search: location.search,
+      hash: nextHash,
+    }, { replace: true })
+  }
 
   const loadOverview = useCallback(async () => {
     const requestId = overviewRequestSeqRef.current + 1
@@ -563,6 +1006,10 @@ function ProjectPage({
       pendingDomainReloadRef.current = false
     }
   }, [loadDomains, loadOverview, loadTokenSummary])
+
+  useEffect(() => {
+    if (location.hash === '#automation') setTab('automation')
+  }, [location.hash])
 
   useSseEvent(
     (event) => {
@@ -646,14 +1093,21 @@ function ProjectPage({
             <button
               type="button"
               className={`pluse-project-tab${tab === 'overview' ? ' is-active' : ''}`}
-              onClick={() => setTab('overview')}
+              onClick={() => selectProjectTab('overview')}
             >
               {t('概览')}
             </button>
             <button
               type="button"
+              className={`pluse-project-tab${tab === 'automation' ? ' is-active' : ''}`}
+              onClick={() => selectProjectTab('automation')}
+            >
+              {t('自动化')}
+            </button>
+            <button
+              type="button"
               className={`pluse-project-tab${tab === 'settings' ? ' is-active' : ''}`}
-              onClick={() => setTab('settings')}
+              onClick={() => selectProjectTab('settings')}
             >
               {t('设置')}
             </button>
@@ -694,6 +1148,17 @@ function ProjectPage({
               </ProjectCompactSection>
             ) : null}
 
+          </div>
+        ) : tab === 'automation' ? (
+          <div className="pluse-detail-grid">
+            <ProjectAutomationPanel
+              overview={overview}
+              locale={locale}
+              t={t}
+              onChanged={loadOverview}
+              onError={setError}
+              standalone
+            />
           </div>
         ) : (
           <div className="pluse-detail-grid">
@@ -796,13 +1261,24 @@ function QuestRoute({
   const { t } = useI18n()
   const location = useLocation()
   const { questId } = useParams()
-  const [quest, setQuest] = useState<Quest | null>(null)
+  const routeState = location.state as QuestRouteState | null
+  const stateInitialQuest = routeState?.initialQuest ?? null
+  const routeInitialQuest: Quest | null = stateInitialQuest?.id === questId ? stateInitialQuest : null
+  const [quest, setQuest] = useState<Quest | null>(() => routeInitialQuest)
   const [error, setError] = useState<string | null>(null)
-  const routeState = location.state as { backgroundLocation?: RouterLocation } | null
   const isOverlay = Boolean(routeState?.backgroundLocation)
 
   useEffect(() => {
     if (!questId) return
+    if (routeInitialQuest) {
+      setQuest(routeInitialQuest)
+      setError(null)
+      onQuestResolved(routeInitialQuest)
+      if (routeInitialQuest.unread) {
+        void api.updateQuest(questId, { unread: false })
+      }
+      return
+    }
     setQuest(null)
     void api.getQuest(questId).then((result) => {
       if (!result.ok) {
@@ -816,7 +1292,7 @@ function QuestRoute({
         void api.updateQuest(questId, { unread: false })
       }
     })
-  }, [questId, onQuestResolved])
+  }, [questId, onQuestResolved, routeInitialQuest])
 
   const handleQuestLoaded = useCallback((nextQuest: Quest) => {
     setQuest(nextQuest)
@@ -865,8 +1341,8 @@ function QuestRoute({
   return (
     <Suspense fallback={fallback}>
       {quest.kind === 'task'
-        ? <TaskDetail questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
-        : <ChatView questId={questId} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />}
+        ? <TaskDetail questId={questId} initialQuest={quest} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />
+        : <ChatView questId={questId} initialQuest={quest} onQuestLoaded={handleQuestLoaded} onDataChanged={onDataChanged} />}
     </Suspense>
   )
 }
@@ -936,12 +1412,13 @@ function WorkspaceHeader(props: {
         <span className="pluse-header-presence" aria-hidden="true" />
         <button
           type="button"
-          className="pluse-button pluse-button-ghost pluse-button-compact"
+          className="pluse-button pluse-button-ghost pluse-button-compact pluse-header-locale-toggle"
           onClick={() => setLocale(nextLocale(locale))}
           aria-label={t('切换语言')}
           title={t('切换语言')}
         >
-          {localeLabel(nextLocale(locale))}
+          <span className="pluse-header-locale-label-desktop">{localeLabel(nextLocale(locale))}</span>
+          <span className="pluse-header-locale-label-mobile">{nextLocale(locale) === 'zh-CN' ? '中' : 'EN'}</span>
         </button>
         <button
           type="button"
@@ -979,8 +1456,8 @@ function WorkspaceHeader(props: {
             type="button"
             className={`pluse-icon-button pluse-header-action-icon pluse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
             onClick={props.onToggleRail}
-            aria-label={t('切换任务面板')}
-            title={t('切换任务面板')}
+            aria-label={t('切换工作台')}
+            title={t('切换工作台')}
           >
             <RailIcon className="pluse-icon" />
           </button>
@@ -1024,7 +1501,7 @@ function Shell({
   const isQuestRoute = location.pathname.startsWith('/quests/')
   const isProjectRoute = location.pathname.startsWith('/projects/')
   const isSettingsRoute = location.pathname === '/settings'
-  const routeState = location.state as { backgroundLocation?: RouterLocation } | null
+  const routeState = location.state as QuestRouteState | null
   const backgroundLocation = routeState?.backgroundLocation ?? null
   const showRail = Boolean(activeProjectId)
   const sidebarVisible = isDesktop ? desktopSidebarVisible : mobileSidebarOpen
@@ -1053,9 +1530,13 @@ function Shell({
 
     if (locationPathRef.current === '/' && result.data[0]) {
       const projectId = result.data[0].id
-      const questId = await getPreferredSessionId(projectId)
-      if (locationPathRef.current !== '/') return
-      navigate(questId ? `/quests/${questId}` : `/projects/${projectId}`, { replace: true })
+      void getPreferredSession(projectId).then((quest) => {
+        if (locationPathRef.current !== '/') return
+        navigate(
+          quest ? `/quests/${quest.id}` : `/projects/${projectId}`,
+          quest ? { replace: true, state: { initialQuest: quest } } : { replace: true },
+        )
+      })
     }
   }, [navigate])
 
@@ -1136,7 +1617,7 @@ function Shell({
     },
   )
 
-  if (!auth.setupRequired && !auth.authenticated) {
+  if (!auth.authenticated) {
     return <Navigate to="/login" replace />
   }
 
@@ -1179,8 +1660,11 @@ function Shell({
             navigate('/')
             return
           }
-          void getPreferredSessionId(activeProjectId).then((questId) => {
-            navigate(questId ? `/quests/${questId}` : `/projects/${activeProjectId}`)
+          void getPreferredSession(activeProjectId).then((quest) => {
+            navigate(
+              quest ? `/quests/${quest.id}` : `/projects/${activeProjectId}`,
+              quest ? { state: { initialQuest: quest } } : undefined,
+            )
           })
         }}
       />
@@ -1270,10 +1754,8 @@ function Shell({
             <TodoPanel
               projectId={activeProjectId}
               projectName={activeProject?.name ?? null}
-              projectWorkDir={activeProject?.workDir ?? null}
               projects={projects}
               activeQuestId={activeQuestId}
-              onSelectProject={handleProjectSelected}
               onRequestClose={() => setMobileRailOpen(false)}
             />
           </div>
@@ -1321,7 +1803,7 @@ export function MainPage() {
         element={
           auth.authenticated
             ? <Navigate to="/" replace />
-            : <LoginPage onAuthenticated={setAuth} theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
+            : <LoginPage setupRequired={auth.setupRequired} onAuthenticated={setAuth} theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
         }
       />
       <Route path="/*" element={<Shell auth={auth} theme={theme} onToggleTheme={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />} />
