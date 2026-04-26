@@ -24,5 +24,9 @@
   - [0004-automation-ia-and-naming.md](./0004-automation-ia-and-naming.md)
   - [0004-automation-result-attention.md](./0004-automation-result-attention.md)
     - 当前用于承接 Todo / Automation workspace IA，而不是更深的 result-attention 状态机
+  - [0009-project-automation-closed-loop.md](./0009-project-automation-closed-loop.md)
+    - 当前用于承接项目内自动化闭环、跨项目总控、成熟度分级和渐进接入计划
   - [0003-agent-driven-session-classification.md](./0003-agent-driven-session-classification.md)
   - [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
+  - [0006-quick-select-and-copy-session-id.md](./0006-quick-select-and-copy-session-id.md)
+  - [0008-service-supervision-and-recovery.md](./0008-service-supervision-and-recovery.md)

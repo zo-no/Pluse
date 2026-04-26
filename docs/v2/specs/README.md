@@ -27,3 +27,4 @@
   - [0004-automation-workspace-grouping-iteration-1.md](./0004-automation-workspace-grouping-iteration-1.md)
   - [0003-agent-driven-session-classification-phase-1.md](./0003-agent-driven-session-classification-phase-1.md)
   - [0005-quest-archive-review-todo-pruning-phase-1.md](./0005-quest-archive-review-todo-pruning-phase-1.md)
+  - [0006-quick-select-and-copy-session-id.md](./0006-quick-select-and-copy-session-id.md)

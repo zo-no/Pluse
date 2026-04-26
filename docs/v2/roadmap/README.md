@@ -21,3 +21,5 @@
 ## 当前主线
 
 - [0001-human-workload-control.md](./0001-human-workload-control.md)
+- [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
+- [0009-project-automation-closed-loop.md](./0009-project-automation-closed-loop.md)

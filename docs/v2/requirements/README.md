@@ -32,7 +32,15 @@
   - 核心问题：待办与自动化的产品边界不清晰，自动化仍被误表述为可完成、可处理的对象
   - 说明：这条需求先锁定对象语义和工作面板边界，再决定后续更深的状态设计
 
+- [0009-project-automation-closed-loop.md](./0009-project-automation-closed-loop.md)
+  - 核心问题：自动化接入后缺少项目内闭环、跨项目总控、渐进成熟度和信息透出预算
+  - 说明：这是将自动化从“更多定时任务”推进为“项目自维护系统”的上位需求
+
 ### P1
+
+- [0008-service-supervision-and-recovery.md](./0008-service-supervision-and-recovery.md)
+  - 核心问题：Pluse 日常服务依赖临时终端进程，退出后 Web/API 不可用，缺少常驻、恢复和诊断入口
+  - 说明：这是把 Pluse 从开发进程提升为日常本机工作台的基础可靠性需求
 
 - [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
   - 核心问题：Quest 归档不会收敛由它派生的 review 信号，系统缺少关联对象的生命周期归属规则
@@ -48,17 +56,27 @@
   - 核心问题：缺少足够轻的临时捕获入口
   - 说明：这是重要补充能力，但优先级低于工作负载控制
 
+- [0006-quick-select-and-copy-session-id.md](./0006-quick-select-and-copy-session-id.md)
+  - 核心问题：会话消息操作中，复制会话 ID 步骤过长
+  - 说明：是会话日常操作效率的直接提效需求，目标是会话列表单按钮复制 ID
+
+- [0007-proactive-daily-record.md](./0007-proactive-daily-record.md)
+  - 核心问题：长期项目缺少固定、可持续的人类日常信息采集入口
+  - 说明：这是“主动记录”需求，围绕项目级每日日记式窗口，形成长期可积累数据
+
 ## 当前顺序
 
 建议默认按以下顺序推进：
 
 1. 先确认 `0001-human-workload-control`
 2. 在 `0001` 边界内同步确认 `0004-ai-task-result-handling`
-3. 先基于 `0004` 收敛 Todo / Automation 边界与工作面板 IA
-4. 再将 `0001` 拆成多期 `spec`
-5. 先锁定 `0005-quest-lifecycle-linked-dependent-cleanup`，避免 Todo / Session 剪枝没有生命周期边界
-6. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
-7. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+3. 基于 `0009` 锁定项目级自动化闭环、跨项目总控和渐进接入规则
+4. 先基于 `0004` 收敛 Todo / Automation 边界与工作面板 IA
+5. 再将 `0001` 拆成多期 `spec`
+6. 先锁定 `0005-quest-lifecycle-linked-dependent-cleanup`，避免 Todo / Session 剪枝没有生命周期边界
+7. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
+8. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+9. 再推进 `0006-quick-select-and-copy-session-id` 作为 `session` 日常操作提效项
 
 ## 维护规则
 
