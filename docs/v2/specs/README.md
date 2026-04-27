@@ -23,6 +23,7 @@
 - 当前 spec：
   - [0001-human-workload-control-phase-1.md](./0001-human-workload-control-phase-1.md)
   - [0001-human-workload-control-p0-review-todo-uniqueness.md](./0001-human-workload-control-p0-review-todo-uniqueness.md)
+  - [0010-project-priority-tiers-phase-1.md](./0010-project-priority-tiers-phase-1.md)
   - [0004-automation-ia-and-naming-phase-1.md](./0004-automation-ia-and-naming-phase-1.md)
   - [0004-automation-workspace-grouping-iteration-1.md](./0004-automation-workspace-grouping-iteration-1.md)
   - [0009-automation-panel-phase-1.md](./0009-automation-panel-phase-1.md)

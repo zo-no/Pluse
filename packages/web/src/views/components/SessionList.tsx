@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Domain, Project, Quest, SessionCategory } from '@pluse/types'
+import type { Domain, Project, ProjectPriority, Quest, SessionCategory } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
@@ -67,9 +67,26 @@ function projectDomainName(project: Project, domains: Domain[], t: (key: string,
   return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
 }
 
+const PROJECT_PRIORITY_ORDER: ProjectPriority[] = ['mainline', 'priority', 'normal', 'low']
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string, values?: Record<string, string | number>) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
+}
+
+function sortProjectsByPriorityGroup(projects: Project[]): Project[] {
+  return [...projects].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1
+    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })
+}
+
 type ProjectPickerGroup = {
   key: string
   label: string
+  priority: ProjectPriority
   projects: Project[]
 }
 
@@ -181,6 +198,7 @@ export function SessionList({
   const [projectDir, setProjectDir] = useState('')
   const [projectGoal, setProjectGoal] = useState('')
   const [projectDomainId, setProjectDomainId] = useState('')
+  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({ low: false })
   const [error, setError] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -198,39 +216,22 @@ export function SessionList({
     return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
   }, [activeProject, domains, t])
 
+  const activeProjectContextLabel = useMemo(() => (
+    activeProject
+      ? `${projectPriorityLabel(activeProject.priority, t)} · ${activeDomainName}`
+      : activeDomainName
+  ), [activeDomainName, activeProject, t])
+
   const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() => {
-    const knownDomainIds = new Set(domains.map((domain) => domain.id))
-    const projectsByDomain = new Map<string, Project[]>()
-    const ungroupedProjects: Project[] = []
-
-    for (const project of projects) {
-      if (project.domainId && knownDomainIds.has(project.domainId)) {
-        const current = projectsByDomain.get(project.domainId)
-        if (current) current.push(project)
-        else projectsByDomain.set(project.domainId, [project])
-      } else {
-        ungroupedProjects.push(project)
-      }
-    }
-
-    const grouped = domains
-      .map((domain) => ({
-        key: domain.id,
-        label: domain.name,
-        projects: projectsByDomain.get(domain.id) ?? [],
+    return PROJECT_PRIORITY_ORDER
+      .map((priority) => ({
+        key: priority,
+        label: projectPriorityLabel(priority, t),
+        priority,
+        projects: sortProjectsByPriorityGroup(projects.filter((project) => project.priority === priority)),
       }))
       .filter((group) => group.projects.length > 0)
-
-    if (ungroupedProjects.length > 0) {
-      grouped.push({
-        key: 'ungrouped',
-        label: t('未分组'),
-        projects: ungroupedProjects,
-      })
-    }
-
-    return grouped
-  }, [domains, projects, t])
+  }, [projects, t])
 
   const sidebarContextLabel = useMemo(() => (
     `${t('会话栏')}-${sidebarTab === 'domains' ? t('领域') : t('会话')}`
@@ -646,7 +647,7 @@ export function SessionList({
             >
               <div className="pluse-project-switcher-label">
                 <strong>{activeProject?.name ?? t('选择项目')}</strong>
-                <span>{activeDomainName}</span>
+                <span>{activeProjectContextLabel}</span>
               </div>
               <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
             </button>
@@ -654,13 +655,22 @@ export function SessionList({
             {projectPickerOpen ? (
               <div className="pluse-project-picker">
                 <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
-                  {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => (
+                  {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
+                    const groupOpen = expandedProjectPriorityGroups[group.key] ?? group.priority !== 'low'
+                    return (
                     <section key={group.key} className="pluse-project-picker-group">
-                      <div className="pluse-project-picker-group-head">
-                        <strong>{group.label}</strong>
+                      <button
+                        type="button"
+                        className="pluse-project-picker-group-head"
+                        onClick={() => setExpandedProjectPriorityGroups((current) => ({
+                          ...current,
+                          [group.key]: !(current[group.key] ?? group.priority !== 'low'),
+                        }))}
+                      >
+                        <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
                         <span>{t('{count} 个项目', { count: group.projects.length })}</span>
-                      </div>
-                      {group.projects.map((project) => (
+                      </button>
+                      {groupOpen ? group.projects.map((project) => (
                         <button
                           key={project.id}
                           type="button"
@@ -670,12 +680,16 @@ export function SessionList({
                           <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
                           <div className="pluse-project-picker-item-text">
                             <strong>{project.name}</strong>
-                            <span>{projectDomainName(project, domains, t)}</span>
+                            <span className="pluse-project-picker-item-meta">
+                              <span>{projectDomainName(project, domains, t)}</span>
+                              <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
+                            </span>
                           </div>
                         </button>
-                      ))}
+                      )) : null}
                     </section>
-                  )) : (
+                    )
+                  }) : (
                     <p className="pluse-domain-empty">{t('暂无项目')}</p>
                   )}
                 </div>

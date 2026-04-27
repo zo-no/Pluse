@@ -3498,8 +3498,14 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  border: 0;
   padding: 6px 7px 3px;
+  background: transparent;
   color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .pluse-project-picker-group-head strong {
@@ -3551,6 +3557,7 @@ select {
   display: grid;
   gap: 0;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .pluse-project-picker-item-text strong {
@@ -3568,6 +3575,46 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.pluse-project-picker-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pluse-project-priority-badge,
+.pluse-project-picker-item-text .pluse-project-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.pluse-project-priority-badge.is-mainline {
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  color: var(--accent-strong);
+}
+
+.pluse-project-priority-badge.is-priority {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: color-mix(in srgb, var(--warning) 76%, var(--text));
+}
+
+.pluse-project-priority-badge.is-low {
+  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+  color: color-mix(in srgb, var(--text-muted) 86%, transparent);
 }
 
 .pluse-project-picker-footer {
@@ -3700,6 +3747,11 @@ select {
   color: color-mix(in srgb, var(--warning) 72%, var(--text));
 }
 
+.pluse-reminder-project-priority-select.is-low {
+  border-color: color-mix(in srgb, var(--text-muted) 38%, var(--border));
+  color: var(--text-muted);
+}
+
 .pluse-domain-group-actions {
   display: flex;
   align-items: center;
@@ -3776,7 +3828,8 @@ select {
 }
 
 .pluse-domain-project-copy .pluse-sidebar-item-title {
-  gap: 0;
+  gap: 6px;
+  align-items: center;
 }
 
 .pluse-domain-project-copy .pluse-sidebar-item-title strong {

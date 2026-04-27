@@ -1,7 +1,10 @@
+import type { ProjectPriority } from './project'
+
 export type ReminderCreatedBy = 'human' | 'ai' | 'system'
 export type ReminderType = 'custom' | 'review' | 'follow_up' | 'needs_input' | 'failure'
 export type ReminderPriority = 'urgent' | 'high' | 'normal' | 'low'
-export type ReminderProjectPriority = 'mainline' | 'priority' | 'normal'
+
+export type ReminderProjectPriority = ProjectPriority
 export type ReminderListOrder = 'attention' | 'time'
 
 export interface ReminderProjectPrioritySetting {

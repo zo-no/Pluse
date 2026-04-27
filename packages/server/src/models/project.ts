@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import type { CreateProjectInput, Project, ProjectVisibility, UpdateProjectInput } from '@pluse/types'
+import type { CreateProjectInput, Project, ProjectPriority, ProjectVisibility, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 
 function genId(): string {
@@ -21,6 +21,7 @@ type ProjectRow = {
   domain_id: string | null
   archived: number
   pinned: number
+  priority: ProjectPriority
   visibility: ProjectVisibility
   created_at: string
   updated_at: string
@@ -38,6 +39,7 @@ function rowToProject(row: ProjectRow): Project {
     domainId: row.domain_id ?? undefined,
     archived: row.archived === 1,
     pinned: row.pinned === 1,
+    priority: row.priority ?? 'normal',
     visibility: row.visibility,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -110,8 +112,8 @@ export function createProjectRecord(
 
   db.run(
     `INSERT INTO projects (
-      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, priority, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
     [
       id,
       input.name,
@@ -122,6 +124,7 @@ export function createProjectRecord(
       input.systemPrompt ?? null,
       input.domainId ?? null,
       input.pinned ? 1 : 0,
+      input.priority ?? 'normal',
       input.visibility ?? 'user',
       ts,
       updatedAt,
@@ -135,8 +138,8 @@ export function upsertProjectRecord(project: Project): Project {
   const db = getDb()
   db.run(
     `INSERT INTO projects (
-      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, visibility, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, name, icon, goal, description, work_dir, system_prompt, domain_id, archived, pinned, priority, visibility, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       icon = excluded.icon,
@@ -147,6 +150,7 @@ export function upsertProjectRecord(project: Project): Project {
       domain_id = excluded.domain_id,
       archived = excluded.archived,
       pinned = excluded.pinned,
+      priority = excluded.priority,
       visibility = excluded.visibility,
       updated_at = excluded.updated_at`,
     [
@@ -160,6 +164,7 @@ export function upsertProjectRecord(project: Project): Project {
       project.domainId ?? null,
       project.archived ? 1 : 0,
       project.pinned ? 1 : 0,
+      project.priority ?? 'normal',
       project.visibility,
       project.createdAt,
       project.updatedAt,
@@ -208,6 +213,10 @@ export function updateProject(id: string, input: UpdateProjectInput & { workDir?
   if ('pinned' in input && input.pinned !== undefined) {
     sets.push('pinned = ?')
     params.push(input.pinned ? 1 : 0)
+  }
+  if ('priority' in input && input.priority !== undefined) {
+    sets.push('priority = ?')
+    params.push(input.priority)
   }
   if ('archived' in input && input.archived !== undefined) {
     sets.push('archived = ?')

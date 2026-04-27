@@ -20,6 +20,7 @@ function printDomain(domain: Domain): void {
 
 function printProject(project: Project): void {
   console.log(`    ${project.id}  ${project.name}`)
+  console.log(`      priority: ${project.priority}`)
   console.log(`      workDir: ${project.workDir}`)
   if (project.goal) console.log(`      goal: ${project.goal}`)
   if (project.description) console.log(`      description: ${project.description}`)

@@ -71,7 +71,7 @@ describe('renderTemplate', () => {
   const run = makeRun({ id: 'run-99' })
 
   it('replaces {{project.name}}', () => {
-    const project = { id: 'p1', name: 'My Project', workDir: '/tmp', archived: false, pinned: false, visibility: 'user' as const, createdAt: '', updatedAt: '' }
+    const project = { id: 'p1', name: 'My Project', workDir: '/tmp', archived: false, pinned: false, visibility: 'user' as const, priority: 'normal' as const, createdAt: '', updatedAt: '' }
     const result = renderTemplate('Project: {{project.name}}', { quest, run, project })
     expect(result).toBe('Project: My Project')
   })
@@ -108,7 +108,7 @@ describe('renderTemplate', () => {
   })
 
   it('.shell variant and plain variant coexist without conflict', () => {
-    const project = { id: 'p1', name: "Alice's", workDir: '/tmp', archived: false, pinned: false, visibility: 'user' as const, createdAt: '', updatedAt: '' }
+    const project = { id: 'p1', name: "Alice's", workDir: '/tmp', archived: false, pinned: false, visibility: 'user' as const, priority: 'normal' as const, createdAt: '', updatedAt: '' }
     const result = renderTemplate('raw={{project.name}} safe={{project.name.shell}}', { quest, run, project })
     // raw variant should be the plain name; shell variant should be escaped
     expect(result).toBe("raw=Alice's safe='Alice'\\''s'")

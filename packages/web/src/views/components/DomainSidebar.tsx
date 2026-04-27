@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import type { Domain, Project } from '@pluse/types'
+import type { Domain, Project, ProjectPriority } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { getPreferredSessionId } from '@/views/utils/session-selection'
@@ -41,6 +41,13 @@ function shortProjectPath(value: string): string {
   const parts = normalized.replace(/^~\//, '').replace(/^\//, '').split('/').filter(Boolean)
   if (parts.length <= 4) return normalized
   return `${isHome ? '~/' : '/'}${parts.slice(0, 2).join('/')}/…/${parts.slice(-2).join('/')}`
+}
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
 }
 
 export function DomainSidebar({
@@ -215,12 +222,13 @@ export function DomainSidebar({
           className="pluse-sidebar-item-main pluse-domain-project-main"
           onClick={() => void openProjectFirstSession(project.id)}
         >
-          <div className="pluse-domain-project-copy">
-            <div className="pluse-sidebar-item-title">
-              <strong>{project.name}</strong>
+            <div className="pluse-domain-project-copy">
+              <div className="pluse-sidebar-item-title">
+                <strong>{project.name}</strong>
+                <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
+              </div>
+              <p title={project.workDir}>{shortProjectPath(project.workDir)}</p>
             </div>
-            <p title={project.workDir}>{shortProjectPath(project.workDir)}</p>
-          </div>
         </button>
         <div className="pluse-sidebar-item-actions pluse-domain-project-actions">
           <button

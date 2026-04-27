@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, type Location as RouterLocation } from 'react-router-dom'
-import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, Quest, Todo, TokenUsageSummary } from '@pluse/types'
+import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, ProjectPriority, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { ArchiveIcon, ClockIcon, MenuIcon, MoonIcon, PauseIcon, PlayIcon, PlusIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SparkIcon, SunIcon } from '@/views/components/icons'
@@ -32,6 +32,13 @@ function projectAvatar(project: Pick<Project, 'name' | 'icon'>): string {
   if (icon) return icon
   const name = project.name.trim()
   return name ? name[0]!.toUpperCase() : '#'
+}
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
 }
 
 function formatDateTime(value?: string, t?: ((key: string) => string), locale = 'zh-CN'): string {
@@ -1071,6 +1078,7 @@ function ProjectPage({
   const [goal, setGoal] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [domainId, setDomainId] = useState('')
+  const [priority, setPriority] = useState<ProjectPriority>('normal')
   const overviewReloadTimerRef = useRef<number | null>(null)
   const pendingOverviewReloadRef = useRef(false)
   const pendingDomainReloadRef = useRef(false)
@@ -1104,6 +1112,7 @@ function ProjectPage({
     setGoal(result.data.project.goal ?? '')
     setSystemPrompt(result.data.project.systemPrompt ?? '')
     setDomainId(result.data.project.domainId ?? '')
+    setPriority(result.data.project.priority)
     setError(null)
     onProjectLoaded(result.data)
   }, [onProjectLoaded, projectId])
@@ -1147,7 +1156,10 @@ function ProjectPage({
 
   useSseEvent(
     (event) => {
-      const shouldReloadOverview = event.type === 'project_updated' && event.data.projectId === projectId
+      const shouldReloadOverview = (
+        event.type === 'project_updated'
+        || event.type === 'reminder_project_priority_updated'
+      ) && event.data.projectId === projectId
       const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
       if (!shouldReloadOverview && !shouldReloadDomains) return
 
@@ -1180,7 +1192,7 @@ function ProjectPage({
 
   async function saveProject() {
     setSaving(true)
-    const result = await api.updateProject(projectId, { name, icon: icon || null, goal, systemPrompt, domainId: domainId || null })
+    const result = await api.updateProject(projectId, { name, icon: icon || null, goal, systemPrompt, domainId: domainId || null, priority })
     setSaving(false)
     if (!result.ok) {
       setError(result.error)
@@ -1248,6 +1260,7 @@ function ProjectPage({
           </div>
           <div className="pluse-project-tab-meta">
             <span className="pluse-project-avatar is-compact" aria-hidden="true">{projectAvatar(overview.project)}</span>
+            <span className={`pluse-project-priority-badge is-${overview.project.priority}`}>{projectPriorityLabel(overview.project.priority, t)}</span>
             <span className="pluse-info-path-sm">{shortPath(overview.project.workDir)}</span>
             {activeDomainName ? <span className="pluse-inline-pill">{activeDomainName}</span> : null}
             {overview.project.pinned ? <span className="pluse-inline-pill">{t('固定')}</span> : null}
@@ -1316,6 +1329,15 @@ function ProjectPage({
                   {domains.map((domain) => (
                     <option key={domain.id} value={domain.id}>{domain.name}</option>
                   ))}
+                </select>
+              </label>
+              <label>
+                <span>{t('项目优先级')}</span>
+                <select value={priority} onChange={(event) => setPriority(event.target.value as ProjectPriority)}>
+                  <option value="mainline">{t('主线')}</option>
+                  <option value="priority">{t('优先')}</option>
+                  <option value="normal">{t('普通')}</option>
+                  <option value="low">{t('低优先')}</option>
                 </select>
               </label>
               <label className="pluse-form-span">
@@ -1734,7 +1756,11 @@ function Shell({
 
   useSseEvent(
     (event) => {
-      if (event.type !== 'project_opened' && event.type !== 'project_updated') return
+      if (
+        event.type !== 'project_opened'
+        && event.type !== 'project_updated'
+        && event.type !== 'reminder_project_priority_updated'
+      ) return
       if (projectsReloadTimerRef.current) window.clearTimeout(projectsReloadTimerRef.current)
       projectsReloadTimerRef.current = window.setTimeout(() => {
         void loadProjects()

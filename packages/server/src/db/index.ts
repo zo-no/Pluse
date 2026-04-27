@@ -42,6 +42,7 @@ function initSchema(db: Database): void {
     domain_id     TEXT REFERENCES domains(id),
     archived      INTEGER NOT NULL DEFAULT 0,
     pinned        INTEGER NOT NULL DEFAULT 0,
+    priority      TEXT NOT NULL DEFAULT 'normal',
     visibility    TEXT NOT NULL DEFAULT 'user',
     created_by    TEXT NOT NULL DEFAULT 'human',
     order_index   INTEGER NOT NULL DEFAULT 0,
@@ -52,6 +53,7 @@ function initSchema(db: Database): void {
   ensureColumn(db, 'projects', 'domain_id', 'ALTER TABLE projects ADD COLUMN domain_id TEXT REFERENCES domains(id)')
   ensureColumn(db, 'projects', 'description', 'ALTER TABLE projects ADD COLUMN description TEXT')
   ensureColumn(db, 'projects', 'icon', 'ALTER TABLE projects ADD COLUMN icon TEXT')
+  ensureColumn(db, 'projects', 'priority', "ALTER TABLE projects ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
 
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_work_dir
     ON projects (work_dir)
@@ -212,6 +214,22 @@ function initSchema(db: Database): void {
   ) STRICT`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_reminder_project_priorities_priority
     ON reminder_project_priorities (priority, updated_at DESC)`)
+
+  db.run(`
+    UPDATE projects
+       SET priority = (
+         SELECT priority
+           FROM reminder_project_priorities
+          WHERE reminder_project_priorities.project_id = projects.id
+          LIMIT 1
+       )
+     WHERE EXISTS (
+       SELECT 1
+         FROM reminder_project_priorities
+        WHERE reminder_project_priorities.project_id = projects.id
+          AND reminder_project_priorities.priority IN ('mainline', 'priority', 'normal', 'low')
+     )
+  `)
 
   db.run(`CREATE TABLE IF NOT EXISTS notifications (
     id              TEXT PRIMARY KEY NOT NULL,

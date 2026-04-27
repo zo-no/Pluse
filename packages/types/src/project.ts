@@ -1,4 +1,5 @@
 export type ProjectVisibility = 'user' | 'system'
+export type ProjectPriority = 'mainline' | 'priority' | 'normal' | 'low'
 
 export interface ProjectManifest {
   projectId: string
@@ -21,6 +22,7 @@ export interface Project {
   domainId?: string
   archived: boolean
   pinned: boolean
+  priority: ProjectPriority
   visibility: ProjectVisibility
   createdAt: string
   updatedAt: string
@@ -35,6 +37,7 @@ export interface CreateProjectInput {
   systemPrompt?: string
   domainId?: string | null
   pinned?: boolean
+  priority?: ProjectPriority
 }
 
 export interface OpenProjectInput {
@@ -46,6 +49,7 @@ export interface OpenProjectInput {
   systemPrompt?: string
   domainId?: string | null
   pinned?: boolean
+  priority?: ProjectPriority
 }
 
 export interface UpdateProjectInput {
@@ -56,5 +60,6 @@ export interface UpdateProjectInput {
   systemPrompt?: string | null
   domainId?: string | null
   pinned?: boolean
+  priority?: ProjectPriority
   archived?: boolean
 }

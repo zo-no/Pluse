@@ -135,6 +135,7 @@ const REMINDER_PROJECT_PRIORITY_RANK: Record<ReminderProjectPriority, number> = 
   mainline: 0,
   priority: 1,
   normal: 2,
+  low: 3,
 }
 
 const REMINDER_PRIORITY_RANK: Record<Reminder['priority'], number> = {
@@ -320,7 +321,7 @@ function buildProjectRailGroups(params: {
       return {
         key,
         label: project?.name ?? (key === params.activeProjectId && params.activeProjectName ? params.activeProjectName : `${params.t('项目')} ${key}`),
-        reminderPriority: params.reminderProjectPriorities?.get(key) ?? 'normal',
+        reminderPriority: project?.priority ?? params.reminderProjectPriorities?.get(key) ?? 'normal',
         openTodos: params.openTodos.filter((todo) => todo.projectId === key),
         reminders: params.reminders.filter((reminder) => reminder.projectId === key),
       }
@@ -1264,8 +1265,9 @@ export function TodoPanel({
         <div className="pluse-task-list">
           {projectRailGroups.map((group) => {
             const reminderCollapsed = sourceTab === 'reminder' && collapsedReminderProjectKeys.includes(group.key)
+            const reminderDefaultCollapsed = sourceTab === 'reminder' && group.reminderPriority === 'low'
             const expanded = sourceTab === 'reminder'
-              ? !reminderCollapsed
+              ? reminderDefaultCollapsed ? reminderCollapsed : !reminderCollapsed
               : expandedProjectGroupKey === group.key
             const groupCount = sourceTab === 'human'
               ? group.openTodos.length
@@ -1312,6 +1314,7 @@ export function TodoPanel({
                     <option value="mainline">{t('主线')}</option>
                     <option value="priority">{t('优先')}</option>
                     <option value="normal">{t('普通')}</option>
+                    <option value="low">{t('低优先')}</option>
                   </select>
                 ) : null}
               </div>

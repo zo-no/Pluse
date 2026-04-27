@@ -55,6 +55,7 @@ export function setReminderProjectPriorityWithEffects(
     type: 'reminder_project_priority_updated',
     data: { projectId },
   })
+  emit({ type: 'project_updated', data: { projectId } })
   return result
 }
 

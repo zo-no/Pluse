@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
+import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectPriority, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import { getDomain } from '../models/domain'
 import { listProjectActivity } from '../models/project-activity'
@@ -39,6 +39,53 @@ const DEFAULT_ENTRY_PROJECT_DESCRIPTION = '自我对话是 Pluse 的默认入口
 
 function now(): string {
   return new Date().toISOString()
+}
+
+function demoteOtherMainlineProjects(projectId: string, fallback: ProjectPriority = 'priority'): void {
+  const db = getDb()
+  const ts = now()
+  db.run(
+    `UPDATE projects
+        SET priority = ?,
+            updated_at = ?
+      WHERE priority = 'mainline'
+        AND id <> ?
+        AND visibility = 'user'
+        AND archived = 0`,
+    [fallback, ts, projectId],
+  )
+  if (fallback === 'normal') {
+    db.run(
+      `DELETE FROM reminder_project_priorities
+       WHERE priority = 'mainline'
+         AND project_id <> ?`,
+      [projectId],
+    )
+    return
+  }
+  db.run(
+    `UPDATE reminder_project_priorities
+        SET priority = ?,
+            updated_at = ?
+      WHERE priority = 'mainline'
+        AND project_id <> ?`,
+    [fallback, ts, projectId],
+  )
+}
+
+function mirrorLegacyReminderProjectPriority(projectId: string, priority: ProjectPriority): void {
+  const db = getDb()
+  if (priority === 'normal') {
+    db.run('DELETE FROM reminder_project_priorities WHERE project_id = ?', [projectId])
+    return
+  }
+  const ts = now()
+  db.run(
+    `INSERT INTO reminder_project_priorities (project_id, priority, created_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(project_id) DO UPDATE SET priority = excluded.priority, updated_at = excluded.updated_at`,
+    [projectId, priority, ts, ts],
+  )
 }
 
 function readManifest(workDir: string): ProjectManifest | null {
@@ -193,6 +240,7 @@ function mergeProjectReferences(fromId: string, toId: string): void {
 }
 
 function alignProjectToManifest(projectId: string, manifest: ProjectManifest, seed?: Partial<OpenProjectInput>): Project {
+  if (seed?.priority === 'mainline') demoteOtherMainlineProjects(projectId)
   const project = updateProjectRecord(projectId, {
     name: seed?.name ?? manifest.name,
     icon: seed?.icon ?? manifest.icon ?? null,
@@ -201,14 +249,17 @@ function alignProjectToManifest(projectId: string, manifest: ProjectManifest, se
     systemPrompt: seed?.systemPrompt,
     domainId: seed?.domainId,
     pinned: seed?.pinned,
+    priority: seed?.priority,
     archived: false,
   })
+  if (seed?.priority) mirrorLegacyReminderProjectPriority(project.id, seed.priority)
   writeManifest(manifestFromProject(project))
   emit({ type: 'project_updated', data: { projectId: project.id } })
   return project
 }
 
 function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<OpenProjectInput>): Project {
+  if (seed?.priority === 'mainline') demoteOtherMainlineProjects(manifest.projectId)
   const created = createProjectRecord({
     id: manifest.projectId,
     name: seed?.name ?? manifest.name,
@@ -218,9 +269,11 @@ function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<Open
     systemPrompt: seed?.systemPrompt,
     domainId: seed?.domainId,
     pinned: seed?.pinned ?? false,
+    priority: seed?.priority ?? 'normal',
     createdAt: manifest.createdAt,
     updatedAt: manifest.updatedAt,
   })
+  mirrorLegacyReminderProjectPriority(created.id, created.priority)
   writeManifest(manifestFromProject(created))
   emit({ type: 'project_opened', data: { projectId: created.id } })
   return created
@@ -237,6 +290,7 @@ export function ensureBuiltinProjects(): void {
     workDir: getSystemRuntimeDir(),
     archived: false,
     pinned: false,
+    priority: 'normal',
     visibility: 'system',
     createdAt: getProject(SYSTEM_PROJECT_ID)?.createdAt ?? ts,
     updatedAt: ts,
@@ -300,6 +354,7 @@ function ensureDefaultEntryProject(ts: string): Project {
     domainId: undefined,
     archived: false,
     pinned: true,
+    priority: getProject(DEFAULT_ENTRY_PROJECT_ID)?.priority ?? 'normal',
     visibility: 'user',
     createdAt: getProject(DEFAULT_ENTRY_PROJECT_ID)?.createdAt ?? ts,
     updatedAt: ts,
@@ -330,13 +385,17 @@ export function openProject(input: OpenProjectInput): Project {
       systemPrompt: input.systemPrompt,
       domainId: input.domainId,
       pinned: input.pinned,
+      priority: input.priority ?? 'normal',
     })
+    if (created.priority === 'mainline') demoteOtherMainlineProjects(created.id)
+    mirrorLegacyReminderProjectPriority(created.id, created.priority)
     writeManifest(manifestFromProject(created))
     emit({ type: 'project_opened', data: { projectId: created.id } })
     return created
   }
 
   if (!manifest && byWorkDir) {
+    if (input.priority === 'mainline') demoteOtherMainlineProjects(byWorkDir.id)
     const updated = updateProjectRecord(byWorkDir.id, {
       name: input.name || byWorkDir.name,
       icon: input.icon === undefined ? byWorkDir.icon ?? null : input.icon ?? null,
@@ -345,8 +404,10 @@ export function openProject(input: OpenProjectInput): Project {
       systemPrompt: input.systemPrompt === undefined ? byWorkDir.systemPrompt ?? null : input.systemPrompt ?? null,
       domainId: input.domainId !== undefined ? input.domainId : byWorkDir.domainId ?? undefined,
       pinned: input.pinned ?? byWorkDir.pinned,
+      priority: input.priority,
       archived: false,
     })
+    if (input.priority) mirrorLegacyReminderProjectPriority(updated.id, input.priority)
     writeManifest(manifestFromProject(updated))
     emit({ type: 'project_opened', data: { projectId: updated.id } })
     return updated
@@ -377,7 +438,10 @@ export function openProject(input: OpenProjectInput): Project {
           systemPrompt: input.systemPrompt,
           domainId: input.domainId,
           pinned: input.pinned,
+          priority: input.priority ?? 'normal',
         })
+        if (copied.priority === 'mainline') demoteOtherMainlineProjects(copied.id)
+        mirrorLegacyReminderProjectPriority(copied.id, copied.priority)
         writeManifest(manifestFromProject(copied))
         emit({ type: 'project_opened', data: { projectId: copied.id } })
         return copied
@@ -450,7 +514,9 @@ export function updateProject(id: string, input: UpdateProjectInput): Project {
     throw new Error('Default entry project cannot be archived')
   }
   assertDomainAssignable(input.domainId)
+  if (input.priority === 'mainline') demoteOtherMainlineProjects(id)
   const updated = updateProjectRecord(id, input)
+  if (input.priority) mirrorLegacyReminderProjectPriority(id, input.priority)
   if (updated.visibility === 'user') {
     writeManifest(manifestFromProject(updated))
   }

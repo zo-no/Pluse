@@ -38,6 +38,10 @@
 
 ### P1
 
+- [0010-project-priority-tiers-and-visibility.md](./0010-project-priority-tiers-and-visibility.md)
+  - 核心问题：项目长期重要性只存在于提醒侧，缺少统一的四档项目优先级、低优先停放层和入口透出
+  - 说明：这是 `0001-human-workload-control` 在跨项目层面的基础能力，先于更复杂的提醒预算和全局负载控制
+
 - [0008-service-supervision-and-recovery.md](./0008-service-supervision-and-recovery.md)
   - 核心问题：Pluse 日常服务依赖临时终端进程，退出后 Web/API 不可用，缺少常驻、恢复和诊断入口
   - 说明：这是把 Pluse 从开发进程提升为日常本机工作台的基础可靠性需求
@@ -71,12 +75,13 @@
 1. 先确认 `0001-human-workload-control`
 2. 在 `0001` 边界内同步确认 `0004-ai-task-result-handling`
 3. 基于 `0009` 锁定项目级自动化闭环、跨项目总控和渐进接入规则
-4. 先基于 `0004` 收敛 Todo / Automation 边界与工作面板 IA
-5. 再将 `0001` 拆成多期 `spec`
-6. 先锁定 `0005-quest-lifecycle-linked-dependent-cleanup`，避免 Todo / Session 剪枝没有生命周期边界
-7. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
-8. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
-9. 再推进 `0006-quick-select-and-copy-session-id` 作为 `session` 日常操作提效项
+4. 先锁定 `0010-project-priority-tiers-and-visibility`，把项目级主线保护、低优先停放层和入口透出口径统一
+5. 先基于 `0004` 收敛 Todo / Automation 边界与工作面板 IA
+6. 再将 `0001` 拆成多期 `spec`
+7. 先锁定 `0005-quest-lifecycle-linked-dependent-cleanup`，避免 Todo / Session 剪枝没有生命周期边界
+8. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
+9. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
+10. 再推进 `0006-quick-select-and-copy-session-id` 作为 `session` 日常操作提效项
 
 ## 维护规则
 

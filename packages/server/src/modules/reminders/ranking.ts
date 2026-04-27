@@ -4,6 +4,7 @@ const PROJECT_PRIORITY_RANK = {
   mainline: 0,
   priority: 1,
   normal: 2,
+  low: 3,
 } as const
 
 const REMINDER_PRIORITY_RANK = {

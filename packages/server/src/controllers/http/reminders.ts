@@ -33,7 +33,7 @@ function sc(n: number): ContentfulStatusCode {
 
 const ReminderTypeSchema = z.enum(['custom', 'review', 'follow_up', 'needs_input', 'failure'])
 const ReminderPrioritySchema = z.enum(['urgent', 'high', 'normal', 'low'])
-const ReminderProjectPrioritySchema = z.enum(['mainline', 'priority', 'normal'])
+const ReminderProjectPrioritySchema = z.enum(['mainline', 'priority', 'normal', 'low'])
 const ReminderOrderSchema = z.enum(['attention', 'time'])
 
 const ReminderSchema = z.object({

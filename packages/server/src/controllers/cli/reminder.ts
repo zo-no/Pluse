@@ -39,6 +39,7 @@ function printReminder(reminder: Reminder): void {
 function projectPriorityLabel(priority: ReminderProjectPriority): string {
   if (priority === 'mainline') return 'mainline'
   if (priority === 'priority') return 'priority'
+  if (priority === 'low') return 'low'
   return 'normal'
 }
 
@@ -128,7 +129,7 @@ projectPriorityCommand
 
 projectPriorityCommand
   .command('set <project-id>')
-  .requiredOption('--priority <priority>', 'mainline, priority, or normal')
+  .requiredOption('--priority <priority>', 'mainline, priority, normal, or low')
   .option('--json', 'Output as JSON', false)
   .action(async (projectId: string, opts: { priority: ReminderProjectPriority; json: boolean }) => {
     const input = { priority: opts.priority }

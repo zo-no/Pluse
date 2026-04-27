@@ -27,6 +27,7 @@ const OpenProjectSchema = z.object({
   systemPrompt: z.string().optional(),
   domainId: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
+  priority: z.enum(['mainline', 'priority', 'normal', 'low']).optional(),
 })
 
 const UpdateProjectSchema = z.object({
@@ -37,6 +38,7 @@ const UpdateProjectSchema = z.object({
   systemPrompt: z.string().nullable().optional(),
   domainId: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
+  priority: z.enum(['mainline', 'priority', 'normal', 'low']).optional(),
   archived: z.boolean().optional(),
 })
 
