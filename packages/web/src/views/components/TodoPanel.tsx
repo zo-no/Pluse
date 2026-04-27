@@ -1265,7 +1265,7 @@ export function TodoPanel({
         <div className="pluse-task-list">
           {projectRailGroups.map((group) => {
             const reminderCollapsed = sourceTab === 'reminder' && collapsedReminderProjectKeys.includes(group.key)
-            const reminderDefaultCollapsed = sourceTab === 'reminder' && group.reminderPriority === 'low'
+            const reminderDefaultCollapsed = sourceTab === 'reminder' && (group.reminderPriority === 'normal' || group.reminderPriority === 'low')
             const expanded = sourceTab === 'reminder'
               ? reminderDefaultCollapsed ? reminderCollapsed : !reminderCollapsed
               : expandedProjectGroupKey === group.key

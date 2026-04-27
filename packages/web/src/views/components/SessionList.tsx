@@ -198,7 +198,10 @@ export function SessionList({
   const [projectDir, setProjectDir] = useState('')
   const [projectGoal, setProjectGoal] = useState('')
   const [projectDomainId, setProjectDomainId] = useState('')
-  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({ low: false })
+  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({
+    normal: false,
+    low: false,
+  })
   const [error, setError] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -656,7 +659,7 @@ export function SessionList({
               <div className="pluse-project-picker">
                 <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
                   {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
-                    const groupOpen = expandedProjectPriorityGroups[group.key] ?? group.priority !== 'low'
+                    const groupOpen = expandedProjectPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
                     return (
                     <section key={group.key} className="pluse-project-picker-group">
                       <button
@@ -664,7 +667,7 @@ export function SessionList({
                         className="pluse-project-picker-group-head"
                         onClick={() => setExpandedProjectPriorityGroups((current) => ({
                           ...current,
-                          [group.key]: !(current[group.key] ?? group.priority !== 'low'),
+                          [group.key]: !(current[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')),
                         }))}
                       >
                         <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
