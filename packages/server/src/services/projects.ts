@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, sep } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectPriority, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import { getDomain } from '../models/domain'
@@ -21,6 +21,7 @@ import { emit } from './events'
 import {
   ensureDir,
   getDefaultEntryProjectDir,
+  getPluseRoot,
   getProjectManifestDir,
   getProjectManifestPath,
   getSystemRuntimeDir,
@@ -98,7 +99,15 @@ function readManifest(workDir: string): ProjectManifest | null {
   }
 }
 
+function isManagedWorkDir(workDir: string): boolean {
+  const root = resolveWorkDir(getPluseRoot())
+  const resolved = resolveWorkDir(workDir)
+  const prefix = root.endsWith(sep) ? root : root + sep
+  return resolved === root || resolved.startsWith(prefix)
+}
+
 function writeManifest(manifest: ProjectManifest): void {
+  if (!isManagedWorkDir(manifest.workDir)) return
   ensureDir(getProjectManifestDir(manifest.workDir))
   writeFileSync(getProjectManifestPath(manifest.workDir), JSON.stringify(manifest, null, 2))
 }
