@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
 import { authCommand } from './controllers/cli/auth'
+import { checkInCommand } from './controllers/cli/check-in'
 import { commandsCommand } from './controllers/cli/commands'
 import { domainCommand } from './controllers/cli/domain'
 import { projectCommand } from './controllers/cli/project'
@@ -18,6 +19,7 @@ program
   .version('0.1.0')
 
 program.addCommand(authCommand)
+program.addCommand(checkInCommand)
 program.addCommand(commandsCommand)
 program.addCommand(domainCommand)
 program.addCommand(projectCommand)

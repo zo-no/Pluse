@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 import {
   isClaudeRuntimeTool,
+  isGeminiRuntimeTool,
   isRuntimeCommandAvailable,
   resolveRuntimeCommandSpec,
   type RuntimeToolName,
@@ -12,11 +13,35 @@ import { getSourceCodexHome } from '../support/codex-home'
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
 const CLAUDE_MODELS = [
-  { id: 'sonnet[1m]', label: 'Sonnet 4.6' },
-  { id: 'opus[1m]', label: 'Opus 4.7' },
-  { id: 'haiku[1m]', label: 'Haiku 4.5' },
+  { id: 'sonnet', label: 'Sonnet 4.6' },
+  { id: 'sonnet[1m]', label: 'Sonnet 4.6 (1M)' },
+  { id: 'opus', label: 'Opus 4.7' },
+  { id: 'opus[1m]', label: 'Opus 4.7 (1M)' },
+  { id: 'haiku', label: 'Haiku 4.5' },
+  { id: 'haiku[1m]', label: 'Haiku 4.5 (1M)' },
 ]
-const DEFAULT_CLAUDE_MODEL = 'sonnet[1m]'
+const DEFAULT_CLAUDE_MODEL = 'sonnet'
+
+const GEMINI_MODELS = [
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
+  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { id: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+]
+const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview'
+
+const GEMINI_MODEL_ALIASES: Record<string, string> = {
+  '3': 'gemini-3-flash-preview',
+  '3-flash': 'gemini-3-flash-preview',
+  '3-pro': 'gemini-3-pro-preview',
+  '2.5': 'gemini-2.5-flash-lite',
+  '2.0': 'gemini-2.0-flash',
+  '2.0-flash': 'gemini-2.0-flash',
+  '2.0-pro': 'gemini-2.0-pro',
+}
 
 const CODEX_DEFAULT_MODEL = 'gpt-5.4'
 const DEFAULT_CODEX_EFFORT = 'high'
@@ -67,6 +92,12 @@ const BUILTIN_TOOLS: Array<Omit<RuntimeTool, 'available' | 'command'>> = [
     builtin: true,
   },
   {
+    id: 'gemini',
+    name: 'Gemini CLI',
+    runtimeFamily: 'gemini-stream-json',
+    builtin: true,
+  },
+  {
     id: 'mc',
     name: 'MC (--code)',
     runtimeFamily: 'claude-stream-json',
@@ -89,40 +120,28 @@ export function normalizeCodexModelId(value?: string | null): string {
   return CODEX_MODEL_ALIASES[trimmed] ?? trimmed
 }
 
+export function normalizeGeminiModelId(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase()
+  if (!trimmed || trimmed === 'default') return DEFAULT_GEMINI_MODEL
+  return GEMINI_MODEL_ALIASES[trimmed] ?? trimmed
+}
+
 export function normalizeClaudeModelId(value?: string | null): string {
   const trimmed = value?.trim().toLowerCase()
   if (!trimmed || trimmed === 'default') return DEFAULT_CLAUDE_MODEL
 
-  if (
-    trimmed === 'sonnet'
-    || trimmed === 'sonnet[1m]'
-    || trimmed === 'claude-sonnet-4-6'
-    || trimmed === 'claude-sonnet-4-6[1m]'
-  ) {
-    return 'sonnet[1m]'
-  }
+  if (trimmed === 'sonnet[1m]' || trimmed === 'claude-sonnet-4-6[1m]') return 'sonnet[1m]'
+  if (trimmed === 'sonnet' || trimmed === 'claude-sonnet-4-6') return 'sonnet'
+
+  if (trimmed === 'opus[1m]' || trimmed === 'claude-opus-4-6[1m]' || trimmed === 'claude-opus-4-7[1m]') return 'opus[1m]'
+  if (trimmed === 'opus' || trimmed === 'claude-opus-4-6' || trimmed === 'claude-opus-4-7') return 'opus'
 
   if (
-    trimmed === 'opus'
-    || trimmed === 'opus[1m]'
-    || trimmed === 'claude-opus-4-6'
-    || trimmed === 'claude-opus-4-6[1m]'
-    || trimmed === 'claude-opus-4-7'
-    || trimmed === 'claude-opus-4-7[1m]'
-  ) {
-    return 'opus[1m]'
-  }
-
-  if (
-    trimmed === 'haiku'
-    || trimmed === 'haiku[1m]'
-    || trimmed === 'claude-haiku-4-5'
+    trimmed === 'haiku[1m]'
     || trimmed === 'claude-haiku-4-5[1m]'
-    || trimmed === 'claude-haiku-4-5-20251001'
     || trimmed === 'claude-haiku-4-5-20251001[1m]'
-  ) {
-    return 'haiku[1m]'
-  }
+  ) return 'haiku[1m]'
+  if (trimmed === 'haiku' || trimmed === 'claude-haiku-4-5' || trimmed === 'claude-haiku-4-5-20251001') return 'haiku'
 
   return trimmed
 }
@@ -141,6 +160,15 @@ function buildClaudeCatalog(): RuntimeModelCatalog {
     models: CLAUDE_MODELS,
     effortLevels: null,
     defaultModel: DEFAULT_CLAUDE_MODEL,
+    reasoning: { kind: 'toggle', label: 'Thinking' },
+  }
+}
+
+function buildGeminiCatalog(): RuntimeModelCatalog {
+  return {
+    models: GEMINI_MODELS,
+    effortLevels: null,
+    defaultModel: DEFAULT_GEMINI_MODEL,
     reasoning: { kind: 'toggle', label: 'Thinking' },
   }
 }
@@ -327,7 +355,7 @@ function buildCodexCatalog(): RuntimeModelCatalog {
 }
 
 export function listRuntimeTools(): RuntimeTool[] {
-  return BUILTIN_TOOLS.map((tool) => {
+  const tools = BUILTIN_TOOLS.map((tool) => {
     const command = resolveRuntimeCommandSpec(tool.id as RuntimeToolName)
     return {
       ...tool,
@@ -335,12 +363,15 @@ export function listRuntimeTools(): RuntimeTool[] {
       available: isRuntimeCommandAvailable(command),
     }
   })
+  console.log('[catalog] listRuntimeTools returning:', tools.map(t => t.id).join(', '))
+  return tools
 }
 
 export function getRuntimeModelCatalog(toolId?: string | null): RuntimeModelCatalog {
   const normalized = toolId?.trim().toLowerCase()
   if (!normalized) return buildEmptyCatalog()
   if (isClaudeRuntimeTool(normalized)) return buildClaudeCatalog()
+  if (isGeminiRuntimeTool(normalized)) return buildGeminiCatalog()
   if (normalized === 'codex') return buildCodexCatalog()
   return buildEmptyCatalog()
 }

@@ -10,7 +10,8 @@
 
 - 当前系统里哪些对象拥有明确生命周期
 - 哪些对象是主对象，哪些对象只是派生物
-- Quest 归档引发的 review Todo 剪枝应该挂在哪一层
+- Quest 归档引发的 review Todo 和 Reminder 剪枝应该挂在哪一层
+- 独立 Todo 指向已归档来源 Quest 时应该如何表现
 - 如何先做最小闭环，而不提前抽象成通用生命周期引擎
 
 ## 设计立场
@@ -25,7 +26,7 @@
   - 归档和恢复不必完全对称；被主动剪枝的噪音信号默认不自动恢复
 
 - `Smallest-closed-loop`
-  - 先解决 Quest 归档与 review Todo 剪枝的最小闭环，再考虑更通用的扩展
+  - 先解决 Quest 归档与当前注意力对象剪枝的最小闭环，再考虑更通用的扩展
 
 ## 当前对象生命周期总览
 
@@ -39,6 +40,7 @@
 | `Project` | `active -> archived` | `services/projects.ts` |
 | `Quest` | `created -> kind/status changes -> moved -> archived/restored` | `services/quests.ts` |
 | `Todo` | `pending/done/cancelled -> deleted(soft)` | `services/todos.ts` |
+| `Reminder` | `active -> dismissed/deleted` | `services/reminders.ts` |
 
 ### 2. 执行历史对象
 
@@ -59,6 +61,7 @@
 | --- | --- | --- |
 | `SessionCategory` | Project 内会话分类承接层 | Quest 解绑后可自动回收空分类 |
 | `system review Todo` | Quest / Run 派生的人类 review 信号 | 源 Quest 退出工作面后应可被收敛 |
+| `Reminder(originQuestId)` | Quest 派生的人类注意力信号 | 源 Quest 退出工作面后应退出提醒面 |
 
 ### 4. 关键判断
 
@@ -66,6 +69,7 @@
 
 - `Quest` 归档不会统一影响所有关联对象
 - 只有“由 Quest 派生、且只服务于当前注意力面”的对象，才适合被跟随收敛
+- 独立对象可以继续保留对 Quest 的来源引用，但 UI 必须识别来源是否已归档
 
 ## 生命周期归属原则
 
@@ -93,6 +97,12 @@
 
 这类 Todo 属于 Quest 派生的 review 信号。
 
+同时，Phase 1 还应认定：
+
+- `originQuestId = 当前 Quest`
+
+这类 Reminder 属于 Quest 派生的注意力信号。Quest 归档后，它们应从当前提醒面中移除。
+
 ### 3. 历史对象保留，注意力对象收敛
 
 Quest 归档后：
@@ -101,6 +111,8 @@ Quest 归档后：
 - 上下文资产要保留
 - 独立承诺要保留
 - 只服务于当前注意力面的 review 噪音应被收敛
+- 来源于该 Quest 的提醒应被收敛
+- 独立 Todo 的来源入口应感知 Quest 已归档，并给出提示
 
 ### 4. cleanup 由生命周期 owner 发起
 
@@ -108,6 +120,7 @@ Quest 归档后：
 
 - Quest service 负责决定何时触发 cleanup
 - Todo service 负责执行“哪些 Todo 应被归档”
+- Reminder service 负责执行“哪些 Reminder 应被删除或关闭”
 
 hooks 不负责 cleanup 编排。
 
@@ -142,9 +155,11 @@ hooks 不负责 cleanup 编排。
 
 ### 做什么
 
-Phase 1 只定义一条明确规则：
+Phase 1 定义三条明确规则：
 
 - 当 Quest 被归档时，归档该 Quest 派生的 system review Todo
+- 当 Quest 被归档时，删除或关闭该 Quest 派生的 Reminder
+- 当独立 Todo 的来源 Quest 已归档时，来源入口提示已归档，不再直接跳转
 
 ### 不做什么
 
@@ -155,6 +170,7 @@ Phase 1 不做：
 - Project / Domain 级级联策略
 - Todo 新类型体系
 - Quest 恢复时的反向自动恢复
+- 恢复 Quest 时反向恢复旧 Reminder
 
 ## 推荐结构
 
@@ -181,7 +197,21 @@ Todo service 提供一个边界清晰的能力，例如：
 - 逐条归档
 - 发出已有 activity / SSE effects
 
-### 3. 归档与恢复保持非对称
+### 3. Reminder service 提供明确的剪枝能力
+
+Reminder service 提供一个边界清晰的能力，例如：
+
+- `deleteQuestRemindersWithEffects(...)`
+
+由它负责：
+
+- 找出 `originQuestId` 命中的 Reminder
+- 将它们从当前提醒面中移除
+- 发出已有 activity / SSE effects
+
+当前 Reminder 还没有完整关闭状态时，可以先复用 delete 语义；后续如果 Reminder 引入 `dismissed`，这条能力可以改为关闭而不是物理删除。
+
+### 4. 归档与恢复保持非对称
 
 Quest 恢复时默认不反向恢复先前被剪枝的 review Todo。
 
@@ -190,6 +220,17 @@ Quest 恢复时默认不反向恢复先前被剪枝的 review Todo。
 - review Todo 是旧 attention signal
 - 恢复 Quest 只是恢复工作容器，不等于恢复旧提醒
 - 若恢复后仍需要 review，应由新的 run / hooks 再次产生新的信号
+
+同理，Quest 恢复也不反向恢复先前被删除或关闭的 Reminder。
+
+### 5. Todo 来源入口感知归档状态
+
+普通 Todo 不跟随 Quest 归档，但它的来源入口需要区别两种状态：
+
+- 来源 Quest 仍在当前工作面：允许跳转
+- 来源 Quest 已归档：提示“来源会话已归档”，不直接跳转
+
+这条规则只影响 UI 行为，不改变 Todo 生命周期。
 
 ## 未来扩展方向
 
@@ -210,6 +251,7 @@ Quest 恢复时默认不反向恢复先前被剪枝的 review Todo。
 
 - 已明确当前对象生命周期分类
 - 已明确 Quest archive cleanup 的 owner 是 Quest service
-- 已明确 review Todo 为 Phase 1 唯一剪枝对象
+- 已明确 review Todo 与来源 Reminder 为 Phase 1 剪枝对象
 - 已明确普通 Todo、Run、历史记录不跟随本次 cleanup
+- 已明确普通 Todo 的来源 Quest 归档时只改变来源入口交互，不改变 Todo 本身
 - 尚未下沉到具体函数名、测试实现和代码补丁

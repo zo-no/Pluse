@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import type { Project, Quest } from '@pluse/types'
 import { getSetting } from '../models/settings'
+import { buildCliCatalogPromptBlock } from './cli-catalog-command'
 
 function getPluseCliCommand(): string {
   return process.env['PLUSE_CLI_COMMAND']?.trim()
@@ -65,7 +66,7 @@ export function buildSessionSystemPrompt(
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')
 
-  return [buildLayer1(), buildLayer2(project), layer3]
+  return [buildLayer1(), buildLayer2(project), buildCliCatalogPromptBlock(), layer3]
     .filter(Boolean)
     .join('\n\n')
 }
@@ -94,7 +95,7 @@ export function buildTaskSystemPrompt(
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')
 
-  return [buildLayer1(), buildLayer2(project), layer3]
+  return [buildLayer1(), buildLayer2(project), buildCliCatalogPromptBlock(), layer3]
     .filter(Boolean)
     .join('\n\n')
 }

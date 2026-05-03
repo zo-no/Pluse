@@ -9,10 +9,13 @@ import {
   buildFallbackRuntimeModelCatalog,
   defaultRuntimeEffortId,
   defaultRuntimeModelId,
-  runtimeAgentForTool,
+  FALLBACK_RUNTIME_TOOLS,
+  isClaudeRuntimeTool,
   resolveRuntimeEffortSelection,
   resolveRuntimeModelSelection,
-} from '@/views/utils/runtime'
+  runtimeAgentForTool,
+} from '../utils/runtime'
+
 import { CloseIcon, SparkIcon, UserIcon } from './icons'
 
 export type TaskComposerKind = 'human' | 'ai'
@@ -33,12 +36,6 @@ interface TaskComposerModalProps {
   onClose: () => void
   onCreated?: (result: { kind: TaskComposerKind; id: string }) => Promise<void> | void
 }
-
-const FALLBACK_RUNTIME_TOOLS: RuntimeTool[] = [
-  { id: 'codex', name: 'Codex', command: 'codex', runtimeFamily: 'codex-json', builtin: true, available: true },
-  { id: 'claude', name: 'Claude Code', command: 'claude', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
-  { id: 'mc', name: 'MC (--code)', command: 'mc --code', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
-]
 
 type SegmentedOption<T extends string> = {
   value: T

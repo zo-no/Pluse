@@ -78,6 +78,8 @@ export function listReminders(filter: {
   if (filter.type) {
     conditions.push('type = ?')
     params.push(filter.type)
+  } else {
+    conditions.push("type != 'check_in'")
   }
   if (filter.originQuestId) {
     conditions.push('origin_quest_id = ?')

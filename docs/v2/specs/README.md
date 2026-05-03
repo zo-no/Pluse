@@ -30,3 +30,6 @@
   - [0003-agent-driven-session-classification-phase-1.md](./0003-agent-driven-session-classification-phase-1.md)
   - [0005-quest-archive-review-todo-pruning-phase-1.md](./0005-quest-archive-review-todo-pruning-phase-1.md)
   - [0006-quick-select-and-copy-session-id.md](./0006-quick-select-and-copy-session-id.md)
+  - [0011-image-messages-phase-1.md](./0011-image-messages-phase-1.md)
+  - [0012-check-in-reminders-mvp.md](./0012-check-in-reminders-mvp.md)
+  - [0013-cli-catalog-command-mvp.md](./0013-cli-catalog-command-mvp.md)

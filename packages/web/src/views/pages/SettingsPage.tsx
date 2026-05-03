@@ -10,6 +10,7 @@ const CLASSIFY_HOOK_ID = 'classify-first-session-run'
 export function SettingsPage() {
   const { t } = useI18n()
   const [globalSystemPrompt, setGlobalSystemPrompt] = useState('')
+  const [cliCatalogCommand, setCliCatalogCommand] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -22,6 +23,7 @@ export function SettingsPage() {
   const [kairosInstalled, setKairosInstalled] = useState<boolean | null>(null)
   const [kairosInstalling, setKairosInstalling] = useState(false)
   const [kairosError, setKairosError] = useState<string | null>(null)
+  const [kairosVersion, setKairosVersion] = useState<string | null>(null)
   const [speakOnComplete, setSpeakOnComplete] = useState(false)
   const [classifyOnFirstRun, setClassifyOnFirstRun] = useState(false)
 
@@ -31,6 +33,7 @@ export function SettingsPage() {
     setLoading(false)
     if (!result.ok) { setError(result.error); return }
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
+    setCliCatalogCommand(result.data.cliCatalogCommand ?? '')
     setError(null)
   }
 
@@ -54,8 +57,15 @@ export function SettingsPage() {
 
   async function loadKairosStatus() {
     const result = await api.getKairosStatus()
-    if (!result.ok) { setKairosInstalled(false); return }
+    if (!result.ok) {
+      setKairosInstalled(false)
+      setKairosVersion(null)
+      setKairosError(result.error)
+      return
+    }
     setKairosInstalled(result.data.installed)
+    setKairosVersion(result.data.version ?? null)
+    setKairosError(null)
   }
 
   useEffect(() => {
@@ -66,10 +76,11 @@ export function SettingsPage() {
 
   async function handleSave() {
     setSaving(true)
-    const result = await api.updateSettings({ globalSystemPrompt })
+    const result = await api.updateSettings({ globalSystemPrompt, cliCatalogCommand })
     setSaving(false)
     if (!result.ok) { setError(result.error); return }
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
+    setCliCatalogCommand(result.data.cliCatalogCommand ?? '')
     setError(null)
   }
 
@@ -97,6 +108,8 @@ export function SettingsPage() {
       return
     }
     setKairosInstalled(true)
+    setKairosVersion(result.data.version ?? null)
+    await loadKairosStatus()
   }
 
   async function handleToggleSpeak(enabled: boolean) {
@@ -175,10 +188,12 @@ export function SettingsPage() {
                   {kairosInstalled === null
                     ? t('检测中…')
                     : kairosInstalled
-                    ? t('由 kairos 驱动，可用 kairos config set voice Tingting 切换音色')
+                    ? kairosVersion
+                      ? t('已安装 {{version}}，可用 kairos config set voice Tingting 切换音色', { version: kairosVersion })
+                      : t('由 GitHub 版 kairos 驱动，可用 kairos config set voice Tingting 切换音色')
                     : kairosError
                     ? kairosError
-                    : t('需要先安装 kairos')}
+                    : t('从 GitHub 下载并安装 kairos 后可启用语音播报')}
                 </span>
               </div>
               {kairosInstalled === null ? (
@@ -201,7 +216,7 @@ export function SettingsPage() {
                   onClick={() => void handleInstallKairos()}
                   disabled={kairosInstalling}
                 >
-                  {kairosInstalling ? t('安装中…') : t('一键安装')}
+                  {kairosInstalling ? t('安装中…') : t('从 GitHub 安装')}
                 </button>
               )}
             </div>
@@ -248,6 +263,23 @@ export function SettingsPage() {
               rows={12}
               placeholder={t('输入全局系统 Prompt，留空则不注入')}
             />
+          </section>
+
+          <section className="pluse-detail-section pluse-settings-section">
+            <header className="pluse-detail-section-head">
+              <h2 className="pluse-settings-section-title">{t('CLI 集合')}</h2>
+              <p className="pluse-settings-section-desc">
+                {t('设置一条用于查询当前环境所有外部 CLI 指令的命令行。Pluse 只会把它注入 Quest 上下文，不执行或校验。')}
+              </p>
+            </header>
+            <label className="pluse-settings-field">
+              <span>{t('查询命令')}</span>
+              <input
+                value={cliCatalogCommand}
+                onChange={(event) => setCliCatalogCommand(event.target.value)}
+                placeholder="my-cli commands"
+              />
+            </label>
           </section>
 
           <div className="pluse-settings-actions">

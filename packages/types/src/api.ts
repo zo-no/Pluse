@@ -22,7 +22,7 @@ export interface PagedResult<T> {
 }
 
 import type { Project } from './project'
-import type { Quest } from './quest'
+import type { Quest, QuestEventAsset } from './quest'
 import type { Todo } from './todo'
 
 // Quest event (history)
@@ -49,6 +49,7 @@ export interface QuestEvent {
   bodyBytes?: number
   bodyPreview?: string
   bodyTruncated?: boolean
+  assets?: QuestEventAsset[]
 }
 
 // Message submission
@@ -99,6 +100,7 @@ export interface ProjectOverview {
 }
 
 export type ProjectActivitySubjectType = 'session' | 'task' | 'todo' | 'reminder'
+  | 'check_in'
 
 export type ProjectActivityOp =
   | 'created'
@@ -155,6 +157,7 @@ export type SseMessage =
   | { type: 'quest_updated' | 'quest_deleted'; data: { questId: string; projectId: string } }
   | { type: 'todo_updated' | 'todo_deleted'; data: { todoId: string; projectId: string; originQuestId?: string } }
   | { type: 'reminder_updated' | 'reminder_deleted'; data: { reminderId: string; projectId: string; originQuestId?: string } }
+  | { type: 'check_in_updated' | 'check_in_deleted'; data: { checkInId: string; projectId: string; originQuestId?: string } }
   | { type: 'reminder_project_priority_updated'; data: { projectId: string } }
   | { type: 'notification_updated' | 'notification_deleted'; data: { notificationId: string; projectId: string; originQuestId?: string } }
   | { type: 'run_updated'; data: { runId: string; questId: string; projectId: string } }

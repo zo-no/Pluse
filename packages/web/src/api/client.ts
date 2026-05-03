@@ -1,6 +1,11 @@
 import type {
   ApiResult,
   AuthMe,
+  CheckIn,
+  CheckInListOrder,
+  CheckInRecord,
+  CompleteCheckInInput,
+  CreateCheckInInput,
   CreateDomainInput,
   CreateQuestInput,
   CreateReminderInput,
@@ -27,6 +32,7 @@ import type {
   Todo,
   TokenUsageSummary,
   UpdateDomainInput,
+  UpdateCheckInInput,
   UpdateProjectInput,
   UpdateQuestInput,
   UpdateReminderInput,
@@ -357,6 +363,61 @@ export function deleteReminder(id: string): Promise<ApiResult<{ deleted: boolean
   return request<{ deleted: boolean }>('DELETE', `/reminders/${id}`)
 }
 
+export function getCheckIns(params: {
+  projectId?: string
+  priority?: CheckIn['priority']
+  originQuestId?: string
+  originRunId?: string
+  time?: 'all' | 'due' | 'future'
+  order?: CheckInListOrder
+} = {}): Promise<ApiResult<CheckIn[]>> {
+  const search = new URLSearchParams()
+  if (params.projectId) search.set('projectId', params.projectId)
+  if (params.priority) search.set('priority', params.priority)
+  if (params.originQuestId) search.set('originQuestId', params.originQuestId)
+  if (params.originRunId) search.set('originRunId', params.originRunId)
+  if (params.time) search.set('time', params.time)
+  if (params.order) search.set('order', params.order)
+  return request<CheckIn[]>('GET', `/check-ins${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
+export function getCheckIn(id: string): Promise<ApiResult<CheckIn>> {
+  return request<CheckIn>('GET', `/check-ins/${id}`)
+}
+
+export function createCheckIn(input: CreateCheckInInput): Promise<ApiResult<CheckIn>> {
+  return request<CheckIn>('POST', '/check-ins', input)
+}
+
+export function updateCheckIn(id: string, input: UpdateCheckInInput): Promise<ApiResult<CheckIn>> {
+  return request<CheckIn>('PATCH', `/check-ins/${id}`, input)
+}
+
+export function deleteCheckIn(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/check-ins/${id}`)
+}
+
+export function completeCheckIn(
+  id: string,
+  input: CompleteCheckInInput = {},
+): Promise<ApiResult<CheckInRecord>> {
+  return request<CheckInRecord>('POST', `/check-ins/${id}/complete`, input)
+}
+
+export function getCheckInRecords(params: {
+  projectId?: string
+  checkInId?: string
+  originQuestId?: string
+  originRunId?: string
+} = {}): Promise<ApiResult<CheckInRecord[]>> {
+  const search = new URLSearchParams()
+  if (params.projectId) search.set('projectId', params.projectId)
+  if (params.checkInId) search.set('checkInId', params.checkInId)
+  if (params.originQuestId) search.set('originQuestId', params.originQuestId)
+  if (params.originRunId) search.set('originRunId', params.originRunId)
+  return request<CheckInRecord[]>('GET', `/check-in-records${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
 export async function uploadAsset(questId: string, file: File): Promise<ApiResult<UploadedAsset>> {
   const form = new FormData()
   form.append('questId', questId)
@@ -384,12 +445,18 @@ export function getRuntimeModelCatalog(tool: string): Promise<ApiResult<RuntimeM
 export interface KairosStatus {
   installed: boolean
   path: string | null
+  version?: string | null
+  sourcePath?: string
+  source?: {
+    repo: string
+    ref: string
+  }
 }
 
 export function getKairosStatus(): Promise<ApiResult<KairosStatus>> {
   return request<KairosStatus>('GET', '/tools/kairos')
 }
 
-export function installKairos(): Promise<ApiResult<{ path: string }>> {
-  return request<{ path: string }>('POST', '/tools/kairos/install', undefined, { timeout: 60000 })
+export function installKairos(): Promise<ApiResult<Omit<KairosStatus, 'installed'>>> {
+  return request<Omit<KairosStatus, 'installed'>>('POST', '/tools/kairos/install', undefined, { timeout: 60000 })
 }

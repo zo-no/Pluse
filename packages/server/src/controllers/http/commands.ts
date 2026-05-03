@@ -166,6 +166,36 @@ export function getCommandCatalog(): CommandCatalog {
         ],
       },
       {
+        name: 'check-in',
+        description: '打卡管理',
+        commands: [
+          {
+            name: 'check-in list',
+            cli: 'pluse check-in list --project-id <id> [--json]',
+            api: 'GET /api/check-ins?projectId=<id>',
+            description: '列出当前待用户回执的打卡项',
+          },
+          {
+            name: 'check-in create',
+            cli: 'pluse check-in create --project-id <id> --title <title> [--remind-at <time>] [--json]',
+            api: 'POST /api/check-ins',
+            description: '创建新的打卡项；只有需要人类行为证据时使用',
+          },
+          {
+            name: 'check-in complete',
+            cli: 'pluse check-in complete <id> [--note <note>] [--json]',
+            api: 'POST /api/check-ins/:id/complete',
+            description: '完成打卡，写入 Check-in Record 并删除当前打卡项',
+          },
+          {
+            name: 'check-in records',
+            cli: 'pluse check-in records --project-id <id> [--json]',
+            api: 'GET /api/check-in-records?projectId=<id>',
+            description: '列出长期打卡记录，供 Agent/自动化读取人类行为回执',
+          },
+        ],
+      },
+      {
         name: 'run',
         description: '执行记录',
         commands: [

@@ -20,6 +20,7 @@ export interface Run {
 
   claudeSessionId?: string
   codexThreadId?: string
+  geminiSessionId?: string
 
   cancelRequested: boolean
   runnerProcessId?: number
@@ -51,4 +52,5 @@ export interface CreateRunInput {
   thinking?: boolean
   claudeSessionId?: string
   codexThreadId?: string
+  geminiSessionId?: string
 }

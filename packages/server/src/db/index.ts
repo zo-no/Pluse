@@ -13,6 +13,46 @@ function ensureColumn(db: Database, table: string, column: string, ddl: string):
   }
 }
 
+function createCheckInRecordsTable(db: Database): void {
+  db.run(`CREATE TABLE IF NOT EXISTS check_in_records (
+    id              TEXT PRIMARY KEY NOT NULL,
+    project_id      TEXT NOT NULL REFERENCES projects(id),
+    check_in_id     TEXT NOT NULL,
+    origin_quest_id TEXT,
+    origin_run_id   TEXT,
+    title           TEXT NOT NULL,
+    body            TEXT,
+    remind_at       TEXT,
+    checked_at      TEXT NOT NULL,
+    created_by      TEXT NOT NULL DEFAULT 'human',
+    note            TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  ) STRICT`)
+}
+
+function migrateLegacyCheckInRecords(db: Database): void {
+  const columns = getTableColumns(db, 'check_in_records')
+  if (!columns.has('reminder_id') || columns.has('check_in_id')) return
+
+  db.run('DROP INDEX IF EXISTS idx_check_in_records_project')
+  db.run('DROP INDEX IF EXISTS idx_check_in_records_reminder')
+  db.run('DROP INDEX IF EXISTS idx_check_in_records_origin_quest')
+  db.run('ALTER TABLE check_in_records RENAME TO check_in_records_legacy')
+  createCheckInRecordsTable(db)
+  db.run(`
+    INSERT INTO check_in_records (
+      id, project_id, check_in_id, origin_quest_id, origin_run_id,
+      title, body, remind_at, checked_at, created_by, note, created_at, updated_at
+    )
+    SELECT
+      id, project_id, reminder_id, origin_quest_id, origin_run_id,
+      title, body, remind_at, checked_at, created_by, note, created_at, updated_at
+    FROM check_in_records_legacy
+  `)
+  db.run('DROP TABLE check_in_records_legacy')
+}
+
 function initSchema(db: Database): void {
   db.run('PRAGMA journal_mode = WAL')
   db.run('PRAGMA foreign_keys = ON')
@@ -70,6 +110,7 @@ function initSchema(db: Database): void {
     created_by           TEXT NOT NULL DEFAULT 'human',
     codex_thread_id      TEXT,
     claude_session_id    TEXT,
+    gemini_session_id    TEXT,
     tool                 TEXT,
     model                TEXT,
     effort               TEXT,
@@ -104,6 +145,9 @@ function initSchema(db: Database): void {
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_quests_claude_session
     ON quests (project_id, claude_session_id)
     WHERE claude_session_id IS NOT NULL`)
+  db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_quests_gemini_session
+    ON quests (project_id, gemini_session_id)
+    WHERE gemini_session_id IS NOT NULL`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quests_project
     ON quests (project_id, kind, deleted, pinned DESC, updated_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_quests_status
@@ -141,6 +185,7 @@ function initSchema(db: Database): void {
   ) STRICT`)
   ensureColumn(db, 'quests', 'unread', 'ALTER TABLE quests ADD COLUMN unread INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'quests', 'session_category_id', 'ALTER TABLE quests ADD COLUMN session_category_id TEXT REFERENCES session_categories(id)')
+  ensureColumn(db, 'quests', 'gemini_session_id', 'ALTER TABLE quests ADD COLUMN gemini_session_id TEXT')
   ensureColumn(db, 'todos', 'deleted', 'ALTER TABLE todos ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'todos', 'deleted_at', 'ALTER TABLE todos ADD COLUMN deleted_at TEXT')
   ensureColumn(db, 'todos', 'due_at', 'ALTER TABLE todos ADD COLUMN due_at TEXT')
@@ -166,6 +211,7 @@ function initSchema(db: Database): void {
     thinking              INTEGER DEFAULT 0,
     claude_session_id     TEXT,
     codex_thread_id       TEXT,
+    gemini_session_id     TEXT,
     cancel_requested      INTEGER DEFAULT 0,
     runner_process_id     INTEGER,
     context_input_tokens  INTEGER,
@@ -181,6 +227,7 @@ function initSchema(db: Database): void {
     ON runs (quest_id, created_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_runs_project
     ON runs (project_id, created_at DESC)`)
+  ensureColumn(db, 'runs', 'gemini_session_id', 'ALTER TABLE runs ADD COLUMN gemini_session_id TEXT')
   ensureColumn(db, 'runs', 'input_tokens',          'ALTER TABLE runs ADD COLUMN input_tokens INTEGER')
   ensureColumn(db, 'runs', 'output_tokens',         'ALTER TABLE runs ADD COLUMN output_tokens INTEGER')
   ensureColumn(db, 'runs', 'cache_read_tokens',     'ALTER TABLE runs ADD COLUMN cache_read_tokens INTEGER')
@@ -205,6 +252,46 @@ function initSchema(db: Database): void {
     ON reminders (project_id, remind_at, updated_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_reminders_origin_quest
     ON reminders (origin_quest_id, type, updated_at DESC)`)
+
+  db.run(`CREATE TABLE IF NOT EXISTS check_ins (
+    id              TEXT PRIMARY KEY NOT NULL,
+    project_id      TEXT NOT NULL REFERENCES projects(id),
+    created_by      TEXT NOT NULL DEFAULT 'human',
+    origin_quest_id TEXT REFERENCES quests(id),
+    origin_run_id   TEXT REFERENCES runs(id),
+    title           TEXT NOT NULL,
+    body            TEXT,
+    remind_at       TEXT,
+    priority        TEXT NOT NULL DEFAULT 'normal',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+  ) STRICT`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_check_ins_project
+    ON check_ins (project_id, remind_at, updated_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_check_ins_origin_quest
+    ON check_ins (origin_quest_id, updated_at DESC)`)
+
+  db.run(`
+    INSERT OR IGNORE INTO check_ins (
+      id, project_id, created_by, origin_quest_id, origin_run_id,
+      title, body, remind_at, priority, created_at, updated_at
+    )
+    SELECT
+      id, project_id, created_by, origin_quest_id, origin_run_id,
+      title, body, remind_at, priority, created_at, updated_at
+    FROM reminders
+    WHERE type = 'check_in'
+  `)
+  db.run(`DELETE FROM reminders WHERE type = 'check_in'`)
+
+  migrateLegacyCheckInRecords(db)
+  createCheckInRecordsTable(db)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_project
+    ON check_in_records (project_id, checked_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_check_in
+    ON check_in_records (check_in_id, checked_at DESC)`)
+  db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_origin_quest
+    ON check_in_records (origin_quest_id, checked_at DESC)`)
 
   db.run(`CREATE TABLE IF NOT EXISTS reminder_project_priorities (
     project_id      TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),

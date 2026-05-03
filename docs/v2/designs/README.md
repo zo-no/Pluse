@@ -31,3 +31,8 @@
   - [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
   - [0006-quick-select-and-copy-session-id.md](./0006-quick-select-and-copy-session-id.md)
   - [0008-service-supervision-and-recovery.md](./0008-service-supervision-and-recovery.md)
+  - [0011-image-messages.md](./0011-image-messages.md)
+  - [0012-check-in-reminders.md](./0012-check-in-reminders.md)
+    - 当前用于承接独立 Check-in、Check-in Record、Quest/Agent 创建打卡项和 Todo / Reminder 边界
+  - [0013-cli-catalog-command.md](./0013-cli-catalog-command.md)
+    - 当前用于承接全局外部 CLI 集合查询命令和 Quest prompt 注入

@@ -11,6 +11,7 @@ Pluse 现在已经有多种会随工作推进而产生的对象：
 - `Quest`
 - `Run`
 - `Todo`
+- `Reminder`
 - `SessionCategory`
 - `QuestOp`
 - `ProjectActivity`
@@ -27,7 +28,9 @@ Pluse 现在已经有多种会随工作推进而产生的对象：
 这会直接带来一个已经暴露出来的体验问题：
 
 - Quest 被归档后，由它产生的 `review` Todo 仍然留在工作面里
+- Quest 被归档后，由它产生的 Reminder 仍然可能占据提醒池
 - 这些 Todo 会继续占据人类注意力，即使源 Quest 已经退出当前工作面
+- 独立 Todo 虽然应该保留，但它的来源入口仍可能指向已归档 Quest，造成无意义跳转
 - 同时，普通 Todo 又不应该因为 Quest 归档被一起清掉
 
 这说明当前缺的不是“再加一条 if”，而是：
@@ -84,6 +87,8 @@ Quest 归档后，不同关联对象应有不同命运：
 - QuestOp / Activity 历史应保留
 - 普通 Todo 默认应保留
 - 但系统生成的 review Todo 应退出当前工作面
+- 由 Quest 派生的 Reminder 应退出当前提醒面
+- 普通 Todo 的来源 Quest 若已归档，UI 应提示来源已归档，而不是继续把用户带进归档会话
 
 如果没有这层区分，系统就会在“什么都不清”和“清得过头”之间摇摆。
 
@@ -119,25 +124,45 @@ Quest 归档后，不同关联对象应有不同命运：
 
 当 Quest 被归档后，系统必须支持把由该 Quest 派生出来、只用于提醒人类 review 的 Todo 收敛掉。
 
-### 3. 普通 Todo 不应因 Quest 归档被误清理
+### 3. Quest 归档时必须能收敛关联提醒
+
+当 Quest 被归档后，系统必须支持把来源于该 Quest 的 Reminder 从当前提醒面中移除。
+
+这类 Reminder 本质上是 Quest 派生的注意力信号；源 Quest 已退出当前工作面后，继续触达会制造过期噪音。
+
+### 4. 普通 Todo 不应因 Quest 归档被误清理
 
 即使某条 Todo 记录了 `originQuestId`，只要它代表的是独立工作项，而不是派生 review 信号，就不应被 Quest 归档自动剪掉。
 
-### 4. Quest 恢复不应默认恢复已被剪枝的 review Todo
+### 5. 普通 Todo 的归档来源应有明确提示
+
+如果普通 Todo 保留了 `originQuestId`，但来源 Quest 已归档，用户点击 Todo 来源时不应继续无条件跳转。
+
+系统应提示“来源会话已归档”或等价信息，让用户理解这条 Todo 仍然存在，但来源上下文已经退出当前工作面。
+
+### 6. Quest 恢复不应默认恢复已被剪枝的 review Todo
 
 被剪枝的 review Todo 本质上是“旧的注意力信号”。
 
 Quest 恢复后，系统不应把这些旧信号自动带回工作面，否则会重新制造噪音。
 
-### 5. 生命周期剪枝规则必须有明确主控层
+### 7. Quest 恢复不应默认恢复已被剪枝的 Reminder
+
+被剪枝的 Reminder 也是旧 attention signal。
+
+Quest 恢复后，不应默认把旧提醒重新带回提醒池。若恢复后的 Quest 仍需要提醒，应由新的用户动作、自动化或 hooks 重新创建。
+
+### 8. 生命周期剪枝规则必须有明确主控层
 
 Quest 归档引发的派生对象清理，应由拥有 Quest 生命周期的系统层负责，而不是散落在 hooks、前端或临时脚本里。
 
-### 6. 当前设计应先解决最小闭环，而不是提前抽象出通用引擎
+### 9. 当前设计应先解决最小闭环，而不是提前抽象出通用引擎
 
 系统目前首先需要解决的是：
 
 - Quest 归档时 review Todo 如何被正确收敛
+- Quest 归档时关联 Reminder 如何退出提醒面
+- 普通 Todo 来源指向已归档 Quest 时如何避免错误跳转
 
 而不是立刻引入：
 
@@ -177,8 +202,11 @@ Quest 归档引发的派生对象清理，应由拥有 Quest 生命周期的系�
 如果这个需求被满足，系统应具备以下可观察特征：
 
 - Quest 归档后，不再残留属于它的过时 review 信号
+- Quest 归档后，不再残留来源于它的过时提醒
 - 普通 Todo 不会因为 Quest 归档被误清理
+- 普通 Todo 指向已归档来源时，用户能看到明确提示，而不是被带入无效上下文
 - Quest 恢复后，不会把旧 review 噪音重新带回
+- Quest 恢复后，不会把旧 Reminder 自动重新带回提醒池
 - 系统内部对“谁拥有哪类对象的生命周期”有清晰边界
 - 后续做 Todo / Session 剪枝时，不再需要每次从个案重新拍脑袋决定
 
@@ -187,7 +215,10 @@ Quest 归档引发的派生对象清理，应由拥有 Quest 生命周期的系�
 如果后续设计或实现仍然出现以下情况，说明这个需求没有被满足：
 
 - Quest 归档后 review Todo 继续堆在工作面里
+- Quest 归档后来源于它的 Reminder 继续留在提醒池里
 - 普通 Todo 因为 `originQuestId` 被一并误删或误归档
+- 普通 Todo 的来源会话已归档时仍然无提示跳转
 - Quest 恢复时旧 review Todo 被自动复活
+- Quest 恢复时旧 Reminder 被自动复活
 - cleanup 规则继续散落在 hooks、runner 和临时 patch 中
 - 每新增一种派生对象，都要重新猜一次“它到底该不该跟着 Quest 收敛”

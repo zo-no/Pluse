@@ -3,6 +3,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import type {
   ApiResult,
+  CheckIn,
+  CheckInRecord,
   PagedResult,
   Project,
   ProjectOverview,
@@ -392,7 +394,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'run', 'project', 'domain', 'session-category', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'check-in', 'run', 'project', 'domain', 'session-category', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
@@ -414,6 +416,13 @@ describe('quest/todo/run APIs', () => {
       'reminder update',
       'reminder snooze',
       'reminder delete',
+    ])
+    const checkInModule = commandCatalog.modules.find((module) => module.name === 'check-in')
+    expect(checkInModule?.commands.map((command) => command.name)).toEqual([
+      'check-in list',
+      'check-in create',
+      'check-in complete',
+      'check-in records',
     ])
     expect(reminderModule?.commands.some((command) => command.name === 'reminder snooze')).toBe(true)
     expect(reminderModule?.commands.find((command) => command.name === 'reminder create')?.api).toBe('POST /api/reminders')
@@ -443,7 +452,7 @@ describe('quest/todo/run APIs', () => {
       type: 'review',
       title: 'Review reminder',
       body: 'Check the latest output.',
-      remindAt: '2026-04-27T09:00:00.000Z',
+      remindAt: '2099-04-27T09:00:00.000Z',
       priority: 'high',
     })
     expect(created.status).toBe(201)
@@ -475,6 +484,55 @@ describe('quest/todo/run APIs', () => {
     const overview = await GET<ProjectOverview>(`/api/projects/${project.id}/overview`)
     expect(overview.status).toBe(200)
     expect(mustOk(overview).recentActivity.some((item) => item.subjectType === 'reminder' && item.subjectId === createdData.id)).toBe(true)
+  })
+
+  it('records check-ins and deletes the active check-in item', async () => {
+    const project = await openProject('check-in-reminder-api')
+    const quest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Check-in Source',
+    })
+    const checkIn = mustOk(await POST<CheckIn>('/api/check-ins', {
+      projectId: project.id,
+      originQuestId: quest.id,
+      title: 'Morning check-in',
+      body: 'Confirm the morning routine happened.',
+      remindAt: '2026-04-28T01:00:00.000Z',
+      priority: 'normal',
+    }))
+
+    const pending = await GET<CheckIn[]>(`/api/check-ins?projectId=${project.id}`)
+    expect(pending.status).toBe(200)
+    expect(mustOk(pending).map((item) => item.id)).toContain(checkIn.id)
+
+    const completed = await POST<CheckInRecord>(`/api/check-ins/${checkIn.id}/complete`, {
+      note: 'Done before breakfast.',
+    })
+    expect(completed.status).toBe(201)
+    const record = mustOk(completed)
+    expect(record.id).toStartWith('chk_')
+    expect(record.projectId).toBe(project.id)
+    expect(record.checkInId).toBe(checkIn.id)
+    expect(record.originQuestId).toBe(quest.id)
+    expect(record.title).toBe('Morning check-in')
+    expect(record.body).toBe('Confirm the morning routine happened.')
+    expect(record.remindAt).toBe('2026-04-28T01:00:00.000Z')
+    expect(record.note).toBe('Done before breakfast.')
+    expect((await GET(`/api/check-ins/${checkIn.id}`)).status).toBe(404)
+
+    const records = await GET<CheckInRecord[]>(`/api/check-in-records?projectId=${project.id}`)
+    expect(records.status).toBe(200)
+    expect(mustOk(records).map((item) => item.id)).toContain(record.id)
+
+    const ordinaryReminder = mustOk(await POST<Reminder>('/api/reminders', {
+      projectId: project.id,
+      title: 'Plain reminder',
+      type: 'custom',
+    }))
+    const rejected = await POST<CheckInRecord>(`/api/reminders/${ordinaryReminder.id}/check-in`, {})
+    expect(rejected.status).toBe(400)
+    expect((await GET(`/api/reminders/${ordinaryReminder.id}`)).status).toBe(200)
   })
 
   it('orders reminders by reminder project priority and keeps one mainline project', async () => {
@@ -1113,7 +1171,7 @@ describe('quest/todo/run APIs', () => {
 
     const argsLog = readFileSync(argsLogPath, 'utf8')
     expect(argsLog).toContain('--print')
-    expect(argsLog).toContain('--model sonnet[1m]')
+    expect(argsLog).toContain('--model sonnet')
     expect(argsLog).toContain('--output-format stream-json')
     expect(argsLog).toContain('--effort high')
 

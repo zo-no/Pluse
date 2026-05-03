@@ -1,9 +1,17 @@
-import type { RuntimeModelCatalog } from '@pluse/types'
+import type { RuntimeModelCatalog, RuntimeTool } from '@pluse/types'
 
 type CatalogModel = RuntimeModelCatalog['models'][number]
 
+export const FALLBACK_RUNTIME_TOOLS: RuntimeTool[] = [
+  { id: 'codex', name: 'Codex', command: 'codex', runtimeFamily: 'codex-json', builtin: true, available: true },
+  { id: 'claude', name: 'Claude Code', command: 'claude', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
+  { id: 'gemini', name: 'Gemini CLI', command: 'gemini', runtimeFamily: 'gemini-stream-json', builtin: true, available: true },
+  { id: 'mc', name: 'MC (--code)', command: 'mc --code', runtimeFamily: 'claude-stream-json', builtin: true, available: true },
+]
+
 export const DEFAULT_CODEX_MODEL_ID = 'gpt-5.4'
-export const DEFAULT_CLAUDE_MODEL_ID = 'sonnet[1m]'
+export const DEFAULT_CLAUDE_MODEL_ID = 'sonnet'
+export const DEFAULT_GEMINI_MODEL_ID = 'gemini-3-flash-preview'
 
 const FALLBACK_CODEX_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh']
 const CODEX_MODEL_ALIASES: Record<string, string> = {
@@ -29,9 +37,19 @@ const FALLBACK_CODEX_MODELS: CatalogModel[] = [
 ]
 
 const FALLBACK_CLAUDE_MODELS: RuntimeModelCatalog['models'] = [
-  { id: 'sonnet[1m]', label: 'Sonnet 4.6' },
-  { id: 'opus[1m]', label: 'Opus 4.7' },
-  { id: 'haiku[1m]', label: 'Haiku 4.5' },
+  { id: 'sonnet', label: 'Sonnet 4.6' },
+  { id: 'sonnet[1m]', label: 'Sonnet 4.6 (1M)' },
+  { id: 'opus', label: 'Opus 4.7' },
+  { id: 'opus[1m]', label: 'Opus 4.7 (1M)' },
+  { id: 'haiku', label: 'Haiku 4.5' },
+  { id: 'haiku[1m]', label: 'Haiku 4.5 (1M)' },
+]
+
+const FALLBACK_GEMINI_MODELS: RuntimeModelCatalog['models'] = [
+  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  { id: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
 ]
 
 export function isClaudeRuntimeTool(tool?: string | null): boolean {
@@ -39,12 +57,20 @@ export function isClaudeRuntimeTool(tool?: string | null): boolean {
   return normalized === 'claude' || normalized === 'mc'
 }
 
-export function runtimeAgentForTool(tool?: string | null): 'claude' | 'codex' {
-  return isClaudeRuntimeTool(tool) ? 'claude' : 'codex'
+export function isGeminiRuntimeTool(tool?: string | null): boolean {
+  return tool?.trim().toLowerCase() === 'gemini'
+}
+
+export function runtimeAgentForTool(tool?: string | null): 'claude' | 'codex' | 'gemini' {
+  if (isClaudeRuntimeTool(tool)) return 'claude'
+  if (isGeminiRuntimeTool(tool)) return 'gemini'
+  return 'codex'
 }
 
 export function defaultRuntimeModelId(tool?: string | null): string {
-  return isClaudeRuntimeTool(tool) ? DEFAULT_CLAUDE_MODEL_ID : DEFAULT_CODEX_MODEL_ID
+  if (isClaudeRuntimeTool(tool)) return DEFAULT_CLAUDE_MODEL_ID
+  if (isGeminiRuntimeTool(tool)) return DEFAULT_GEMINI_MODEL_ID
+  return DEFAULT_CODEX_MODEL_ID
 }
 
 export function defaultRuntimeEffortId(tool?: string | null, catalog?: RuntimeModelCatalog | null): string {
@@ -60,40 +86,28 @@ export function normalizeCodexModelId(value?: string | null): string {
   return CODEX_MODEL_ALIASES[trimmed] ?? trimmed
 }
 
+export function normalizeGeminiModelId(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase()
+  if (!trimmed || trimmed === 'default') return DEFAULT_GEMINI_MODEL_ID
+  return trimmed
+}
+
 export function normalizeClaudeModelId(value?: string | null): string {
   const trimmed = value?.trim().toLowerCase()
   if (!trimmed || trimmed === 'default') return DEFAULT_CLAUDE_MODEL_ID
 
-  if (
-    trimmed === 'sonnet'
-    || trimmed === 'sonnet[1m]'
-    || trimmed === 'claude-sonnet-4-6'
-    || trimmed === 'claude-sonnet-4-6[1m]'
-  ) {
-    return 'sonnet[1m]'
-  }
+  if (trimmed === 'sonnet[1m]' || trimmed === 'claude-sonnet-4-6[1m]') return 'sonnet[1m]'
+  if (trimmed === 'sonnet' || trimmed === 'claude-sonnet-4-6') return 'sonnet'
+
+  if (trimmed === 'opus[1m]' || trimmed === 'claude-opus-4-6[1m]' || trimmed === 'claude-opus-4-7[1m]') return 'opus[1m]'
+  if (trimmed === 'opus' || trimmed === 'claude-opus-4-6' || trimmed === 'claude-opus-4-7') return 'opus'
 
   if (
-    trimmed === 'opus'
-    || trimmed === 'opus[1m]'
-    || trimmed === 'claude-opus-4-6'
-    || trimmed === 'claude-opus-4-6[1m]'
-    || trimmed === 'claude-opus-4-7'
-    || trimmed === 'claude-opus-4-7[1m]'
-  ) {
-    return 'opus[1m]'
-  }
-
-  if (
-    trimmed === 'haiku'
-    || trimmed === 'haiku[1m]'
-    || trimmed === 'claude-haiku-4-5'
+    trimmed === 'haiku[1m]'
     || trimmed === 'claude-haiku-4-5[1m]'
-    || trimmed === 'claude-haiku-4-5-20251001'
     || trimmed === 'claude-haiku-4-5-20251001[1m]'
-  ) {
-    return 'haiku[1m]'
-  }
+  ) return 'haiku[1m]'
+  if (trimmed === 'haiku' || trimmed === 'claude-haiku-4-5' || trimmed === 'claude-haiku-4-5-20251001') return 'haiku'
 
   return trimmed
 }
@@ -102,7 +116,9 @@ export function resolveRuntimeModelSelection(tool?: string | null, model?: strin
   const normalizedTool = tool?.trim().toLowerCase()
   const normalized = isClaudeRuntimeTool(normalizedTool)
     ? normalizeClaudeModelId(model)
-    : normalizeCodexModelId(model)
+    : isGeminiRuntimeTool(normalizedTool)
+      ? normalizeGeminiModelId(model)
+      : normalizeCodexModelId(model)
 
   if (catalog?.models.some((item) => item.id === normalized)) return normalized
 
@@ -130,6 +146,15 @@ export function buildFallbackRuntimeModelCatalog(tool?: string | null): RuntimeM
       models: FALLBACK_CLAUDE_MODELS,
       effortLevels: null,
       defaultModel: DEFAULT_CLAUDE_MODEL_ID,
+      reasoning: { kind: 'toggle', label: 'Thinking' },
+    }
+  }
+
+  if (isGeminiRuntimeTool(tool)) {
+    return {
+      models: FALLBACK_GEMINI_MODELS,
+      effortLevels: null,
+      defaultModel: DEFAULT_GEMINI_MODEL_ID,
       reasoning: { kind: 'toggle', label: 'Thinking' },
     }
   }

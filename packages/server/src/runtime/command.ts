@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
+import { expandToolPath } from '../support/tool-env'
 
-export type RuntimeToolName = 'codex' | 'claude' | 'mc'
-export type RuntimeToolFamily = 'codex' | 'claude'
+export type RuntimeToolName = 'codex' | 'claude' | 'mc' | 'gemini'
+export type RuntimeToolFamily = 'codex' | 'claude' | 'gemini'
 
 export type RuntimeCommandSpec = {
   display: string
@@ -14,6 +15,9 @@ const DEFAULT_CLAUDE_PROXY_COMMAND = 'mc --code'
 function envCommandKeys(tool: RuntimeToolName): string[] {
   if (tool === 'claude') {
     return ['PLUSE_CLAUDE_COMMAND', 'PULSE_CLAUDE_COMMAND', 'MELODYSYNC_CLAUDE_COMMAND']
+  }
+  if (tool === 'gemini') {
+    return ['PLUSE_GEMINI_COMMAND', 'PULSE_GEMINI_COMMAND']
   }
   if (tool === 'mc') {
     return [
@@ -103,7 +107,8 @@ function isExecutableAvailable(file: string): boolean {
   const trimmed = file.trim()
   if (!trimmed) return false
   if (trimmed.includes('/')) return existsSync(trimmed)
-  return typeof Bun.which === 'function' ? Boolean(Bun.which(trimmed)) : true
+  if (typeof Bun.which !== 'function') return true
+  return Boolean(Bun.which(trimmed, { PATH: expandToolPath() }))
 }
 
 export function isRuntimeCommandAvailable(spec: RuntimeCommandSpec | null): boolean {
@@ -115,13 +120,20 @@ export function isClaudeRuntimeTool(tool?: string | null): boolean {
   return normalized === 'claude' || normalized === 'mc'
 }
 
+export function isGeminiRuntimeTool(tool?: string | null): boolean {
+  const normalized = tool?.trim().toLowerCase()
+  return normalized === 'gemini'
+}
+
 export function resolveRuntimeToolFamily(tool?: string | null): RuntimeToolFamily {
-  return isClaudeRuntimeTool(tool) ? 'claude' : 'codex'
+  if (isClaudeRuntimeTool(tool)) return 'claude'
+  if (isGeminiRuntimeTool(tool)) return 'gemini'
+  return 'codex'
 }
 
 export function normalizeRuntimeToolName(tool?: string | null): RuntimeToolName {
   const normalized = tool?.trim().toLowerCase()
-  if (normalized === 'claude' || normalized === 'mc') return normalized
+  if (normalized === 'claude' || normalized === 'mc' || normalized === 'gemini') return normalized
   return 'codex'
 }
 
@@ -132,6 +144,10 @@ export function resolveRuntimeCommandSpec(tool: RuntimeToolName): RuntimeCommand
 
   if (tool === 'claude') {
     return buildCommandSpec('claude')!
+  }
+
+  if (tool === 'gemini') {
+    return buildCommandSpec('gemini')!
   }
 
   if (tool === 'mc') {

@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type { ApiResult, AppSettings, UpdateAppSettingsInput } from '@pluse/types'
 import { getSetting, setSetting } from '../../models/settings'
+import { getCliCatalogCommand, saveCliCatalogCommand } from '../../services/cli-catalog-command'
 
 function ok<T>(data: T): ApiResult<T> {
   return { ok: true, data }
@@ -18,11 +19,13 @@ function sc(n: number): ContentfulStatusCode {
 
 const UpdateSettingsSchema = z.object({
   globalSystemPrompt: z.string().nullable().optional(),
+  cliCatalogCommand: z.string().nullable().optional(),
 })
 
 function readSettings(): AppSettings {
   return {
     globalSystemPrompt: getSetting('global_system_prompt')?.trim() ?? '',
+    cliCatalogCommand: getCliCatalogCommand(),
   }
 }
 
@@ -48,8 +51,11 @@ settingsRouter.patch('/settings', async (c) => {
     if ('globalSystemPrompt' in input) {
       setSetting('global_system_prompt', input.globalSystemPrompt?.trim() ?? '')
     }
+    if ('cliCatalogCommand' in input) {
+      saveCliCatalogCommand(input.cliCatalogCommand)
+    }
     return c.json(ok<AppSettings>(readSettings()))
   } catch (error) {
-    return c.json(errBody(String(error)), sc(500))
+    return c.json(errBody(error instanceof Error ? error.message : String(error)), sc(500))
   }
 })

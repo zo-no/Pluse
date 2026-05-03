@@ -57,8 +57,10 @@
 1. date（使用 Asia/Shanghai）
 2. pluse project overview {projectId} --json
 3. pluse reminder list --project-id {projectId} --time all --json
-4. pluse todo list --project-id {projectId} --json
-5. pluse quest list --project-id {projectId} --kind task --json
+4. pluse check-in list --project-id {projectId} --json
+5. pluse check-in records --project-id {projectId} --json
+6. pluse todo list --project-id {projectId} --json
+7. pluse quest list --project-id {projectId} --kind task --json
 
 输出规则：
 - 默认只在 run 输出里总结，不创建提醒。
@@ -69,6 +71,7 @@
 - 只有需要在某个时间触达用户，或希望出现在「接下来」时间窗口时，才写 `remindAt` / `--remind-at`。
 - 需要写时间时，使用 Asia/Shanghai 视角换算为 ISO 8601；不要为了进入时间线而编造时间。
 - 如果只是通知用户，优先用 Reminder；只有确实是人工执行事项时才创建 Todo。
+- 如果需要确认一次人类行为是否发生，创建 Check-in；Check-in 完成后会写入 Check-in Record，不要把它当 Todo 或 Reminder。
 - Todo 只有存在截止时间、执行窗口或复核时间时才写 `dueAt` / `--due-at`。
 - 不创建 Todo。
 
@@ -77,6 +80,12 @@ pluse reminder create --project-id {projectId} --title "..." --body "..." --type
 
 定时提醒命令：
 pluse reminder create --project-id {projectId} --title "..." --body "..." --type follow_up --priority normal --remind-at "2026-04-27T09:00:00+08:00" --json
+
+打卡命令：
+pluse check-in create --project-id {projectId} --title "..." --body "..." --priority normal --remind-at "2026-04-27T09:00:00+08:00" --json
+
+读取打卡记录命令：
+pluse check-in records --project-id {projectId} --json
 ```
 
 ## 财务管理接入边界

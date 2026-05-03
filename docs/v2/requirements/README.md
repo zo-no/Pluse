@@ -46,6 +46,10 @@
   - 核心问题：Pluse 日常服务依赖临时终端进程，退出后 Web/API 不可用，缺少常驻、恢复和诊断入口
   - 说明：这是把 Pluse 从开发进程提升为日常本机工作台的基础可靠性需求
 
+- [0011-image-messages.md](./0011-image-messages.md)
+  - 核心问题：会话可以上传或生成图片，但图片还没有成为可回放、可展示的 Quest 消息资产
+  - 说明：这是补齐视觉工作闭环的基础能力，优先保证安全文件访问、历史回放和旧消息兼容
+
 - [0005-quest-lifecycle-linked-dependent-cleanup.md](./0005-quest-lifecycle-linked-dependent-cleanup.md)
   - 核心问题：Quest 归档不会收敛由它派生的 review 信号，系统缺少关联对象的生命周期归属规则
   - 说明：这是开始 Todo / 会话剪枝前需要先锁定的基础边界
@@ -68,6 +72,14 @@
   - 核心问题：长期项目缺少固定、可持续的人类日常信息采集入口
   - 说明：这是“主动记录”需求，围绕项目级每日日记式窗口，形成长期可积累数据
 
+- [0012-check-in-reminders.md](./0012-check-in-reminders.md)
+  - 核心问题：Quest / Agent 需要一种能让人类回执行为事实的对象，而不是把这类信号塞进 Todo、Reminder 或聊天文本
+  - 说明：这是独立 Check-in 当前项和 Check-in Record 边界；不引入周期、归档、tag 或 Todo 融合
+
+- [0013-cli-catalog-command.md](./0013-cli-catalog-command.md)
+  - 核心问题：Agent 缺少一个稳定入口来查询用户工具链里的外部 CLI 指令集合
+  - 说明：这是全局 CLI 集合查询命令，不提供逐条注册表或执行权限模型
+
 ## 当前顺序
 
 建议默认按以下顺序推进：
@@ -82,6 +94,9 @@
 8. 再看 `0003-agent-driven-session-classification` 是否应独立推进，还是挂接到更大的会话导航主线中
 9. 再看 `0002-inbox-capture` 是否需要独立 design，还是作为后续能力挂接到已有设计中
 10. 再推进 `0006-quick-select-and-copy-session-id` 作为 `session` 日常操作提效项
+11. `0011-image-messages` 可作为视觉工作闭环的独立能力推进，但需要先确认 spec 再编码
+12. `0012-check-in-reminders` 先按 MVP 实现 Quest 创建 Check-in、人类回执、record 留事实
+13. `0013-cli-catalog-command` 作为设置侧轻量能力，先实现全局查询命令和 prompt 注入
 
 ## 维护规则
 

@@ -10,7 +10,9 @@ import {
   buildFallbackRuntimeModelCatalog,
   defaultRuntimeEffortId,
   defaultRuntimeModelId,
+  FALLBACK_RUNTIME_TOOLS,
   isClaudeRuntimeTool,
+  isGeminiRuntimeTool,
   resolveRuntimeEffortSelection,
   resolveRuntimeModelSelection,
 } from '@/views/utils/runtime'
@@ -95,7 +97,7 @@ function resolveComposerRuntimeState(source?: Pick<Quest, 'tool' | 'model' | 'ef
     tool,
     model: resolveRuntimeModelSelection(tool, source?.model, fallbackCatalog),
     effort: resolveRuntimeEffortSelection(tool, source?.effort, fallbackCatalog),
-    thinking: isClaudeRuntimeTool(tool) ? source?.thinking === true : false,
+    thinking: (isClaudeRuntimeTool(tool) || isGeminiRuntimeTool(tool)) ? source?.thinking === true : false,
   }
 }
 
@@ -544,7 +546,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
 
   useEffect(() => {
     void api.getRuntimeTools().then((result) => {
-      if (result.ok) setRuntimeTools(result.data)
+      setRuntimeTools(result.ok && result.data.length > 0 ? result.data : FALLBACK_RUNTIME_TOOLS)
     })
   }, [])
 
@@ -825,7 +827,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
       tool: runtimeSelection.tool,
       model: runtimeSelection.model || null,
       effort: runtimeSelection.effort || null,
-      thinking: isClaudeRuntimeTool(runtimeSelection.tool) ? runtimeSelection.thinking : false,
+      thinking: (isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? runtimeSelection.thinking : false,
       attachments: attachments.length > 0 ? attachments : undefined,
     })
     setSending(false)
@@ -1034,7 +1036,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
                         tool,
                         model: defaultRuntimeModelId(tool),
                         effort: resolveRuntimeEffortSelection(tool, defaultRuntimeEffortId(tool, nextCatalog), nextCatalog),
-                        thinking: isClaudeRuntimeTool(tool) ? runtimeSelection.thinking : false,
+                        thinking: (isClaudeRuntimeTool(tool) || isGeminiRuntimeTool(tool)) ? runtimeSelection.thinking : false,
                       }
                       setCatalog(nextCatalog)
                       setRuntimeSelection(nextSelection)
@@ -1078,7 +1080,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
                   ) : null}
                 </div>
                 <div className="pluse-composer-quick-actions">
-                  {isClaudeRuntimeTool(runtimeSelection.tool) ? (
+                  {(isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? (
                     <ComposerToggle
                       label={t('Think')}
                       active={runtimeSelection.thinking}

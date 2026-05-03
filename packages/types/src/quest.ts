@@ -9,9 +9,16 @@ export type QuestStatus =
   | 'cancelled'
 
 export type QuestCreatedBy = 'human' | 'ai' | 'system'
-export type QuestAgent = 'claude' | 'codex'
+export type QuestAgent = 'claude' | 'codex' | 'gemini'
 export type ScheduleKind = 'once' | 'scheduled' | 'recurring'
 export type ExecutorKind = 'ai_prompt' | 'script'
+
+export interface QuestEventAsset {
+  assetId: string
+  filename: string
+  mimeType: string
+  sizeBytes?: number
+}
 
 export interface QueuedMessage {
   requestId: string
@@ -23,6 +30,7 @@ export interface QueuedMessage {
   effort: string | null
   thinking: boolean
   queuedAt: string
+  assets?: QuestEventAsset[]
 }
 
 export interface ScheduleConfig {
@@ -62,6 +70,7 @@ export interface Quest {
 
   codexThreadId?: string
   claudeSessionId?: string
+  geminiSessionId?: string
 
   tool?: string
   model?: string
@@ -117,6 +126,7 @@ export interface CreateQuestInput {
   status?: QuestStatus
   codexThreadId?: string | null
   claudeSessionId?: string | null
+  geminiSessionId?: string | null
 }
 
 export interface UpdateQuestInput {
@@ -144,6 +154,7 @@ export interface UpdateQuestInput {
   order?: number | null
   codexThreadId?: string | null
   claudeSessionId?: string | null
+  geminiSessionId?: string | null
   sessionCategoryId?: string | null
   unread?: boolean
 }

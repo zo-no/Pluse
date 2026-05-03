@@ -18,8 +18,10 @@
 1. date（使用 Asia/Shanghai 视角）
 2. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts project overview proj_8b56c6bd25ce5f09 --json
 3. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts reminder list --project-id proj_8b56c6bd25ce5f09 --time all --json
-4. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts todo list --project-id proj_8b56c6bd25ce5f09 --json
-5. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts quest list --project-id proj_8b56c6bd25ce5f09 --kind task --json
+4. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts check-in list --project-id proj_8b56c6bd25ce5f09 --json
+5. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts check-in records --project-id proj_8b56c6bd25ce5f09 --json
+6. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts todo list --project-id proj_8b56c6bd25ce5f09 --json
+7. pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts quest list --project-id proj_8b56c6bd25ce5f09 --kind task --json
 
 判断重点：
 - 是否存在未完成的财务现实补齐、资产快照、收入/支出复盘。
@@ -42,12 +44,16 @@
 - 默认不写 remindAt，让提醒进入财务管理项目的提醒池。
 - 只有提醒需要在明确时间触达用户时才写 remindAt，例如投资/大额消费复核有明确日期，或周检结论需要第二天固定触达。
 - 写 remindAt 时按 Asia/Shanghai 视角换算为 ISO 8601；不要为了进入时间线而编造时间。
+- 只有需要确认“人类是否已经补齐财务事实”时，才创建 Check-in；它不是 Todo，也不是普通通知。
 
 创建提醒命令：
 pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts reminder create --project-id proj_8b56c6bd25ce5f09 --title "..." --body "..." --type follow_up --priority normal --json
 
 定时提醒命令：
 pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts reminder create --project-id proj_8b56c6bd25ce5f09 --title "..." --body "..." --type follow_up --priority normal --remind-at "2026-04-27T09:00:00+08:00" --json
+
+打卡命令：
+pnpm --dir /Users/kualshown/Desktop/pulse --filter @pluse/server exec /Users/kualshown/.bun/bin/bun src/cli.ts check-in create --project-id proj_8b56c6bd25ce5f09 --title "..." --body "..." --priority normal --remind-at "2026-04-27T09:00:00+08:00" --json
 
 输出：
 - 先给一段 3-5 行 run summary。

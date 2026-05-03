@@ -9,6 +9,7 @@ import { ensureReviewReminderWithEffects } from './reminders'
 import { createTodoWithEffects } from './todos'
 import { getProject } from '../models/project'
 import { runSessionClassificationInBackground } from './session-classifier'
+import { createToolEnv } from '../support/tool-env'
 
 export type HookEvent = 'run_completed' | 'run_failed'
 
@@ -238,6 +239,7 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
         try {
           const child = Bun.spawn(['sh', '-c', rendered], {
             detached: true,
+            env: createToolEnv(),
             stdout: 'ignore',
             stderr: 'ignore',
           })

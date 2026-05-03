@@ -30,6 +30,7 @@ type QuestRow = {
   created_by: Quest['createdBy']
   codex_thread_id: string | null
   claude_session_id: string | null
+  gemini_session_id: string | null
   tool: string | null
   model: string | null
   effort: string | null
@@ -86,6 +87,7 @@ function rowToQuest(row: QuestRow): Quest {
     createdBy: row.created_by,
     codexThreadId: row.codex_thread_id ?? undefined,
     claudeSessionId: row.claude_session_id ?? undefined,
+    geminiSessionId: row.gemini_session_id ?? undefined,
     tool: row.tool ?? undefined,
     model: row.model ?? undefined,
     effort: row.effort ?? undefined,
@@ -189,13 +191,13 @@ export function createQuest(input: CreateQuestInput): Quest {
 
   db.run(
     `INSERT INTO quests (
-      id, project_id, session_category_id, kind, created_by, codex_thread_id, claude_session_id,
+      id, project_id, session_category_id, kind, created_by, codex_thread_id, claude_session_id, gemini_session_id,
       tool, model, effort, thinking, active_run_id,
       name, auto_rename_pending, pinned, follow_up_queue,
       title, description, status, enabled, schedule_kind, schedule_config,
       executor_kind, executor_config, executor_options, completion_output,
       review_on_complete, order_index, deleted, deleted_at, created_at, updated_at
-    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?)`,
+    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?)`,
     [
       id,
       input.projectId,
@@ -203,6 +205,7 @@ export function createQuest(input: CreateQuestInput): Quest {
       input.createdBy ?? 'human',
       input.codexThreadId ?? null,
       input.claudeSessionId ?? null,
+      input.geminiSessionId ?? null,
       input.tool ?? 'codex',
       input.model ?? null,
       input.effort ?? null,
@@ -273,6 +276,7 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
   if (input.unread !== undefined) setField('unread', input.unread ? 1 : 0)
   if ('codexThreadId' in input) setField('codex_thread_id', input.codexThreadId ?? null)
   if ('claudeSessionId' in input) setField('claude_session_id', input.claudeSessionId ?? null)
+  if ('geminiSessionId' in input) setField('gemini_session_id', input.geminiSessionId ?? null)
 
   if (
     nextKind === 'session'

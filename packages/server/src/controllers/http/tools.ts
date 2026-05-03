@@ -1,21 +1,76 @@
 import { Hono } from 'hono'
+import { access, chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { createToolEnv } from '../../support/tool-env'
 
 const toolsRouter = new Hono()
 
-/**
- * Expand PATH to include common user bin directories that may not be present
- * in the server process environment (e.g. ~/.bun/bin is not in PATH by default).
- */
-function expandPath(): string {
-  const home = process.env.HOME ?? ''
-  const extra = [
-    `${home}/.bun/bin`,
-    `${home}/.local/bin`,
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-  ]
-  const current = process.env.PATH ?? ''
-  return [...extra, current].join(':')
+const KAIROS_REPO_URL = 'https://github.com/zo-no/kairos.git'
+const KAIROS_REF = 'main'
+
+interface CommandResult {
+  exitCode: number
+  stdout: string
+  stderr: string
+}
+
+async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
+  if (!stream) return ''
+  return new Response(stream).text()
+}
+
+async function runCommand(
+  args: string[],
+  options: { cwd?: string; env?: Record<string, string | undefined> } = {},
+): Promise<CommandResult> {
+  try {
+    const proc = Bun.spawn(args, {
+      cwd: options.cwd,
+      env: options.env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const stdoutPromise = readStream(proc.stdout)
+    const stderrPromise = readStream(proc.stderr)
+    const exitCode = await proc.exited
+    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
+    return { exitCode, stdout, stderr }
+  } catch (error) {
+    return {
+      exitCode: -1,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function compactCommandOutput(result: CommandResult): string {
+  const output = `${result.stderr}\n${result.stdout}`.trim()
+  if (!output) return `exit code ${result.exitCode}`
+  return output.length > 4000 ? output.slice(-4000) : output
+}
+
+function decodeOutput(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes).trim()
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function getKairosVersion(path: string, env: Record<string, string | undefined>): Promise<string | null> {
+  const result = await runCommand([path, '--version'], { env })
+  if (result.exitCode !== 0) return null
+  return result.stdout.trim() || null
 }
 
 /** Prevent concurrent installs */
@@ -25,15 +80,25 @@ let installLock = false
  * GET /api/tools/kairos
  * Detect whether kairos CLI is installed and available in PATH.
  */
-toolsRouter.get('/tools/kairos', (c) => {
+toolsRouter.get('/tools/kairos', async (c) => {
+  const env = createToolEnv()
   const result = Bun.spawnSync(['which', 'kairos'], {
-    env: { ...process.env, PATH: expandPath() },
+    env,
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const installed = result.exitCode === 0
-  const path = installed ? new TextDecoder().decode(result.stdout).trim() : null
-  return c.json({ ok: true, data: { installed, path } })
+  const path = result.exitCode === 0 ? decodeOutput(result.stdout) : null
+  const version = path ? await getKairosVersion(path, env) : null
+  const installed = path != null && version != null
+  return c.json({
+    ok: true,
+    data: {
+      installed,
+      path,
+      version,
+      source: { repo: KAIROS_REPO_URL, ref: KAIROS_REF },
+    },
+  })
 })
 
 /**
@@ -46,49 +111,80 @@ toolsRouter.post('/tools/kairos/install', async (c) => {
     return c.json({ ok: false, error: 'installation already in progress' }, 409)
   }
   installLock = true
+  let tmpDir: string | null = null
 
   try {
     const home = process.env.HOME ?? ''
-    const binDir = `${home}/.bun/bin`
-    const outfile = `${binDir}/kairos`
-    const tmpDir = `${home}/.pluse/tmp/kairos-install`
-    const env = { ...process.env, PATH: expandPath() }
-
-    // Clean up any leftover tmp dir from a previous failed install
-    await Bun.spawn(['rm', '-rf', tmpDir], { env, stdout: 'ignore', stderr: 'ignore' }).exited
-
-    // Clone the repository
-    const cloneProc = Bun.spawn(
-      ['git', 'clone', '--depth=1', 'https://github.com/zo-no/kairos.git', tmpDir],
-      { env, stdout: 'pipe', stderr: 'pipe' }
-    )
-    const cloneExit = await cloneProc.exited
-    if (cloneExit !== 0) {
-      const stderr = await new Response(cloneProc.stderr).text()
-      await Bun.spawn(['rm', '-rf', tmpDir], { env, stdout: 'ignore', stderr: 'ignore' }).exited
-      return c.json({ ok: false, error: `clone failed: ${stderr.trim()}` }, 500)
+    if (!home) {
+      return c.json({ ok: false, error: 'HOME is not set; cannot install kairos' }, 500)
     }
 
-    // Ensure the output directory exists
-    await Bun.spawn(['mkdir', '-p', binDir], { env, stdout: 'ignore', stderr: 'ignore' }).exited
+    const env = createToolEnv()
+    const binDir = join(home, '.bun', 'bin')
+    const outfile = join(binDir, 'kairos')
+    const toolsRoot = join(home, '.pluse', 'tools')
+    const installDir = join(toolsRoot, 'kairos')
+    const tmpRoot = join(home, '.pluse', 'tmp')
+    tmpDir = join(tmpRoot, `kairos-install-${Date.now()}`)
 
-    // Build the binary
-    const buildProc = Bun.spawn(
-      ['bun', 'build', '--compile', `--outfile=${outfile}`, 'src/index.ts'],
-      { cwd: tmpDir, env, stdout: 'pipe', stderr: 'pipe' }
-    )
-    const buildExit = await buildProc.exited
+    await rm(tmpDir, { recursive: true, force: true })
+    await mkdir(tmpRoot, { recursive: true })
+    await mkdir(binDir, { recursive: true })
+    await mkdir(toolsRoot, { recursive: true })
 
-    // Always clean up tmp dir
-    await Bun.spawn(['rm', '-rf', tmpDir], { env, stdout: 'ignore', stderr: 'ignore' }).exited
-
-    if (buildExit !== 0) {
-      const stderr = await new Response(buildProc.stderr).text()
-      return c.json({ ok: false, error: `build failed: ${stderr.trim()}` }, 500)
+    const cloneResult = await runCommand([
+      'git',
+      'clone',
+      '--depth=1',
+      '--branch',
+      KAIROS_REF,
+      KAIROS_REPO_URL,
+      tmpDir,
+    ], { env })
+    if (cloneResult.exitCode !== 0) {
+      return c.json({ ok: false, error: `download from GitHub failed: ${compactCommandOutput(cloneResult)}` }, 500)
     }
 
-    return c.json({ ok: true, data: { path: outfile } })
+    const installResult = await runCommand([
+      process.execPath,
+      'install',
+      '--production',
+    ], { cwd: tmpDir, env })
+    if (installResult.exitCode !== 0) {
+      return c.json({ ok: false, error: `dependency install failed: ${compactCommandOutput(installResult)}` }, 500)
+    }
+
+    await rm(installDir, { recursive: true, force: true })
+    await rename(tmpDir, installDir)
+    tmpDir = null
+
+    const entrypoint = join(installDir, 'src', 'index.ts')
+    await writeFile(
+      outfile,
+      `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(entrypoint)} "$@"\n`,
+      'utf-8',
+    )
+
+    if (!await fileExists(outfile)) {
+      return c.json({ ok: false, error: `wrapper was not created at ${outfile}` }, 500)
+    }
+    await chmod(outfile, 0o755).catch(() => {})
+    const version = await getKairosVersion(outfile, env)
+    if (!version) {
+      return c.json({ ok: false, error: 'kairos wrapper was created but failed verification with --version' }, 500)
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        path: outfile,
+        version,
+        sourcePath: installDir,
+        source: { repo: KAIROS_REPO_URL, ref: KAIROS_REF },
+      },
+    })
   } finally {
+    if (tmpDir) await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
     installLock = false
   }
 })

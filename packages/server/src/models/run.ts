@@ -25,6 +25,7 @@ type RunRow = {
   thinking: number
   claude_session_id: string | null
   codex_thread_id: string | null
+  gemini_session_id: string | null
   cancel_requested: number
   runner_process_id: number | null
   context_input_tokens: number | null
@@ -57,6 +58,7 @@ function rowToRun(row: RunRow): Run {
     thinking: row.thinking === 1,
     claudeSessionId: row.claude_session_id ?? undefined,
     codexThreadId: row.codex_thread_id ?? undefined,
+    geminiSessionId: row.gemini_session_id ?? undefined,
     cancelRequested: row.cancel_requested === 1,
     runnerProcessId: row.runner_process_id ?? undefined,
     contextInputTokens: row.context_input_tokens ?? undefined,
@@ -129,13 +131,13 @@ export function createRun(input: CreateRunInput): Run {
     `INSERT INTO runs (
       id, quest_id, project_id, request_id, trigger, triggered_by,
       state, failure_reason, tool, model, effort, thinking,
-      claude_session_id, codex_thread_id,
+      claude_session_id, codex_thread_id, gemini_session_id,
       cancel_requested, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?)`,
     [
       id, input.questId, input.projectId, input.requestId, input.trigger, input.triggeredBy, 'accepted', null,
       input.tool, input.model, input.effort ?? null, input.thinking ? 1 : 0,
-      input.claudeSessionId ?? null, input.codexThreadId ?? null,
+      input.claudeSessionId ?? null, input.codexThreadId ?? null, input.geminiSessionId ?? null,
       ts, ts,
     ]
   )
@@ -153,6 +155,7 @@ export function updateRun(id: string, patch: Partial<Run>): Run {
     ['trigger', 'trigger'], ['triggeredBy', 'triggered_by'],
     ['state', 'state'], ['tool', 'tool'], ['model', 'model'], ['effort', 'effort'],
     ['thinking', 'thinking'], ['claudeSessionId', 'claude_session_id'], ['codexThreadId', 'codex_thread_id'],
+    ['geminiSessionId', 'gemini_session_id'],
     ['cancelRequested', 'cancel_requested'],
     ['runnerProcessId', 'runner_process_id'],
     ['failureReason', 'failure_reason'],

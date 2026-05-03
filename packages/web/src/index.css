@@ -998,7 +998,9 @@ select {
   padding: 0;
   border: 0;
   background: transparent;
+  color: inherit;
   font: inherit;
+  text-decoration: none;
   text-align: left;
   cursor: pointer;
 }
@@ -4043,6 +4045,17 @@ select {
   margin: 0 0 12px;
 }
 
+.pluse-settings-field {
+  display: grid;
+  gap: 6px;
+}
+
+.pluse-settings-field span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .pluse-settings-actions {
   display: flex;
   align-items: center;
@@ -5308,6 +5321,10 @@ select {
   color: var(--success);
 }
 
+.pluse-task-list-state.is-check-in {
+  color: var(--accent-strong);
+}
+
 .pluse-task-list-state.is-failed,
 .pluse-task-list-state.is-cancelled {
   color: var(--danger);
@@ -6385,6 +6402,10 @@ select {
   min-height: 96px;
 }
 
+.pluse-check-in-note-input {
+  min-height: 96px;
+}
+
 .pluse-todo-detail-pills {
   display: flex;
   flex-wrap: wrap;
@@ -6408,6 +6429,10 @@ select {
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.pluse-todo-detail-section p.is-empty {
+  color: var(--text-muted);
 }
 
 .pluse-todo-detail-actions {

@@ -1,5 +1,5 @@
-import { writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { existsSync, statSync, writeFileSync } from 'node:fs'
+import { join, resolve, sep } from 'node:path'
 import { Hono } from 'hono'
 import type { ApiResult, UploadedAsset } from '@pluse/types'
 import { createAsset, getAsset } from '../../models/asset'
@@ -26,6 +26,17 @@ export function prependAttachmentPaths(
 }
 
 export const assetsRouter = new Hono()
+
+function isInsideDir(root: string, target: string): boolean {
+  const resolvedRoot = resolve(root)
+  const resolvedTarget = resolve(target)
+  return resolvedTarget === resolvedRoot || resolvedTarget.startsWith(`${resolvedRoot}${sep}`)
+}
+
+function contentDispositionFilename(filename: string): string {
+  const ascii = filename.replace(/["\\\r\n]/g, '_')
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+}
 
 assetsRouter.post('/assets/upload', async (c) => {
   let formData: FormData
@@ -79,4 +90,32 @@ assetsRouter.get('/assets/:id', (c) => {
   const asset = getAsset(c.req.param('id'))
   if (!asset) return c.json({ ok: false, error: 'Asset not found' } as ApiResult<never>, 404)
   return c.json({ ok: true, data: asset } as ApiResult<UploadedAsset>)
+})
+
+assetsRouter.get('/assets/:id/file', (c) => {
+  const asset = getAsset(c.req.param('id'))
+  if (!asset) return c.json({ ok: false, error: 'Asset not found' } as ApiResult<never>, 404)
+
+  const root = getAssetsDir(asset.questId)
+  if (!isInsideDir(root, asset.savedPath)) {
+    return c.json({ ok: false, error: 'Asset file not found' } as ApiResult<never>, 404)
+  }
+  if (!existsSync(asset.savedPath)) {
+    return c.json({ ok: false, error: 'Asset file not found' } as ApiResult<never>, 404)
+  }
+  try {
+    if (!statSync(asset.savedPath).isFile()) {
+      return c.json({ ok: false, error: 'Asset file not found' } as ApiResult<never>, 404)
+    }
+  } catch {
+    return c.json({ ok: false, error: 'Asset file not found' } as ApiResult<never>, 404)
+  }
+
+  return new Response(Bun.file(asset.savedPath), {
+    headers: {
+      'Content-Type': asset.mimeType,
+      'Content-Disposition': contentDispositionFilename(asset.filename),
+      'Cache-Control': 'private, max-age=3600',
+    },
+  })
 })

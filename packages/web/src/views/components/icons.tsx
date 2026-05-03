@@ -119,12 +119,44 @@ export function ClockIcon(props: IconProps) {
   )
 }
 
+export function DelayIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="11" cy="12" r="6.5" />
+      <path d="M11 8.5V12l2.5 1.4" />
+      <path d="M16.5 7.5h3" />
+      <path d="m18 6 2 1.5-2 1.5" />
+    </BaseIcon>
+  )
+}
+
+export function DetailIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <rect x="6" y="4.5" width="12" height="15" rx="2" />
+      <path d="M9 9h6" />
+      <path d="M9 12h6" />
+      <path d="M9 15h3.5" />
+    </BaseIcon>
+  )
+}
+
 export function RouteIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
       <circle cx="7" cy="7" r="1.75" />
       <circle cx="17" cy="17" r="1.75" />
       <path d="M8.75 7H12a5 5 0 0 1 5 5v3.25" />
+    </BaseIcon>
+  )
+}
+
+export function InfoIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 11v5" />
+      <path d="M12 8h.01" />
     </BaseIcon>
   )
 }

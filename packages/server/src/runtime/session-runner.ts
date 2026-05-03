@@ -1,15 +1,17 @@
 import { randomBytes } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { basename, extname, join, resolve, sep } from 'node:path'
 import type {
   MessageAttachment,
   Quest,
   QuestEvent,
+  QuestEventAsset,
   Run,
   RunTrigger,
   RunTriggeredBy,
 } from '@pluse/types'
+import { createAsset } from '../models/asset'
 import { appendEvent, listEvents } from '../models/history'
 import { createProjectActivity } from '../models/project-activity'
 import { createQuestOp } from '../models/quest-op'
@@ -39,9 +41,12 @@ import { ensureReviewReminderWithEffects } from '../services/reminders'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { runHooks } from '../services/hooks'
 import { syncManagedCodexHome } from '../support/codex-home'
-import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from './catalog'
+import { getAssetsDir, getManagedCodexHome } from '../support/paths'
+import { createToolEnv } from '../support/tool-env'
+import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId, normalizeGeminiModelId } from './catalog'
 import {
   isClaudeRuntimeTool,
+  isGeminiRuntimeTool,
   normalizeRuntimeToolName,
   resolveClaudeProxyCommandSpec,
   resolveRuntimeCommandSpec,
@@ -50,8 +55,9 @@ import {
   type RuntimeCommandSpec,
   type RuntimeToolName,
 } from './command'
+import { buildTaskPromptContext } from './task-prompt-context'
 
-type ToolName = 'codex' | 'claude'
+type ToolName = 'codex' | 'claude' | 'gemini'
 type ProviderEvent = Omit<QuestEvent, 'seq'>
 
 type ActiveRunner = {
@@ -81,6 +87,7 @@ type ProviderParseResult = {
   assistantText?: string
   claudeSessionId?: string
   codexThreadId?: string
+  geminiSessionId?: string
   providerError?: string
   tokenUsage?: TokenUsage
 }
@@ -293,14 +300,23 @@ function resolveTool(tool?: string | null): RuntimeToolName {
 function resolveModel(tool: RuntimeToolName, requested?: string | null): string {
   const family = resolveRuntimeToolFamily(tool)
   const next = requested?.trim()
-  if (next) return family === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
-  return getRuntimeModelCatalog(tool).defaultModel ?? (family === 'claude' ? 'sonnet[1m]' : 'gpt-5.4')
+  if (next) {
+    if (family === 'codex') return normalizeCodexModelId(next)
+    if (family === 'gemini') return normalizeGeminiModelId(next)
+    return normalizeClaudeModelId(next)
+  }
+  const defaultModel = getRuntimeModelCatalog(tool).defaultModel
+  if (defaultModel) return defaultModel
+  if (family === 'claude') return 'sonnet[1m]'
+  if (family === 'gemini') return 'gemini-2.0-flash'
+  return 'gpt-5.4'
 }
 
 function runtimeEnvForTool(tool: RuntimeToolName): NodeJS.ProcessEnv {
-  if (resolveRuntimeToolFamily(tool) !== 'codex') return process.env
+  const baseEnv = createToolEnv() as NodeJS.ProcessEnv
+  if (resolveRuntimeToolFamily(tool) !== 'codex') return baseEnv
   return {
-    ...process.env,
+    ...baseEnv,
     CODEX_HOME: syncManagedCodexHome(),
   }
 }
@@ -339,9 +355,8 @@ function buildTaskPrompt(quest: Quest): string {
   }
 
   const project = getProject(quest.projectId)
+  const taskContext = buildTaskPromptContext(quest)
   const vars: Record<string, string> = {
-    date: new Date().toISOString().slice(0, 10),
-    datetime: nowIso(),
     questId: quest.id,
     questTitle: quest.title ?? quest.name ?? '',
     questDescription: quest.description ?? '',
@@ -350,6 +365,7 @@ function buildTaskPrompt(quest: Quest): string {
     projectGoal: project?.goal ?? '',
     workDir: project?.workDir ?? '',
     completionOutput: quest.completionOutput ?? '',
+    ...taskContext,
     ...(quest.executorOptions?.customVars ?? {}),
   }
 
@@ -409,7 +425,7 @@ function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePrefer
     tool,
     model: overrides?.model ?? resolveModel(tool, quest.model),
     effort: overrides?.effort ?? quest.effort ?? (family === 'codex' ? 'low' : null),
-    thinking: overrides?.thinking ?? (family === 'claude' ? quest.thinking === true : false),
+    thinking: overrides?.thinking ?? ((family === 'claude' || family === 'gemini') ? quest.thinking === true : false),
   }
 }
 
@@ -455,6 +471,16 @@ function shouldRetryCodexModelUnavailable(
   const defaultModel = getRuntimeModelCatalog('codex').defaultModel
   if (!defaultModel || defaultModel === model) return false
   return /model .*does not exist|does not have access|not have access|model is not supported|unknown model|tool .* is not supported with|tools? .*not supported/i.test(failureReason)
+}
+
+function shouldRetryClaude1MUnavailable(
+  tool: ToolName,
+  model: string,
+  failureReason: string | undefined,
+): boolean {
+  if (tool !== 'claude' || !failureReason) return false
+  if (!model.endsWith('[1m]')) return false
+  return /extra usage|1m context|1M context/i.test(failureReason)
 }
 
 function describeProviderRun(tool: RuntimeToolName, command: RuntimeCommandSpec, nativeResume: boolean): string {
@@ -605,8 +631,59 @@ function parseCodexLine(line: string): ProviderParseResult {
   return { events, assistantText, codexThreadId }
 }
 
+function parseGeminiLine(line: string): ProviderParseResult {
+  const obj = safeJsonParse(line)
+  if (!obj) return { events: [] }
+  const events: ProviderEvent[] = []
+  let assistantText = ''
+  let geminiSessionId: string | undefined
+  let providerError: string | undefined
+
+  if (obj.type === 'init' && typeof obj.session_id === 'string' && obj.session_id.trim()) {
+    geminiSessionId = obj.session_id.trim()
+  }
+
+  if (obj.type === 'message' && obj.role === 'assistant' && typeof obj.content === 'string') {
+    assistantText = obj.content
+    events.push(makeMessageEvent('assistant', obj.content))
+  } else if (obj.type === 'tool_use' && typeof obj.tool_name === 'string') {
+    const input = typeof obj.parameters === 'string' ? obj.parameters : JSON.stringify(obj.parameters ?? {}, null, 2)
+    events.push(makeToolUseEvent(`${obj.tool_name}\n${input}`.trim()))
+  } else if (obj.type === 'tool_result' && typeof obj.output === 'string' && obj.output.trim()) {
+    events.push(makeToolResultEvent(obj.output))
+  }
+
+  let tokenUsage: TokenUsage | undefined
+  if (obj.type === 'result') {
+    const stats = obj.stats && typeof obj.stats === 'object' ? obj.stats as Record<string, unknown> : {}
+    events.push(makeUsageEvent([
+      typeof stats.input_tokens === 'number' ? `input ${stats.input_tokens}` : null,
+      typeof stats.output_tokens === 'number' ? `output ${stats.output_tokens}` : null,
+    ]))
+    if (typeof stats.input_tokens === 'number' || typeof stats.output_tokens === 'number') {
+      tokenUsage = {
+        inputTokens: typeof stats.input_tokens === 'number' ? stats.input_tokens : 0,
+        outputTokens: typeof stats.output_tokens === 'number' ? stats.output_tokens : 0,
+        cacheReadTokens: typeof stats.cached === 'number' ? stats.cached : 0,
+        cacheCreationTokens: 0,
+        costUsd: typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : undefined,
+      }
+    }
+    if (obj.status === 'error') {
+      providerError = normalizeProviderError(obj.error ?? obj.message)
+    }
+  } else if (obj.type === 'error') {
+    providerError = normalizeProviderError(obj.error ?? obj.message)
+  }
+
+  return { events, assistantText, geminiSessionId, providerError, tokenUsage }
+}
+
 function parseProviderLine(tool: RuntimeToolName, line: string): ProviderParseResult {
-  return resolveRuntimeToolFamily(tool) === 'claude' ? parseClaudeLine(line) : parseCodexLine(line)
+  const family = resolveRuntimeToolFamily(tool)
+  if (family === 'claude') return parseClaudeLine(line)
+  if (family === 'gemini') return parseGeminiLine(line)
+  return parseCodexLine(line)
 }
 
 function buildClaudeArgs(prompt: string, options: { model?: string; effort?: string | null; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
@@ -615,6 +692,14 @@ function buildClaudeArgs(prompt: string, options: { model?: string; effort?: str
   const effort = options.effort?.trim() || (options.thinking ? 'high' : '')
   if (effort) args.push('--effort', effort)
   if (options.systemPrompt?.trim()) args.push('--system-prompt', options.systemPrompt.trim())
+  if (options.resumeSessionId?.trim()) args.push('--resume', options.resumeSessionId.trim())
+  return args
+}
+
+function buildGeminiArgs(prompt: string, options: { model?: string; effort?: string | null; thinking?: boolean; systemPrompt?: string; resumeSessionId?: string }): string[] {
+  const args = ['--prompt', prompt, '--output-format', 'stream-json', '--skip-trust']
+  if (options.model) args.push('--model', options.model)
+  if (options.thinking) args.push('--approval-mode', 'auto_edit')
   if (options.resumeSessionId?.trim()) args.push('--resume', options.resumeSessionId.trim())
   return args
 }
@@ -671,7 +756,7 @@ function appendQuestEvents(questId: string, events: ProviderEvent[]): void {
 function persistProviderIds(
   questId: string,
   runId: string,
-  ids: { codexThreadId?: string; claudeSessionId?: string },
+  ids: { codexThreadId?: string; claudeSessionId?: string; geminiSessionId?: string },
   options: { updateQuest: boolean },
 ): void {
   const quest = getQuest(questId)
@@ -682,8 +767,12 @@ function persistProviderIds(
   const runPatch: Partial<Run> = {}
   if (options.updateQuest && ids.codexThreadId && quest.codexThreadId !== ids.codexThreadId) questPatch.codexThreadId = ids.codexThreadId
   if (options.updateQuest && ids.claudeSessionId && quest.claudeSessionId !== ids.claudeSessionId) questPatch.claudeSessionId = ids.claudeSessionId
+  if (options.updateQuest && ids.geminiSessionId && quest.geminiSessionId !== ids.geminiSessionId) questPatch.geminiSessionId = ids.geminiSessionId
+  
   if (ids.codexThreadId && run.codexThreadId !== ids.codexThreadId) runPatch.codexThreadId = ids.codexThreadId
   if (ids.claudeSessionId && run.claudeSessionId !== ids.claudeSessionId) runPatch.claudeSessionId = ids.claudeSessionId
+  if (ids.geminiSessionId && run.geminiSessionId !== ids.geminiSessionId) runPatch.geminiSessionId = ids.geminiSessionId
+  
   if (Object.keys(questPatch).length > 0) updateQuest(questId, questPatch)
   if (Object.keys(runPatch).length > 0) updateRun(runId, runPatch)
 }
@@ -952,7 +1041,8 @@ function createAcceptedRun(
     effort: runtime.effort ?? undefined,
     thinking: runtime.thinking,
     claudeSessionId: isClaudeRuntimeTool(runtime.tool) ? quest.claudeSessionId : undefined,
-    codexThreadId: isClaudeRuntimeTool(runtime.tool) ? undefined : quest.codexThreadId,
+    geminiSessionId: isGeminiRuntimeTool(runtime.tool) ? quest.geminiSessionId : undefined,
+    codexThreadId: (isClaudeRuntimeTool(runtime.tool) || isGeminiRuntimeTool(runtime.tool)) ? undefined : quest.codexThreadId,
   })
   updateQuest(quest.id, {
     activeRunId: run.id,
@@ -1085,7 +1175,9 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   const updateQuestProviderIds = shouldPersistQuestProviderIds(quest)
   const initialNativeResume = tool === 'claude'
     ? canContinueContext && Boolean(run.claudeSessionId)
-    : canContinueContext && Boolean(run.codexThreadId)
+    : tool === 'gemini'
+      ? canContinueContext && Boolean(run.geminiSessionId)
+      : canContinueContext && Boolean(run.codexThreadId)
 
   const attempt = (
     nativeResume: boolean,
@@ -1114,15 +1206,26 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
           resumeSessionId: nativeResume ? currentRun.claudeSessionId : undefined,
         },
       )
-      : buildCodexArgs(
-        prompt,
-        {
-          model: currentRun.model,
-          effort: currentRun.effort,
-          systemPrompt: systemPromptForQuest(currentQuest),
-          threadId: nativeResume ? currentRun.codexThreadId : undefined,
-        },
-      )
+      : tool === 'gemini'
+        ? buildGeminiArgs(
+          prompt,
+          {
+            model: currentRun.model,
+            effort: currentRun.effort,
+            thinking: currentRun.thinking,
+            systemPrompt: systemPromptForQuest(currentQuest),
+            resumeSessionId: nativeResume ? currentRun.geminiSessionId : undefined,
+          },
+        )
+        : buildCodexArgs(
+          prompt,
+          {
+            model: currentRun.model,
+            effort: currentRun.effort,
+            systemPrompt: systemPromptForQuest(currentQuest),
+            threadId: nativeResume ? currentRun.codexThreadId : undefined,
+          },
+        )
 
     const child = spawn(command.file, [...command.args, ...args], {
       cwd: project.workDir,
@@ -1168,6 +1271,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         {
           codexThreadId: parsed.codexThreadId,
           claudeSessionId: parsed.claudeSessionId,
+          geminiSessionId: parsed.geminiSessionId,
         },
         { updateQuest: updateQuestProviderIds },
       )
@@ -1204,6 +1308,12 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         resolve({ state: 'completed', assistantText: lastAssistantText, tokenUsage: capturedTokenUsage })
         return
       }
+      const codexFallbackModel = shouldRetryCodexModelUnavailable(tool, currentRun.model, failureReason)
+        ? getRuntimeModelCatalog(toolId).defaultModel ?? undefined
+        : undefined
+      const claudeFallbackModel = shouldRetryClaude1MUnavailable(tool, currentRun.model, failureReason)
+        ? currentRun.model.replace(/\[1m\]$/i, '')
+        : undefined
       resolve({
         state: 'failed',
         failureReason,
@@ -1211,9 +1321,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         tokenUsage: capturedTokenUsage,
         retryWithClaudeProxy: shouldRetryClaudeProxyFailure(tool, command, claudeProxyCommand, failureReason, sawProviderOutput),
         retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
-        retryWithModel: shouldRetryCodexModelUnavailable(tool, currentRun.model, failureReason)
-          ? getRuntimeModelCatalog(toolId).defaultModel ?? undefined
-          : undefined,
+        retryWithModel: codexFallbackModel ?? claudeFallbackModel,
       })
     })
   })
@@ -1228,7 +1336,8 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   while (!finalAttempt) {
     const nextAttempt = await attempt(nativeResume, command)
     if (nextAttempt.retryWithModel && !usedModelFallback && nextAttempt.retryWithModel !== getRun(runId)?.model) {
-      appendQuestEvents(questId, [makeStatusEvent(`Codex model ${getRun(runId)?.model} is unavailable, retrying with ${nextAttempt.retryWithModel}`)])
+      const previousModel = getRun(runId)?.model
+      appendQuestEvents(questId, [makeStatusEvent(`Model ${previousModel} is unavailable, retrying with ${nextAttempt.retryWithModel}`)])
       updateRun(runId, { model: nextAttempt.retryWithModel })
       updateQuest(questId, { model: nextAttempt.retryWithModel })
       usedModelFallback = true
