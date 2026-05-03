@@ -308,7 +308,7 @@ function resolveModel(tool: RuntimeToolName, requested?: string | null): string 
   const defaultModel = getRuntimeModelCatalog(tool).defaultModel
   if (defaultModel) return defaultModel
   if (family === 'claude') return 'sonnet[1m]'
-  if (family === 'gemini') return 'gemini-2.0-flash'
+  if (family === 'gemini') return 'gemini-3-flash-preview'
   return 'gpt-5.4'
 }
 

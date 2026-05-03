@@ -46,11 +46,19 @@ const FALLBACK_CLAUDE_MODELS: RuntimeModelCatalog['models'] = [
 ]
 
 const FALLBACK_GEMINI_MODELS: RuntimeModelCatalog['models'] = [
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-  { id: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
 ]
+
+const DEPRECATED_GEMINI_MODEL_REMAP: Record<string, string> = {
+  'gemini-2.0-flash': 'gemini-2.5-flash',
+  'gemini-2.0-pro': 'gemini-2.5-pro',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+}
 
 export function isClaudeRuntimeTool(tool?: string | null): boolean {
   const normalized = tool?.trim().toLowerCase()
@@ -89,7 +97,7 @@ export function normalizeCodexModelId(value?: string | null): string {
 export function normalizeGeminiModelId(value?: string | null): string {
   const trimmed = value?.trim().toLowerCase()
   if (!trimmed || trimmed === 'default') return DEFAULT_GEMINI_MODEL_ID
-  return trimmed
+  return DEPRECATED_GEMINI_MODEL_REMAP[trimmed] ?? trimmed
 }
 
 export function normalizeClaudeModelId(value?: string | null): string {

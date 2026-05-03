@@ -23,13 +23,11 @@ const CLAUDE_MODELS = [
 const DEFAULT_CLAUDE_MODEL = 'sonnet'
 
 const GEMINI_MODELS = [
-  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
   { id: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Preview)' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Preview)' },
+  { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
   { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-  { id: 'gemini-2.0-pro', label: 'Gemini 2.0 Pro' },
-  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-  { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
 ]
 const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview'
 
@@ -37,10 +35,21 @@ const GEMINI_MODEL_ALIASES: Record<string, string> = {
   '3': 'gemini-3-flash-preview',
   '3-flash': 'gemini-3-flash-preview',
   '3-pro': 'gemini-3-pro-preview',
-  '2.5': 'gemini-2.5-flash-lite',
-  '2.0': 'gemini-2.0-flash',
-  '2.0-flash': 'gemini-2.0-flash',
-  '2.0-pro': 'gemini-2.0-pro',
+  '2.5': 'gemini-2.5-flash',
+  '2.5-flash': 'gemini-2.5-flash',
+  '2.5-flash-lite': 'gemini-2.5-flash-lite',
+  '2.5-pro': 'gemini-2.5-pro',
+  // Google API 已下线，自动升级到对应的 2.5 等价模型
+  'gemini-2.0-flash': 'gemini-2.5-flash',
+  'gemini-2.0-pro': 'gemini-2.5-pro',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+  '2.0': 'gemini-2.5-flash',
+  '2.0-flash': 'gemini-2.5-flash',
+  '2.0-pro': 'gemini-2.5-pro',
+  '1.5': 'gemini-2.5-flash',
+  '1.5-flash': 'gemini-2.5-flash',
+  '1.5-pro': 'gemini-2.5-pro',
 }
 
 const CODEX_DEFAULT_MODEL = 'gpt-5.4'
