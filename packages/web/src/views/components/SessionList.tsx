@@ -191,7 +191,6 @@ export function SessionList({
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
   const [sidebarTab, setSidebarTab] = useState<'sessions' | 'domains'>('sessions')
   const [domains, setDomains] = useState<Domain[]>([])
-  const [searchQuery, setSearchQuery] = useState('')
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -523,15 +522,8 @@ export function SessionList({
     await loadSessionCategories()
   }, [loadSessionCategories])
 
-  const filteredSessions = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase()
-    return normalized
-      ? sessions.filter((quest) => displayQuestName(quest, t).toLowerCase().includes(normalized))
-      : sessions
-  }, [sessions, searchQuery, t])
-
-  const pinnedSessions = filteredSessions.filter((quest) => quest.pinned)
-  const unpinnedSessions = filteredSessions.filter((quest) => !quest.pinned)
+  const pinnedSessions = sessions.filter((quest) => quest.pinned)
+  const unpinnedSessions = sessions.filter((quest) => !quest.pinned)
 
   const categorizedSessionSections = useMemo(() => {
     const grouped = new Map<string, Quest[]>()
@@ -760,17 +752,6 @@ export function SessionList({
           />
         ) : (
           <>
-            {sessions.length > 0 ? (
-              <div className="pluse-sidebar-search">
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={t('搜索')}
-                  className="pluse-sidebar-search-input"
-                />
-              </div>
-            ) : null}
 
             <div className="pluse-sidebar-scroll-pane">
               <section className="pluse-sidebar-section pluse-sidebar-section-list">
@@ -780,9 +761,8 @@ export function SessionList({
                   {categorizedSessionSections.ungrouped.map((quest) => renderQuest(quest))}
                   {sessions.length === 0 ? (
                     <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
-                  ) : filteredSessions.length === 0 ? (
-                    <div className="pluse-empty-state pluse-sidebar-empty">{t('无搜索结果')}</div>
                   ) : null}
+
                   {archivedSessions.length > 0 ? (
                     <div className="pluse-sidebar-archive-group">
                       <button

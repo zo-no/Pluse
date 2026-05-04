@@ -17,6 +17,8 @@ function sc(n: number): ContentfulStatusCode {
   return n as ContentfulStatusCode
 }
 
+const TodoStatusSchema = z.enum(['pending', 'doing', 'done', 'cancelled'])
+
 const TodoSchema = z.object({
   projectId: z.string().min(1),
   createdBy: z.enum(['human', 'ai', 'system']).optional(),
@@ -28,7 +30,9 @@ const TodoSchema = z.object({
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
   priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
   tags: z.array(z.string()).optional(),
-  status: z.enum(['pending', 'done']).optional(),
+  status: TodoStatusSchema.optional(),
+  activeForm: z.string().optional(),
+  order: z.number().int().optional(),
   deleted: z.boolean().optional(),
 })
 
@@ -41,7 +45,9 @@ const TodoPatchSchema = z.object({
   repeat: z.enum(['none', 'daily', 'weekly', 'monthly']).optional(),
   priority: z.enum(['urgent', 'high', 'normal', 'low']).optional(),
   tags: z.array(z.string()).nullable().optional(),
-  status: z.enum(['pending', 'done']).optional(),
+  status: TodoStatusSchema.optional(),
+  activeForm: z.string().nullable().optional(),
+  order: z.number().int().optional(),
   deleted: z.boolean().optional(),
 })
 
@@ -55,6 +61,7 @@ todosRouter.get('/todos', (c) => {
   const priority = c.req.query('priority') as Todo['priority'] | undefined
   return c.json(ok<Todo[]>(listTodoViews({
     projectId: c.req.query('projectId') || undefined,
+    questId: c.req.query('questId') || undefined,
     status: (c.req.query('status') as Todo['status'] | undefined) || undefined,
     deleted,
     tags,

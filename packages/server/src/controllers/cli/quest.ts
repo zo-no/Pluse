@@ -409,16 +409,14 @@ questCommand
   .option('--project-id <id>', 'Project id')
   .option('--kind <kind>', 'session or task')
   .option('--status <status>', 'Quest status')
-  .option('--search <query>', 'Search string')
   .option('--json', 'Output as JSON', false)
-  .action(async (opts: { projectId?: string; kind?: Quest['kind']; status?: Quest['status']; search?: string; json: boolean }) => {
+  .action(async (opts: { projectId?: string; kind?: Quest['kind']; status?: Quest['status']; json: boolean }) => {
     const mode = getCliMode()
     const baseUrl = await resolveDaemonBaseUrl(mode)
     const params = new URLSearchParams()
     if (opts.projectId) params.set('projectId', opts.projectId)
     if (opts.kind) params.set('kind', opts.kind)
     if (opts.status) params.set('status', opts.status)
-    if (opts.search) params.set('search', opts.search)
     const quests = baseUrl
       ? await daemonRequest<Quest[]>(baseUrl, `/api/quests${params.toString() ? `?${params.toString()}` : ''}`)
       : listQuests({ projectId: opts.projectId, kind: opts.kind, status: opts.status, deleted: false })

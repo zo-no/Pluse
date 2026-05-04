@@ -15,6 +15,7 @@ import {
 } from '@/views/utils/runtime'
 import { fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ArchiveIcon, CloseIcon, ConvertIcon, PlayIcon, PlusIcon } from './icons'
+import { ProgressPanel } from './ProgressPanel'
 import { TaskComposerModal } from './TaskComposerModal'
 
 interface TaskDetailProps {
@@ -1157,6 +1158,25 @@ export function TaskDetail({ questId, initialQuest, onQuestLoaded, onDataChanged
                       <span>{t('下次运行')}</span>
                       <strong>{formatDateTime(quest.scheduleConfig?.nextRunAt, locale, t)}</strong>
                     </div>
+                  </div>
+                </section>
+
+                <section className="pluse-task-detail-section">
+                  <header className="pluse-task-detail-section-head">
+                    <div>
+                      <h3>{t('Progress')}</h3>
+                    </div>
+                  </header>
+                  <div
+                    style={{
+                      minHeight: 220,
+                      border: '1px solid color-mix(in srgb, var(--border) 52%, transparent)',
+                      borderRadius: 18,
+                      overflow: 'hidden',
+                      background: 'color-mix(in srgb, var(--panel-strong) 72%, transparent)',
+                    }}
+                  >
+                    <ProgressPanel questId={quest.id} />
                   </div>
                 </section>
 

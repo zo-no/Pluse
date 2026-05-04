@@ -7395,48 +7395,6 @@ select {
   gap: 8px;
 }
 
-/* ─── Session search ─────────────────────────────────────────────────────── */
-
-.pluse-sidebar-search {
-  padding: 6px 8px 2px;
-}
-
-.pluse-sidebar-search-input {
-  width: 100%;
-  min-height: 38px;
-  padding: 0 12px;
-  font-size: 0.8rem;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--bg) 82%, white);
-  color: var(--text);
-  outline: none;
-  box-sizing: border-box;
-  box-shadow: 0 8px 18px rgba(20, 18, 14, 0.04);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
-}
-
-.pluse-sidebar-search-input:focus {
-  border-color: color-mix(in srgb, var(--accent) 60%, var(--border-strong));
-  box-shadow: 0 10px 22px rgba(20, 18, 14, 0.08);
-  background: color-mix(in srgb, var(--panel) 72%, white);
-}
-
-.pluse-sidebar-search-input::placeholder {
-  color: var(--text-muted);
-}
-
-:root[data-theme='dark'] .pluse-sidebar-search-input {
-  background: color-mix(in srgb, var(--panel-strong) 86%, var(--bg));
-  border-color: color-mix(in srgb, var(--border-strong) 42%, transparent);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
-}
-
-:root[data-theme='dark'] .pluse-sidebar-search-input:focus {
-  background: color-mix(in srgb, var(--panel-strong) 92%, var(--bg));
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
-}
-
 /* ─── File attachments ───────────────────────────────────────────────────── */
 
 .pluse-attachment-strip {

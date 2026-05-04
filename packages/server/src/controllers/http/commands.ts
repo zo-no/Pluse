@@ -27,7 +27,7 @@ export function getCommandCatalog(): CommandCatalog {
         commands: [
           {
             name: 'quest list',
-            cli: 'pluse quest list --project-id <id> [--kind session|task] [--search <query>] [--json]',
+            cli: 'pluse quest list --project-id <id> [--kind session|task] [--json]',
             api: 'GET /api/quests?projectId=<id>',
             description: '列出项目下的 Quest',
           },
@@ -75,9 +75,9 @@ export function getCommandCatalog(): CommandCatalog {
         commands: [
           {
             name: 'todo list',
-            cli: 'pluse todo list --project-id <id> [--status pending|done] [--json]',
-            api: 'GET /api/todos?projectId=<id>',
-            description: '列出项目下所有 Todo',
+            cli: 'pluse todo list [--project-id <id> | --quest-id <id>] [--status pending|doing|done|cancelled] [--json]',
+            api: 'GET /api/todos?projectId=<id> | GET /api/quests/<id>/progress',
+            description: '列出项目 Todo；传 --quest-id 时返回该 Quest 的 Progress 条目',
           },
           {
             name: 'todo get',
@@ -108,6 +108,24 @@ export function getCommandCatalog(): CommandCatalog {
             cli: 'pluse todo delete <id> --confirm',
             api: 'DELETE /api/todos/:id',
             description: '归档 Todo',
+          },
+          {
+            name: 'todo progress-create',
+            cli: 'pluse todo progress-create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--for ai|human] [--json]',
+            api: 'POST /api/todos',
+            description: '创建 Quest Progress 条目；AI 步骤与等待人类处理事项都通过它写入',
+          },
+          {
+            name: 'todo progress-update',
+            cli: 'pluse todo progress-update <id> [--status pending|doing|done|cancelled] [--title <title>] [--active-form <text>] [--json]',
+            api: 'PATCH /api/todos/:id',
+            description: '更新 Progress 条目的状态或显示文案',
+          },
+          {
+            name: 'todo progress-wait',
+            cli: 'pluse todo progress-wait <id> [--timeout <seconds>] [--interval <ms>]',
+            api: 'GET /api/todos/<id> (poll)',
+            description: '阻塞等待指定 Progress 条目被标记完成或取消',
           },
         ],
       },

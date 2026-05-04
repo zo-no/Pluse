@@ -218,7 +218,6 @@ export function getQuests(params: {
   projectId?: string
   kind?: Quest['kind']
   status?: Quest['status']
-  search?: string
   deleted?: boolean
   limit?: number
 } = {}): Promise<ApiResult<Quest[]>> {
@@ -226,7 +225,6 @@ export function getQuests(params: {
   if (params.projectId) search.set('projectId', params.projectId)
   if (params.kind) search.set('kind', params.kind)
   if (params.status) search.set('status', params.status)
-  if (params.search) search.set('search', params.search)
   if (params.deleted !== undefined) search.set('deleted', String(params.deleted))
   if (params.limit !== undefined) search.set('limit', String(params.limit))
   return request<Quest[]>('GET', `/quests${search.toString() ? `?${search.toString()}` : ''}`)
@@ -274,6 +272,10 @@ export function cancelQueuedRequest(id: string, requestId: string): Promise<ApiR
 
 export function getQuestRuns(id: string): Promise<ApiResult<Run[]>> {
   return request<Run[]>('GET', `/quests/${id}/runs`)
+}
+
+export function getQuestProgress(id: string): Promise<ApiResult<Todo[]>> {
+  return request<Todo[]>('GET', `/quests/${id}/progress`)
 }
 
 export function getRun(id: string): Promise<ApiResult<Run>> {

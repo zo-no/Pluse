@@ -1324,7 +1324,7 @@ export function TodoPanel({
         </div>
 
         {sourceTab === 'human' && projectTags.length > 0 ? (
-          <div className="pluse-sidebar-search pluse-todo-tag-filter-row">
+          <div className="pluse-todo-tag-filter-row">
             {projectTags.map((tag) => (
               <button
                 key={tag}

@@ -11,10 +11,12 @@ import type {
   QuestOp,
   Run,
   SendMessageInput,
+  Todo,
   UpdateQuestInput,
 } from '@pluse/types'
 import { listEvents } from '../../models/history'
 import { getQuest } from '../../models/quest'
+import { listQuestProgress } from '../../models/todo'
 import { cancelQueuedRequest, clearQueuedRequests, startQuestRun, submitQuestMessage } from '../../runtime/session-runner'
 import {
   createQuestWithEffects,
@@ -122,7 +124,6 @@ const MoveQuestSchema = z.object({
 export const questsRouter = new Hono()
 
 questsRouter.get('/quests', (c) => {
-  const search = c.req.query('search')?.trim().toLowerCase()
   const rawLimit = Number.parseInt(c.req.query('limit') || '', 10)
   const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : undefined
   const items = listQuestViews({
@@ -130,12 +131,9 @@ questsRouter.get('/quests', (c) => {
     kind: (c.req.query('kind') as Quest['kind'] | undefined) || undefined,
     deleted: c.req.query('deleted') === 'true',
     status: (c.req.query('status') as Quest['status'] | undefined) || undefined,
-    limit: search ? undefined : limit,
+    limit,
   })
-  const filtered = search
-    ? items.filter((quest) => `${quest.name ?? ''} ${quest.title ?? ''} ${quest.description ?? ''}`.toLowerCase().includes(search))
-    : items
-  return c.json(ok<Quest[]>(search && limit ? filtered.slice(0, limit) : filtered))
+  return c.json(ok<Quest[]>(items))
 })
 
 questsRouter.get('/quests/:id', (c) => {
@@ -254,6 +252,10 @@ questsRouter.post('/quests/:id/run', async (c) => {
 questsRouter.get('/quests/:id/runs', (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') || '50', 10) || 50, 500)
   return c.json(ok<Run[]>(getQuestRunsView(c.req.param('id'), limit)))
+})
+
+questsRouter.get('/quests/:id/progress', (c) => {
+  return c.json(ok<Todo[]>(listQuestProgress(c.req.param('id'))))
 })
 
 questsRouter.delete('/quests/:id/queue/:requestId', (c) => {

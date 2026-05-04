@@ -1,14 +1,6 @@
-import { randomBytes } from 'node:crypto'
 import type { CreateTodoInput, Todo, TodoPriority, TodoRepeat, TodoStatus, UpdateTodoInput } from '@pluse/types'
 import { getDb } from '../db'
-
-function genId(): string {
-  return 'todo_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+import { genId, now } from '../support/db-utils'
 
 type TodoRow = {
   id: string
@@ -22,11 +14,19 @@ type TodoRow = {
   repeat: TodoRepeat
   priority: TodoPriority
   tags: string
-  status: TodoStatus
+  status: string
+  active_form: string | null
+  order: number
   deleted: number
   deleted_at: string | null
   created_at: string
   updated_at: string
+}
+
+function normalizeTodoStatus(status: string | null | undefined): TodoStatus {
+  if (status === 'in_progress') return 'doing'
+  if (status === 'doing' || status === 'done' || status === 'cancelled') return status
+  return 'pending'
 }
 
 function rowToTodo(row: TodoRow): Todo {
@@ -44,7 +44,9 @@ function rowToTodo(row: TodoRow): Todo {
     repeat: row.repeat ?? 'none',
     priority: (row.priority as TodoPriority) ?? 'normal',
     tags,
-    status: row.status,
+    status: normalizeTodoStatus(row.status),
+    activeForm: row.active_form ?? undefined,
+    order: row.order ?? 0,
     deleted: row.deleted === 1 ? true : undefined,
     deletedAt: row.deleted_at ?? undefined,
     createdAt: row.created_at,
@@ -64,6 +66,7 @@ function deduplicateTags(tags: string[]): string[] {
 
 export function listTodos(filter: {
   projectId?: string
+  questId?: string
   status?: TodoStatus
   deleted?: boolean
   tags?: string[]
@@ -76,6 +79,10 @@ export function listTodos(filter: {
   if (filter.projectId) {
     conditions.push('project_id = ?')
     params.push(filter.projectId)
+  }
+  if (filter.questId) {
+    conditions.push('origin_quest_id = ?')
+    params.push(filter.questId)
   }
   if (filter.status) {
     conditions.push('status = ?')
@@ -101,7 +108,14 @@ export function listTodos(filter: {
   const rows = db.query<TodoRow, Array<string | number>>(
     `SELECT * FROM todos ${where}
       ORDER BY
-        status = 'pending' DESC,
+        CASE status
+          WHEN 'pending' THEN 0
+          WHEN 'doing' THEN 1
+          WHEN 'in_progress' THEN 1
+          WHEN 'done' THEN 2
+          WHEN 'cancelled' THEN 3
+          ELSE 4
+        END ASC,
         CASE priority
           WHEN 'urgent' THEN 0
           WHEN 'high'   THEN 1
@@ -113,6 +127,16 @@ export function listTodos(filter: {
         due_at ASC,
         updated_at DESC`
   ).all(...params)
+  return rows.map(rowToTodo)
+}
+
+export function listQuestProgress(questId: string): Todo[] {
+  const db = getDb()
+  const rows = db.query<TodoRow, [string]>(
+    `SELECT * FROM todos
+     WHERE origin_quest_id = ? AND deleted = 0
+     ORDER BY "order" ASC, created_at ASC`
+  ).all(questId)
   return rows.map(rowToTodo)
 }
 
@@ -137,7 +161,7 @@ export function listProjectTags(projectId: string): string[] {
 
 export function createTodo(input: CreateTodoInput): Todo {
   const db = getDb()
-  const id = genId()
+  const id = genId('todo')
   const ts = now()
   const tags = JSON.stringify(deduplicateTags(input.tags ?? []))
   db.run(
@@ -145,8 +169,8 @@ export function createTodo(input: CreateTodoInput): Todo {
       id, project_id, created_by, origin_quest_id,
       title, description, waiting_instructions, due_at, repeat,
       priority, tags,
-      status, deleted, deleted_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      status, active_form, "order", deleted, deleted_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       input.projectId,
@@ -160,6 +184,8 @@ export function createTodo(input: CreateTodoInput): Todo {
       input.priority ?? 'normal',
       tags,
       input.status ?? 'pending',
+      input.activeForm ?? null,
+      input.order ?? 0,
       input.deleted ? 1 : 0,
       input.deleted ? ts : null,
       ts,
@@ -191,6 +217,8 @@ export function updateTodo(id: string, input: UpdateTodoInput): Todo {
     params.push(JSON.stringify(newTags))
   }
   if ('status' in input && input.status !== undefined) { sets.push('status = ?'); params.push(input.status) }
+  if ('activeForm' in input) { sets.push('active_form = ?'); params.push(input.activeForm ?? null) }
+  if ('order' in input && input.order !== undefined) { sets.push('"order" = ?'); params.push(input.order) }
   if ('deleted' in input && input.deleted !== undefined) {
     sets.push('deleted = ?')
     params.push(input.deleted ? 1 : 0)

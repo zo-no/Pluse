@@ -50,5 +50,19 @@ describe('command catalog', () => {
     ])
     expect(questModule?.commands.find((command) => command.name === 'quest create')?.cli).toContain('--schedule-kind')
     expect(questModule?.commands.find((command) => command.name === 'quest update')?.api).toBe('PATCH /api/quests/<id>')
+
+    const todoModule = catalog.modules.find((module) => module.name === 'todo')
+    expect(todoModule?.commands.map((command) => command.name)).toEqual([
+      'todo list',
+      'todo get',
+      'todo create',
+      'todo done',
+      'todo update',
+      'todo delete',
+      'todo progress-create',
+      'todo progress-update',
+      'todo progress-wait',
+    ])
+    expect(todoModule?.commands.find((command) => command.name === 'todo list')?.api).toContain('/api/quests/<id>/progress')
   })
 })

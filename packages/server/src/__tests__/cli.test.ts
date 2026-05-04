@@ -981,6 +981,59 @@ describe('pluse cli', () => {
       )
       expect(pendingTodosAfterDone.some((item) => item.id !== todo.id && item.repeat === 'daily' && item.dueAt === '2026-04-21T02:00:00.000Z')).toBe(true)
 
+      const sessionQuest = createQuest({
+        projectId: project.id,
+        kind: 'session',
+        name: 'CLI Progress Quest',
+      })
+
+      const progressAi = runCli(sandbox, [
+        'todo',
+        'progress-create',
+        '--quest-id',
+        sessionQuest.id,
+        '--project-id',
+        project.id,
+        '--title',
+        'Analyze codebase',
+        '--active-form',
+        'Analyzing codebase',
+      ])
+      expect(progressAi.exitCode).toBe(0)
+      const progressAiId = progressAi.stdout.trim()
+      expect(progressAiId).toMatch(/^todo_/)
+
+      const progressHuman = parseJson<{ id: string; createdBy: string; waitingInstructions?: string; originQuestId?: string }>(
+        runCli(sandbox, [
+          'todo',
+          'progress-create',
+          '--quest-id',
+          sessionQuest.id,
+          '--project-id',
+          project.id,
+          '--title',
+          'Confirm deployment',
+          '--for',
+          'human',
+          '--json',
+        ]),
+      )
+      expect(progressHuman.createdBy).toBe('human')
+      expect(progressHuman.waitingInstructions).toBe('Confirm deployment')
+      expect(progressHuman.originQuestId).toBe(sessionQuest.id)
+
+      const progressUpdated = parseJson<{ id: string; status: string; activeForm?: string }>(
+        runCli(sandbox, ['todo', 'progress-update', progressAiId, '--status', 'doing', '--active-form', 'Reading files', '--json']),
+      )
+      expect(progressUpdated.status).toBe('doing')
+      expect(progressUpdated.activeForm).toBe('Reading files')
+
+      const progressList = parseJson<Array<{ id: string; originQuestId?: string }>>(
+        runCli(sandbox, ['todo', 'list', '--quest-id', sessionQuest.id, '--json']),
+      )
+      expect(progressList.map((item) => item.id)).toEqual([progressAiId, progressHuman.id])
+      expect(progressList.every((item) => item.originQuestId === sessionQuest.id)).toBe(true)
+
       const deleted = runCli(sandbox, ['todo', 'delete', todo.id, '--confirm'])
       expect(deleted.exitCode).toBe(0)
       expect(deleted.stdout).toContain(`Todo ${todo.id} archived.`)

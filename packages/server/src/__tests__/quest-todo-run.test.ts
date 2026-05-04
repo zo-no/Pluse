@@ -351,6 +351,10 @@ describe('quest/todo/run APIs', () => {
     expect(nextRecurringTodo?.repeat).toBe('daily')
     expect(nextRecurringTodo?.dueAt).toBe('2026-04-21T02:00:00.000Z')
 
+    const progressItems = await GET<Todo[]>(`/api/quests/${switchedBackToTaskData.id}/progress`)
+    expect(progressItems.status).toBe(200)
+    expect(mustOk(progressItems).map((item) => item.id)).toEqual([todoData.id, nextRecurringTodo!.id])
+
     const linkedQuest = await createQuest({
       projectId: project.id,
       kind: 'session',
@@ -393,7 +397,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'check-in', 'run', 'project', 'domain', 'session-category', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'check-in', 'run', 'project', 'domain', 'session-category', 'asset', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
@@ -402,7 +406,17 @@ describe('quest/todo/run APIs', () => {
     expect(questModule?.commands.some((command) => command.name === 'quest move')).toBe(true)
     expect(questModule?.commands.find((command) => command.name === 'quest create')?.api).toBe('POST /api/quests')
     const todoModule = commandCatalog.modules.find((module) => module.name === 'todo')
-    expect(todoModule?.commands.map((command) => command.name)).toEqual(['todo list', 'todo get', 'todo create', 'todo done', 'todo update', 'todo delete'])
+    expect(todoModule?.commands.map((command) => command.name)).toEqual([
+      'todo list',
+      'todo get',
+      'todo create',
+      'todo done',
+      'todo update',
+      'todo delete',
+      'todo progress-create',
+      'todo progress-update',
+      'todo progress-wait',
+    ])
     expect(todoModule?.commands.some((command) => command.api.includes('/cancel'))).toBe(false)
     expect(todoModule?.commands.some((command) => command.api.includes('/done'))).toBe(false)
     const reminderModule = commandCatalog.modules.find((module) => module.name === 'reminder')

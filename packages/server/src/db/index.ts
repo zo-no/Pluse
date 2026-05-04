@@ -166,6 +166,8 @@ function initSchema(db: Database): void {
     ON session_categories (project_id, name)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_session_categories_project_name_sort
     ON session_categories (project_id, name COLLATE NOCASE, created_at)`)
+  ensureColumn(db, 'session_categories', 'description', 'ALTER TABLE session_categories ADD COLUMN description TEXT')
+  ensureColumn(db, 'session_categories', 'collapsed', 'ALTER TABLE session_categories ADD COLUMN collapsed INTEGER NOT NULL DEFAULT 0')
 
   db.run(`CREATE TABLE IF NOT EXISTS todos (
     id                   TEXT PRIMARY KEY NOT NULL,
@@ -177,7 +179,11 @@ function initSchema(db: Database): void {
     waiting_instructions TEXT,
     due_at               TEXT,
     repeat               TEXT NOT NULL DEFAULT 'none',
+    priority             TEXT NOT NULL DEFAULT 'normal',
+    tags                 TEXT NOT NULL DEFAULT '[]',
     status               TEXT NOT NULL DEFAULT 'pending',
+    active_form          TEXT,
+    "order"              INTEGER NOT NULL DEFAULT 0,
     deleted              INTEGER NOT NULL DEFAULT 0,
     deleted_at           TEXT,
     created_at           TEXT NOT NULL,
@@ -192,6 +198,8 @@ function initSchema(db: Database): void {
   ensureColumn(db, 'todos', 'repeat', "ALTER TABLE todos ADD COLUMN repeat TEXT NOT NULL DEFAULT 'none'")
   ensureColumn(db, 'todos', 'priority', "ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal'")
   ensureColumn(db, 'todos', 'tags', "ALTER TABLE todos ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+  ensureColumn(db, 'todos', 'active_form', 'ALTER TABLE todos ADD COLUMN active_form TEXT')
+  ensureColumn(db, 'todos', 'order', 'ALTER TABLE todos ADD COLUMN "order" INTEGER NOT NULL DEFAULT 0')
   db.run('DROP INDEX IF EXISTS idx_todos_project')
   db.run(`CREATE INDEX IF NOT EXISTS idx_todos_project
     ON todos (project_id, deleted, status, updated_at DESC)`)
