@@ -8,7 +8,7 @@ import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayQuestName } from '@/views/utils/display'
 import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { DomainSidebar } from './DomainSidebar'
-import { ArchiveIcon, ClockIcon, CloseIcon, PinIcon, PlusIcon, RouteIcon } from './icons'
+import { ArchiveIcon, ClockIcon, CloseIcon, FolderIcon, FolderOpenIcon, PinIcon, PlusIcon, RouteIcon } from './icons'
 
 interface SessionListProps {
   projects: Project[]
@@ -129,6 +129,8 @@ const QuestItem = memo(function QuestItem({
         <div className="pluse-sidebar-item-title">
           {presenceState ? (
             <span className={`pluse-sidebar-presence-dot is-${presenceState}`} aria-hidden="true" />
+          ) : quest.pinned && !archived ? (
+            <PinIcon className="pluse-icon pluse-sidebar-leading-icon is-pin" />
           ) : null}
           <strong>{displayQuestName(quest, t)}</strong>
         </div>
@@ -605,21 +607,32 @@ export function SessionList({
   }
 
   function renderSessionCategorySection(category: SessionCategory, quests: Quest[]) {
+    const expanded = !category.collapsed
     return (
-      <div key={category.id} className="pluse-sidebar-archive-group">
+      <div key={category.id} className="pluse-sidebar-category-group">
         <button
           type="button"
-          className="pluse-sidebar-archive-toggle pluse-sidebar-category-toggle"
+          className={`pluse-sidebar-item pluse-sidebar-row pluse-sidebar-category-row${expanded ? ' is-expanded' : ''}`}
           onClick={() => void handleToggleSessionCategoryCollapsed(category.id, !category.collapsed)}
+          aria-expanded={expanded}
         >
-          <span className="pluse-sidebar-category-toggle-main">
-            <span className="pluse-sidebar-category-chevron" aria-hidden="true">{category.collapsed ? '▸' : '▾'}</span>
-            <span className="pluse-sidebar-category-name" title={category.name}>{category.name}</span>
-          </span>
-          <span className="pluse-sidebar-category-count" aria-hidden="true">({quests.length})</span>
+          <div className="pluse-sidebar-item-main pluse-sidebar-category-main">
+            <div className="pluse-sidebar-item-title">
+              <span className="pluse-sidebar-category-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+              {expanded ? (
+                <FolderOpenIcon className="pluse-icon pluse-sidebar-leading-icon is-folder" />
+              ) : (
+                <FolderIcon className="pluse-icon pluse-sidebar-leading-icon is-folder" />
+              )}
+              <strong title={category.name}>{category.name}</strong>
+            </div>
+            <div className="pluse-sidebar-item-meta">
+              <span className="pluse-sidebar-category-count">{quests.length}</span>
+            </div>
+          </div>
         </button>
-        {!category.collapsed ? (
-          <div className="pluse-sidebar-archive-list">
+        {expanded ? (
+          <div className="pluse-sidebar-category-children">
             {quests.map((quest) => renderQuest(quest))}
           </div>
         ) : null}
@@ -762,24 +775,9 @@ export function SessionList({
             <div className="pluse-sidebar-scroll-pane">
               <section className="pluse-sidebar-section pluse-sidebar-section-list">
                 <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-                  {pinnedSessions.length > 0 ? (
-                    <>
-                      <div className="pluse-sidebar-section-label">{t('固定')}</div>
-                      {pinnedSessions.map((quest) => renderQuest(quest))}
-                    </>
-                  ) : null}
-                  {categorizedSessionSections.categories.length > 0 ? (
-                    <>
-                      <div className="pluse-sidebar-section-label">{t('分类')}</div>
-                      {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
-                    </>
-                  ) : null}
-                  {categorizedSessionSections.ungrouped.length > 0 ? (
-                    <>
-                      <div className="pluse-sidebar-section-label">{t('未分组')}</div>
-                      {categorizedSessionSections.ungrouped.map((quest) => renderQuest(quest))}
-                    </>
-                  ) : null}
+                  {pinnedSessions.map((quest) => renderQuest(quest))}
+                  {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
+                  {categorizedSessionSections.ungrouped.map((quest) => renderQuest(quest))}
                   {sessions.length === 0 ? (
                     <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
                   ) : filteredSessions.length === 0 ? (

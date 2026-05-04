@@ -80,6 +80,10 @@
   - 核心问题：Agent 缺少一个稳定入口来查询用户工具链里的外部 CLI 指令集合
   - 说明：这是全局 CLI 集合查询命令，不提供逐条注册表或执行权限模型
 
+- [0014-frontend-component-decomposition.md](./0014-frontend-component-decomposition.md)
+  - 核心问题：前端核心文件（TodoPanel 2226 行、MainPage 1972 行等）在多轮需求叠加后已成巨型组件，反向拖慢后续迭代
+  - 说明：工程可维护性需求，不是性能优化，不引入全局状态库；待 design 决定拆分边界与分期
+
 ## 当前顺序
 
 建议默认按以下顺序推进：
@@ -97,6 +101,7 @@
 11. `0011-image-messages` 可作为视觉工作闭环的独立能力推进，但需要先确认 spec 再编码
 12. `0012-check-in-reminders` 先按 MVP 实现 Quest 创建 Check-in、人类回执、record 留事实
 13. `0013-cli-catalog-command` 作为设置侧轻量能力，先实现全局查询命令和 prompt 注入
+14. `0014-frontend-component-decomposition` 是工程债，按业务节奏插空推进，不阻塞业务 P0/P1
 
 ## 维护规则
 

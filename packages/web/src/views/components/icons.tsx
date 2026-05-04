@@ -270,3 +270,20 @@ export function ConvertIcon(props: IconProps) {
     </BaseIcon>
   )
 }
+
+export function FolderIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M3.5 7.5a1.5 1.5 0 0 1 1.5-1.5h3.4a1.5 1.5 0 0 1 1.05.43l1.1 1.07h6a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5z" />
+    </BaseIcon>
+  )
+}
+
+export function FolderOpenIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M3.5 7.5a1.5 1.5 0 0 1 1.5-1.5h3.4a1.5 1.5 0 0 1 1.05.43l1.1 1.07h6a1.5 1.5 0 0 1 1.5 1.5V10" />
+      <path d="M3.5 10h15.4a1 1 0 0 1 .98 1.2l-1.1 5.4a1.5 1.5 0 0 1-1.47 1.2H5a1.5 1.5 0 0 1-1.5-1.5z" />
+    </BaseIcon>
+  )
+}
