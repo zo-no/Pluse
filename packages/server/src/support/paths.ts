@@ -12,7 +12,6 @@ function resolveHomePath(value: string): string {
 export function getPluseRoot(): string {
   return resolveHomePath(
     process.env['PLUSE_ROOT']?.trim()
-    || process.env['PULSE_ROOT']?.trim()
     || join(homedir(), '.pluse'),
   )
 }
@@ -27,7 +26,6 @@ export function ensureDir(path: string): string {
 export function getDbPath(): string {
   return resolveHomePath(
     process.env['PLUSE_DB_PATH']?.trim()
-    || process.env['PULSE_DB_PATH']?.trim()
     || join(getPluseRoot(), 'runtime', 'pluse.db'),
   )
 }
@@ -85,7 +83,7 @@ export function getAssetsDir(questId: string): string {
 }
 
 export function getWebDistRoot(): string {
-  const override = process.env['PLUSE_WEB_DIST']?.trim() || process.env['PULSE_WEB_DIST']?.trim()
+  const override = process.env['PLUSE_WEB_DIST']?.trim()
   if (override) return resolveHomePath(override)
 
   const candidates = [

@@ -248,7 +248,7 @@ CREATE TABLE auth (
 
 
 CREATE TABLE auth_sessions (
-  id         TEXT PRIMARY KEY NOT NULL, -- pulse_session cookie 值
+  id         TEXT PRIMARY KEY NOT NULL, -- pluse_session cookie 值
   csrf_token TEXT NOT NULL,
   created_at TEXT NOT NULL,
   last_seen  TEXT NOT NULL,
@@ -266,6 +266,6 @@ CREATE TABLE settings (
 鉴权约束：
 
 - `/health` 和 `/api/auth/me` 是公开探测接口。
-- 其他 `/api/*` 业务接口默认要求 `pulse_session` cookie 或 `Authorization: Bearer <token>`。
-- Cookie 会话的写操作必须同时提供 `X-CSRF-Token`，并与 `pulse_csrf` cookie 和 `auth_sessions.csrf_token` 一致。
+- 其他 `/api/*` 业务接口默认要求 `pluse_session` cookie 或 `Authorization: Bearer <token>`。
+- Cookie 会话的写操作必须同时提供 `X-CSRF-Token`，并与 `pluse_csrf` cookie 和 `auth_sessions.csrf_token` 一致。
 - 未配置 `auth` 记录时也不放行业务 API；首次密码或 token 必须通过服务端本机 CLI 初始化。

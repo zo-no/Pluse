@@ -127,8 +127,8 @@ export interface StartQuestRunResult {
   quest: Quest | null
 }
 
-const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'] ?? process.env['PULSE_RUN_KILL_GRACE_MS'], 15_000)
-const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'] ?? process.env['PULSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
+const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'], 15_000)
+const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
 const activeRunners = new Map<string, ActiveRunner>()
 const AUTO_RENAME_SYSTEM_PROMPT = [
   'You generate short titles for Pluse session quests.',
@@ -415,7 +415,7 @@ function resolveProviderRunTimeoutMs(quest: Quest): number | null {
     }
   }
 
-  return parseOptionalPositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'] ?? process.env['PULSE_RUN_TIMEOUT_MS'])
+  return parseOptionalPositiveInt(process.env['PLUSE_RUN_TIMEOUT_MS'])
 }
 
 function questRuntimePreferences(quest: Quest, overrides?: Partial<RuntimePreferences>): RuntimePreferences {

@@ -108,7 +108,7 @@ pluse auth setup --password "your-password"
 
 终端示例里的 `kualshown@... %` 是 shell 提示符，不要复制到命令里。
 
-Web 端登录成功后，服务端会写入 `pulse_session` HttpOnly cookie 和 `pulse_csrf` cookie；后续浏览器请求必须带 cookie 才能访问 `/api/*` 业务接口。写操作还需要前端把 `pulse_csrf` 复制到 `X-CSRF-Token` 请求头。
+Web 端登录成功后，服务端会写入 `pluse_session` HttpOnly cookie 和 `pluse_csrf` cookie；后续浏览器请求必须带 cookie 才能访问 `/api/*` 业务接口。写操作还需要前端把 `pluse_csrf` 复制到 `X-CSRF-Token` 请求头。
 
 API Token 登录用于 CLI / 自动化场景：
 

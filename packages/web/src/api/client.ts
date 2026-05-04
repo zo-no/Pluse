@@ -64,7 +64,7 @@ async function request<T>(method: string, path: string, body?: unknown, options?
     headers.set('Content-Type', 'application/json')
   }
   if (method !== 'GET' && method !== 'HEAD') {
-    const csrfToken = getCookie('pulse_csrf')
+    const csrfToken = getCookie('pluse_csrf')
     if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
   }
 
@@ -115,7 +115,7 @@ export function login(body: { username?: string; password?: string; token?: stri
 }
 
 export function logout(): Promise<ApiResult<{ ok: true }>> {
-  const csrfToken = getCookie('pulse_csrf')
+  const csrfToken = getCookie('pluse_csrf')
   return fetch('/auth/logout', {
     method: 'POST',
     credentials: 'include',
@@ -422,7 +422,7 @@ export async function uploadAsset(questId: string, file: File): Promise<ApiResul
   const form = new FormData()
   form.append('questId', questId)
   form.append('file', file)
-  const csrfToken = getCookie('pulse_csrf')
+  const csrfToken = getCookie('pluse_csrf')
   const headers = new Headers()
   if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
   let res: Response

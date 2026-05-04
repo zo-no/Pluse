@@ -42,7 +42,7 @@
 - `/login` 支持密码登录和 API Token 登录；登录成功后进入主工作区。
 - 如果 `/api/auth/me` 返回 `setupRequired=true`，登录页展示本机 CLI 初始化提示，例如 `pnpm pluse auth setup --password "your-password"` 和 `pnpm pluse auth token`。
 - 首次凭据不通过 Web 表单创建，必须先在服务端本机 CLI 配置，避免远程访问者抢先初始化密码。
-- 登录成功后浏览器依赖 `pulse_session` HttpOnly cookie 访问业务 API；写操作由前端把 `pulse_csrf` cookie 复制到 `X-CSRF-Token` 请求头。
+- 登录成功后浏览器依赖 `pluse_session` HttpOnly cookie 访问业务 API；写操作由前端把 `pluse_csrf` cookie 复制到 `X-CSRF-Token` 请求头。
 
 ### 左侧栏
 

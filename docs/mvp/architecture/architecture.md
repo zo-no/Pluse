@@ -72,8 +72,8 @@ Domain (optional)
 
 1. 用户先在服务端本机的 Pluse 仓库根目录执行 `pnpm pluse auth setup --password ...` 配置密码，可选配置 username；如果已安装全局 CLI，也可使用 `pluse auth setup ...`。
 2. Web 端通过 `/auth/login` 使用密码或 API token 登录。
-3. 登录成功后服务端写入 `pulse_session` HttpOnly cookie 和 `pulse_csrf` cookie。
-4. 后续浏览器请求依赖 `pulse_session` 识别会话；`POST` / `PATCH` / `PUT` / `DELETE` 还必须带 `X-CSRF-Token`，值与 `pulse_csrf` cookie 及服务端 session 记录一致。
+3. 登录成功后服务端写入 `pluse_session` HttpOnly cookie 和 `pluse_csrf` cookie。
+4. 后续浏览器请求依赖 `pluse_session` 识别会话；`POST` / `PATCH` / `PUT` / `DELETE` 还必须带 `X-CSRF-Token`，值与 `pluse_csrf` cookie 及服务端 session 记录一致。
 
 CLI / 自动化调用可以使用 `Authorization: Bearer <token>`，token 由 `pnpm pluse auth token` 或全局 `pluse auth token` 生成并存储在 `auth` 表中。Bearer 调用不走 CSRF，因为它不依赖浏览器 cookie。
 

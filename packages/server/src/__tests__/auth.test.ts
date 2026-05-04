@@ -7,13 +7,13 @@ beforeAll(() => setupTestDb())
 beforeEach(() => resetTestDb())
 
 function makeCookieHeader(sessionToken: string, csrfToken: string): string {
-  return `pulse_session=${sessionToken}; pulse_csrf=${csrfToken}`
+  return `pluse_session=${sessionToken}; pluse_csrf=${csrfToken}`
 }
 
 function cookieHeaderFromSetCookie(headers: Headers): string {
   const value = headers.get('set-cookie') ?? ''
   return value
-    .split(/,(?=\s*pulse_)/)
+    .split(/,(?=\s*pluse_)/)
     .map((part) => part.trim().split(';')[0])
     .filter(Boolean)
     .join('; ')
@@ -48,8 +48,8 @@ describe('auth middleware', () => {
     expect(login.status).toBe(200)
 
     const cookie = cookieHeaderFromSetCookie(login.headers)
-    expect(cookie).toContain('pulse_session=')
-    expect(cookie).toContain('pulse_csrf=')
+    expect(cookie).toContain('pluse_session=')
+    expect(cookie).toContain('pluse_csrf=')
 
     const projects = await GET<Project[]>('/api/projects', {
       headers: { Cookie: cookie },

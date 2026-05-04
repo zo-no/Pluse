@@ -20,7 +20,7 @@ type ClassificationDecision =
   | { mode: 'clear' }
 
 const SESSION_CLASSIFY_TIMEOUT_MS = parsePositiveInt(
-  process.env['PLUSE_SESSION_CLASSIFY_TIMEOUT_MS'] ?? process.env['PULSE_SESSION_CLASSIFY_TIMEOUT_MS'],
+  process.env['PLUSE_SESSION_CLASSIFY_TIMEOUT_MS'],
   30_000,
 )
 const FALLBACK_CATEGORY_NAME = '临时探索'
@@ -115,9 +115,9 @@ function resolveModel(tool: ToolName, requested?: string | null): string {
 
 function resolveToolCommand(tool: ToolName): string {
   if (tool === 'claude') {
-    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || process.env['PULSE_CLAUDE_COMMAND']?.trim() || 'claude'
+    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || 'claude'
   }
-  return process.env['PLUSE_CODEX_COMMAND']?.trim() || process.env['PULSE_CODEX_COMMAND']?.trim() || 'codex'
+  return process.env['PLUSE_CODEX_COMMAND']?.trim() || 'codex'
 }
 
 function runtimeEnvForTool(tool: ToolName): NodeJS.ProcessEnv {

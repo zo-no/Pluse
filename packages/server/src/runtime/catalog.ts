@@ -56,8 +56,7 @@ const CODEX_DEFAULT_MODEL = 'gpt-5.4'
 const DEFAULT_CODEX_EFFORT = 'high'
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh']
 const CODEX_MODEL_CATALOG_REFRESH_MS = parsePositiveInt(
-  process.env['PLUSE_CODEX_MODEL_CATALOG_REFRESH_MS']?.trim()
-    || process.env['PULSE_CODEX_MODEL_CATALOG_REFRESH_MS']?.trim(),
+  process.env['PLUSE_CODEX_MODEL_CATALOG_REFRESH_MS']?.trim(),
   60 * 60 * 1000,
 )
 const CODEX_MODEL_CATALOG_RETRY_MS = 60 * 1000

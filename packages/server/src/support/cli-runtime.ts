@@ -22,7 +22,6 @@ function readServerMetadata(): ServerMetadata | null {
 export function getCliMode(): CliMode {
   const mode = (
     process.env['PLUSE_CLI_MODE']?.trim().toLowerCase()
-    || process.env['PULSE_CLI_MODE']?.trim().toLowerCase()
     || 'auto'
   ) as CliMode
   return mode === 'daemon' || mode === 'offline' ? mode : 'auto'
@@ -61,7 +60,6 @@ export async function daemonRequest<T>(
   init: RequestInit = {},
 ): Promise<T> {
   const token = process.env['PLUSE_API_TOKEN']?.trim()
-    || process.env['PULSE_API_TOKEN']?.trim()
     || (hasAuth() ? getOrCreateApiToken() : '')
   const headers = new Headers(init.headers ?? {})
   if (token) headers.set('Authorization', `Bearer ${token}`)

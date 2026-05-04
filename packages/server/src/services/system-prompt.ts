@@ -5,7 +5,6 @@ import { buildCliCatalogPromptBlock } from './cli-catalog-command'
 
 function getPluseCliCommand(): string {
   return process.env['PLUSE_CLI_COMMAND']?.trim()
-    || process.env['PULSE_CLI_COMMAND']?.trim()
     || `bun ${resolve(import.meta.dirname, '../cli.ts')}`
 }
 

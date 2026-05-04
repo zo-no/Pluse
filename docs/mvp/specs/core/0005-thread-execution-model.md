@@ -281,7 +281,7 @@ Automation 的 `executorOptions.continueQuest` 控制每次执行是否复用 Qu
 
 AI provider run 默认不设置总时长超时。只有显式配置时才设置超时：
 
-- `PLUSE_RUN_TIMEOUT_MS` / `PULSE_RUN_TIMEOUT_MS`：全局 provider run 超时，单位毫秒
+- `PLUSE_RUN_TIMEOUT_MS`：全局 provider run 超时，单位毫秒
 - `quest.executorOptions.timeout`：task 态 provider run 超时，单位秒，优先级高于全局 provider run 超时
 - script executor 默认仍为 300 秒，可通过 `executorConfig.timeout` 覆盖
 

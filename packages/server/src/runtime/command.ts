@@ -14,21 +14,19 @@ const DEFAULT_CLAUDE_PROXY_COMMAND = 'mc --code'
 
 function envCommandKeys(tool: RuntimeToolName): string[] {
   if (tool === 'claude') {
-    return ['PLUSE_CLAUDE_COMMAND', 'PULSE_CLAUDE_COMMAND', 'MELODYSYNC_CLAUDE_COMMAND']
+    return ['PLUSE_CLAUDE_COMMAND', 'MELODYSYNC_CLAUDE_COMMAND']
   }
   if (tool === 'gemini') {
-    return ['PLUSE_GEMINI_COMMAND', 'PULSE_GEMINI_COMMAND']
+    return ['PLUSE_GEMINI_COMMAND']
   }
   if (tool === 'mc') {
     return [
       'PLUSE_MC_COMMAND',
-      'PULSE_MC_COMMAND',
       'MELODYSYNC_MC_COMMAND',
       'PLUSE_CLAUDE_PROXY_COMMAND',
-      'PULSE_CLAUDE_PROXY_COMMAND',
     ]
   }
-  return ['PLUSE_CODEX_COMMAND', 'PULSE_CODEX_COMMAND', 'MELODYSYNC_CODEX_COMMAND']
+  return ['PLUSE_CODEX_COMMAND', 'MELODYSYNC_CODEX_COMMAND']
 }
 
 function readConfiguredCommand(tool: RuntimeToolName): string | null {

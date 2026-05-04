@@ -1,8 +1,8 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { getDb } from '../db'
 
-export const SESSION_COOKIE_NAME = 'pulse_session'
-export const CSRF_COOKIE_NAME = 'pulse_csrf'
+export const SESSION_COOKIE_NAME = 'pluse_session'
+export const CSRF_COOKIE_NAME = 'pluse_csrf'
 const SCRYPT_PARAMS = { N: 16384, r: 8, p: 1 }
 const HASH_LEN = 32
 
