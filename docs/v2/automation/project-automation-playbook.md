@@ -68,7 +68,7 @@
 - 每次运行最多创建 {budget} 条 Reminder。
 - 创建前先检查 reminder list，避免重复。
 - Reminder 默认可以没有 `remindAt`，它会进入提醒池，由提醒模块按项目优先级和注意力排序。
-- 只有需要在某个时间触达用户，或希望出现在「接下来」时间窗口时，才写 `remindAt` / `--remind-at`。
+- 只有需要在某个时间触达用户时，才写 `remindAt` / `--remind-at`。
 - 需要写时间时，使用 Asia/Shanghai 视角换算为 ISO 8601；不要为了进入时间线而编造时间。
 - 如果只是通知用户，优先用 Reminder；只有确实是人工执行事项时才创建 Todo。
 - 如果需要确认一次人类行为是否发生，创建 Check-in；Check-in 完成后会写入 Check-in Record，不要把它当 Todo 或 Reminder。

@@ -30,19 +30,6 @@ interface TodoPanelProps {
 
 type SourceTab = 'human' | 'reminder' | 'check_in'
 type SnoozePreset = 'later' | 'tomorrow' | 'next_week'
-type WorkbenchTimelineKind = 'reminder' | 'todo' | 'automation' | 'check_in'
-
-type WorkbenchTimelineEntry = {
-  id: string
-  kind: WorkbenchTimelineKind
-  title: string
-  timeLabel: string
-  sortTime: number
-  href?: string
-  reminderId?: string
-  checkInId?: string
-  todoId?: string
-}
 
 type ProjectRailGroup = {
   key: string
@@ -76,35 +63,6 @@ function formatSidebarTime(value?: string, t?: (key: string, values?: Record<str
   if (delta < day) return t ? t('{count} 小时', { count: Math.max(1, Math.floor(delta / hour)) }) : `${Math.max(1, Math.floor(delta / hour))} 小时`
   if (delta < week) return t ? t('{count} 天', { count: Math.max(1, Math.floor(delta / day)) }) : `${Math.max(1, Math.floor(delta / day))} 天`
   return t ? t('{count} 周', { count: Math.max(1, Math.floor(delta / week)) }) : `${Math.max(1, Math.floor(delta / week))} 周`
-}
-
-function formatClock(value: Date, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(value)
-}
-
-function formatTimelineTime(value: string | undefined, locale: string, t: (key: string) => string): string {
-  if (!value) return t('现在')
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return t('未记录')
-  const now = new Date()
-  const todayStart = new Date(now)
-  todayStart.setHours(0, 0, 0, 0)
-  const tomorrowStart = new Date(todayStart)
-  tomorrowStart.setDate(todayStart.getDate() + 1)
-  const dayAfterTomorrowStart = new Date(todayStart)
-  dayAfterTomorrowStart.setDate(todayStart.getDate() + 2)
-  if (date.getTime() < todayStart.getTime()) return t('逾期')
-  if (date.getTime() < tomorrowStart.getTime()) return formatClock(date, locale)
-  if (date.getTime() < dayAfterTomorrowStart.getTime()) return `${t('明天')} ${formatClock(date, locale)}`
-  return new Intl.DateTimeFormat(locale, {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
 }
 
 function snoozeDate(preset: SnoozePreset): string {
@@ -205,154 +163,6 @@ function compareCheckInsByAttention(left: CheckIn, right: CheckIn): number {
 
 function sortCheckIns(items: CheckIn[]): CheckIn[] {
   return [...items].sort(compareCheckInsByAttention)
-}
-
-function automationNextRunAt(quest: Quest): string | undefined {
-  if (quest.scheduleConfig?.nextRunAt) return quest.scheduleConfig.nextRunAt
-  if (
-    quest.scheduleKind === 'scheduled'
-    && quest.status !== 'done'
-    && quest.status !== 'cancelled'
-  ) {
-    return quest.scheduleConfig?.runAt
-  }
-  return undefined
-}
-
-function buildWorkbenchTimeline(params: {
-  projectId: string | null
-  todos: Todo[]
-  reminders: Reminder[]
-  checkIns: CheckIn[]
-  automations: Quest[]
-  locale: string
-  t: (key: string) => string
-}): WorkbenchTimelineEntry[] {
-  if (!params.projectId) return []
-  const now = Date.now()
-  const horizon = now + 24 * 60 * 60 * 1000
-  const entries: WorkbenchTimelineEntry[] = []
-  const attentionReminderEntries: WorkbenchTimelineEntry[] = []
-
-  for (const reminder of params.reminders) {
-    if (reminder.projectId !== params.projectId) continue
-    if (!reminder.remindAt) {
-      attentionReminderEntries.push({
-        id: `reminder-${reminder.id}`,
-        kind: 'reminder',
-        title: reminder.title,
-        timeLabel: formatTimelineTime(undefined, params.locale, params.t),
-        sortTime: now,
-        reminderId: reminder.id,
-      })
-      continue
-    }
-
-    const time = Date.parse(reminder.remindAt)
-    if (!Number.isFinite(time) || time > horizon) continue
-    if (time <= now) {
-      attentionReminderEntries.push({
-        id: `reminder-${reminder.id}`,
-        kind: 'reminder',
-        title: reminder.title,
-        timeLabel: formatTimelineTime(reminder.remindAt, params.locale, params.t),
-        sortTime: time,
-        reminderId: reminder.id,
-      })
-      continue
-    }
-    entries.push({
-      id: `reminder-${reminder.id}`,
-      kind: 'reminder',
-      title: reminder.title,
-      timeLabel: formatTimelineTime(reminder.remindAt, params.locale, params.t),
-      sortTime: time,
-      reminderId: reminder.id,
-    })
-  }
-
-  for (const item of params.checkIns) {
-    if (item.projectId !== params.projectId) continue
-    if (!item.remindAt) {
-      attentionReminderEntries.push({
-        id: `check-in-${item.id}`,
-        kind: 'check_in',
-        title: item.title,
-        timeLabel: formatTimelineTime(undefined, params.locale, params.t),
-        sortTime: now,
-        checkInId: item.id,
-      })
-      continue
-    }
-
-    const time = Date.parse(item.remindAt)
-    if (!Number.isFinite(time) || time > horizon) continue
-    if (time <= now) {
-      attentionReminderEntries.push({
-        id: `check-in-${item.id}`,
-        kind: 'check_in',
-        title: item.title,
-        timeLabel: formatTimelineTime(item.remindAt, params.locale, params.t),
-        sortTime: time,
-        checkInId: item.id,
-      })
-      continue
-    }
-    entries.push({
-      id: `check-in-${item.id}`,
-      kind: 'check_in',
-      title: item.title,
-      timeLabel: formatTimelineTime(item.remindAt, params.locale, params.t),
-      sortTime: time,
-      checkInId: item.id,
-    })
-  }
-
-  for (const todo of params.todos) {
-    if (todo.projectId !== params.projectId || todo.status !== 'pending' || !todo.dueAt) continue
-    const time = Date.parse(todo.dueAt)
-    if (!Number.isFinite(time) || time > horizon) continue
-    entries.push({
-      id: `todo-${todo.id}`,
-      kind: 'todo',
-      title: todo.title,
-      timeLabel: formatTimelineTime(todo.dueAt, params.locale, params.t),
-      sortTime: time,
-      todoId: todo.id,
-    })
-  }
-
-  for (const quest of params.automations) {
-    if (quest.deleted || quest.enabled === false) continue
-    const nextRunAt = automationNextRunAt(quest)
-    if (!nextRunAt) continue
-    const time = Date.parse(nextRunAt)
-    if (!Number.isFinite(time) || time > horizon) continue
-    entries.push({
-      id: `automation-${quest.id}`,
-      kind: 'automation',
-      title: quest.title || quest.name || params.t('未命名自动化'),
-      timeLabel: formatTimelineTime(nextRunAt, params.locale, params.t),
-      sortTime: time,
-      href: `/quests/${quest.id}`,
-    })
-  }
-
-  return [
-    ...attentionReminderEntries
-      .sort((left, right) => right.sortTime - left.sortTime)
-      .slice(0, 2),
-    ...entries,
-  ]
-    .sort((left, right) => left.sortTime - right.sortTime)
-    .slice(0, 6)
-}
-
-function timelineKindLabel(kind: WorkbenchTimelineKind, t: (key: string) => string): string {
-  if (kind === 'automation') return t('自动化')
-  if (kind === 'check_in') return t('打卡')
-  if (kind === 'reminder') return t('提醒')
-  return t('待办')
 }
 
 function formatEmptyMessage(
@@ -1282,18 +1092,6 @@ export function TodoPanel({
     () => (customSnoozeCheckInId ? globalCheckIns.find((item) => item.id === customSnoozeCheckInId) ?? null : null),
     [customSnoozeCheckInId, globalCheckIns],
   )
-  const workbenchTimeline = useMemo(
-    () => buildWorkbenchTimeline({
-      projectId,
-      todos: globalTodos,
-      reminders: globalReminders,
-      checkIns: globalCheckIns,
-      automations: projectOverview?.tasks ?? [],
-      locale,
-      t,
-    }),
-    [globalCheckIns, globalReminders, globalTodos, locale, projectId, projectOverview?.tasks, t],
-  )
   const modalRoot = typeof document !== 'undefined' ? document.body : null
 
   const hasVisibleContent = (
@@ -1447,48 +1245,6 @@ export function TodoPanel({
     setSelectedTodoId(null)
   }, [])
 
-  const handleOpenTimelineReminder = useCallback((reminderId: string) => {
-    const reminder = globalReminders.find((item) => item.id === reminderId)
-    setSourceTab('reminder')
-    if (reminder?.projectId) {
-      setCollapsedReminderProjectKeys((current) => current.filter((key) => key !== reminder.projectId))
-    }
-    setHighlightedReminderId(reminderId)
-    if (highlightedReminderTimerRef.current) {
-      window.clearTimeout(highlightedReminderTimerRef.current)
-      highlightedReminderTimerRef.current = null
-    }
-    window.setTimeout(() => {
-      const element = document.querySelector<HTMLElement>(`[data-reminder-id="${reminderId}"]`)
-      element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      highlightedReminderTimerRef.current = window.setTimeout(() => {
-        setHighlightedReminderId((current) => current === reminderId ? null : current)
-        highlightedReminderTimerRef.current = null
-      }, 2400)
-    }, 80)
-  }, [globalReminders])
-
-  const handleOpenTimelineCheckIn = useCallback((id: string) => {
-    const item = globalCheckIns.find((entry) => entry.id === id)
-    setSourceTab('check_in')
-    if (item?.projectId) {
-      setCollapsedReminderProjectKeys((current) => current.filter((key) => key !== item.projectId))
-    }
-    setHighlightedCheckInId(id)
-    if (highlightedReminderTimerRef.current) {
-      window.clearTimeout(highlightedReminderTimerRef.current)
-      highlightedReminderTimerRef.current = null
-    }
-    window.setTimeout(() => {
-      const element = document.querySelector<HTMLElement>(`[data-check-in-id="${id}"]`)
-      element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      highlightedReminderTimerRef.current = window.setTimeout(() => {
-        setHighlightedCheckInId((current) => current === id ? null : current)
-        highlightedReminderTimerRef.current = null
-      }, 2400)
-    }, 80)
-  }, [globalCheckIns])
-
   const handleOpenAutomationPanel = useCallback(() => {
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) {
       onRequestClose?.()
@@ -1566,86 +1322,6 @@ export function TodoPanel({
             </button>
           </div>
         </div>
-
-        {projectId ? (
-          <section className="pluse-workbench-timeline" aria-label={t('接下来 24 小时')}>
-            <header className="pluse-workbench-timeline-head">
-              <span>{t('接下来 24 小时')}</span>
-              <strong>{workbenchTimeline.length > 0 ? t('{{count}} 项', { count: workbenchTimeline.length }) : t('暂无时间事项')}</strong>
-            </header>
-            {workbenchTimeline.length > 0 ? (
-              <div className="pluse-workbench-timeline-list">
-                {workbenchTimeline.map((entry) => {
-                  const itemClassName = `pluse-workbench-timeline-item is-${entry.kind}`
-                  const content = (
-                    <>
-                      <span className="pluse-workbench-timeline-time">{entry.timeLabel}</span>
-                      <span className={`pluse-workbench-timeline-kind is-${entry.kind}`}>
-                        {timelineKindLabel(entry.kind, t)}
-                      </span>
-                      <strong>{entry.title}</strong>
-                    </>
-                  )
-                  if (entry.href) {
-                    return (
-                      <Link
-                        key={entry.id}
-                        className={itemClassName}
-                        to={entry.href}
-                        onClick={() => onRequestClose?.()}
-                      >
-                        {content}
-                      </Link>
-                    )
-                  }
-                  if (entry.reminderId) {
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className={itemClassName}
-                        onClick={() => handleOpenTimelineReminder(entry.reminderId ?? '')}
-                        aria-label={`${t('定位提醒')} · ${entry.title}`}
-                      >
-                        {content}
-                      </button>
-                    )
-                  }
-                  if (entry.checkInId) {
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className={itemClassName}
-                        onClick={() => handleOpenTimelineCheckIn(entry.checkInId ?? '')}
-                        aria-label={`${t('定位打卡')} · ${entry.title}`}
-                      >
-                        {content}
-                      </button>
-                    )
-                  }
-                  if (entry.todoId) {
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className={itemClassName}
-                        onClick={() => setSelectedTodoId(entry.todoId ?? null)}
-                      >
-                        {content}
-                      </button>
-                    )
-                  }
-                  return (
-                    <div key={entry.id} className={itemClassName}>
-                      {content}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
 
         {sourceTab === 'human' && projectTags.length > 0 ? (
           <div className="pluse-sidebar-search pluse-todo-tag-filter-row">
