@@ -6,6 +6,7 @@ import {
   updateNotification,
 } from '../models/notification'
 import { emit } from './events'
+import { NotFoundError } from '../support/errors'
 
 function emitNotificationUpdated(notification: Notification): void {
   emit({
@@ -56,7 +57,7 @@ export function updateNotificationWithEffects(id: string, input: UpdateNotificat
 
 export function deleteNotificationWithEffects(id: string): void {
   const notification = getNotification(id)
-  if (!notification) throw new Error(`Notification not found: ${id}`)
+  if (!notification) throw new NotFoundError('Notification', id)
   const updated = updateNotificationWithEffects(id, { deleted: true })
   emit({
     type: 'notification_deleted',

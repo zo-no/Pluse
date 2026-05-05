@@ -11,6 +11,7 @@ import {
 import { getProject } from '../models/project'
 import { emit } from './events'
 import { now } from '../support/db-utils'
+import { NotFoundError } from '../support/errors'
 
 function emitProjectUpdated(projectId: string): void {
   emit({ type: 'project_updated', data: { projectId } })
@@ -26,7 +27,7 @@ function countQuestBindings(sessionCategoryId: string): number {
 
 function assertProjectExists(projectId: string): void {
   const project = getProject(projectId)
-  if (!project) throw new Error(`Project not found: ${projectId}`)
+  if (!project) throw new NotFoundError('Project', projectId)
 }
 
 export function listSessionCategoryViews(projectId: string): SessionCategory[] {
@@ -42,7 +43,7 @@ export function createSessionCategoryWithEffects(input: CreateSessionCategoryInp
 
 export function updateSessionCategoryWithEffects(id: string, input: UpdateSessionCategoryInput): SessionCategory {
   const existing = getSessionCategory(id)
-  if (!existing) throw new Error(`Session category not found: ${id}`)
+  if (!existing) throw new NotFoundError('Session category', id)
   const updated = updateSessionCategory(id, input)
   emitProjectUpdated(updated.projectId)
   return updated
@@ -50,7 +51,7 @@ export function updateSessionCategoryWithEffects(id: string, input: UpdateSessio
 
 export function deleteSessionCategoryWithEffects(id: string): void {
   const existing = getSessionCategory(id)
-  if (!existing) throw new Error(`Session category not found: ${id}`)
+  if (!existing) throw new NotFoundError('Session category', id)
 
   const db = getDb()
   const ts = now()

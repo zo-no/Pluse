@@ -2,6 +2,7 @@ import type { CreateTodoInput, Todo, TodoRepeat, UpdateTodoInput } from '@pluse/
 import { createProjectActivity } from '../models/project-activity'
 import { createTodo, getTodo, listTodos, updateTodo } from '../models/todo'
 import { emit } from './events'
+import { NotFoundError } from '../support/errors'
 
 function emitTodoUpdated(todo: Todo): void {
   emit({
@@ -55,7 +56,7 @@ export function createTodoWithEffects(input: CreateTodoInput): Todo {
 
 export function updateTodoWithEffects(id: string, input: UpdateTodoInput): Todo {
   const before = getTodo(id)
-  if (!before) throw new Error(`Todo not found: ${id}`)
+  if (!before) throw new NotFoundError('Todo', id)
   const todo = updateTodo(id, input)
   const shouldCreateNextRecurringTodo = before.status !== 'done' && todo.status === 'done' && todo.repeat !== 'none' && !todo.deleted
   if (!before.deleted && todo.deleted) {
@@ -104,7 +105,7 @@ export function updateTodoWithEffects(id: string, input: UpdateTodoInput): Todo 
 
 export function deleteTodoWithEffects(id: string): void {
   const todo = getTodo(id)
-  if (!todo) throw new Error(`Todo not found: ${id}`)
+  if (!todo) throw new NotFoundError('Todo', id)
   const updated = updateTodoWithEffects(id, { deleted: true })
   emit({
     type: 'todo_deleted',

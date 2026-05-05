@@ -9,6 +9,7 @@ import type {
 import { createProjectActivity } from '../models/project-activity'
 import { createReminder, deleteReminder, getReminder, listReminders, updateReminder } from '../models/reminder'
 import { emit } from './events'
+import { NotFoundError } from '../support/errors'
 
 export type ReminderListFilter = {
   projectId?: string
@@ -115,7 +116,7 @@ export function ensureReviewReminderWithEffects(input: CreateReminderInput): Rem
 }
 
 export function updateReminderWithEffects(id: string, input: UpdateReminderInput): Reminder {
-  if (!getReminder(id)) throw new Error(`Reminder not found: ${id}`)
+  if (!getReminder(id)) throw new NotFoundError('Reminder', `${id}`)
   const reminder = updateReminder(id, input)
   emitReminderUpdated(reminder)
   return reminder
@@ -123,8 +124,8 @@ export function updateReminderWithEffects(id: string, input: UpdateReminderInput
 
 export function deleteReminderWithEffects(id: string): void {
   const reminder = getReminder(id)
-  if (!reminder) throw new Error(`Reminder not found: ${id}`)
-  if (!deleteReminder(id)) throw new Error(`Reminder not found: ${id}`)
+  if (!reminder) throw new NotFoundError('Reminder', `${id}`)
+  if (!deleteReminder(id)) throw new NotFoundError('Reminder', `${id}`)
   emit({
     type: 'reminder_deleted',
     data: {

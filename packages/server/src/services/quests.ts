@@ -14,6 +14,7 @@ import { refreshQuestSchedule } from './scheduler'
 import { deleteSessionCategoryIfEmptyWithEffects } from './session-categories'
 import { getAssetsDir, getHistoryRoot, getPluseRoot } from '../support/paths'
 import { now } from '../support/db-utils'
+import { ConflictError, NotFoundError } from '../support/errors'
 
 function emitQuestUpdated(quest: Quest): void {
   emit({ type: 'quest_updated', data: { questId: quest.id, projectId: quest.projectId } })
@@ -39,11 +40,11 @@ function assertProjectContextAvailable(quest: Quest, targetProjectId: string): v
     .filter((item) => item.id !== quest.id)
 
   if (quest.codexThreadId && targetQuests.some((item) => item.codexThreadId === quest.codexThreadId)) {
-    throw new Error(`Target project already has a quest using codexThreadId ${quest.codexThreadId}`)
+    throw new ConflictError(`Target project already has a quest using codexThreadId ${quest.codexThreadId}`)
   }
 
   if (quest.claudeSessionId && targetQuests.some((item) => item.claudeSessionId === quest.claudeSessionId)) {
-    throw new Error(`Target project already has a quest using claudeSessionId ${quest.claudeSessionId}`)
+    throw new ConflictError(`Target project already has a quest using claudeSessionId ${quest.claudeSessionId}`)
   }
 }
 
@@ -98,9 +99,9 @@ function questActivityTitle(quest: Quest): string {
 function assertSessionCategoryBelongsToProject(projectId: string, sessionCategoryId: string | null | undefined): void {
   if (!sessionCategoryId) return
   const category = getSessionCategory(sessionCategoryId)
-  if (!category) throw new Error(`Session category not found: ${sessionCategoryId}`)
+  if (!category) throw new NotFoundError('Session category', sessionCategoryId)
   if (category.projectId !== projectId) {
-    throw new Error(`Session category ${sessionCategoryId} does not belong to project ${projectId}`)
+    throw new ConflictError(`Session category ${sessionCategoryId} does not belong to project ${projectId}`)
   }
 }
 
@@ -143,7 +144,7 @@ export function createQuestWithEffects(input: CreateQuestInput): Quest {
 
 export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Quest {
   const before = getQuest(id)
-  if (!before) throw new Error(`Quest not found: ${id}`)
+  if (!before) throw new NotFoundError('Quest', id)
   if ('sessionCategoryId' in input) {
     assertSessionCategoryBelongsToProject(before.projectId, input.sessionCategoryId)
   }
@@ -244,7 +245,7 @@ export function updateQuestWithEffects(id: string, input: UpdateQuestInput): Que
 
 export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
   const before = getQuest(id)
-  if (!before) throw new Error(`Quest not found: ${id}`)
+  if (!before) throw new NotFoundError('Quest', id)
   if (questHasActiveRun(before)) throw new Error('Cannot move quest while a run is active')
   if (before.projectId === input.targetProjectId) {
     throw new Error(`Quest already belongs to project: ${before.projectId}`)
@@ -252,7 +253,7 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
 
   const targetProject = getProject(input.targetProjectId)
   if (!targetProject || targetProject.visibility === 'system') {
-    throw new Error(`Target project not found: ${input.targetProjectId}`)
+    throw new NotFoundError('Target project', input.targetProjectId)
   }
   if (targetProject.archived) {
     throw new Error(`Target project is archived: ${input.targetProjectId}`)
@@ -322,7 +323,7 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
 
 export function deleteQuestWithEffects(id: string): void {
   const quest = getQuest(id)
-  if (!quest) throw new Error(`Quest not found: ${id}`)
+  if (!quest) throw new NotFoundError('Quest', id)
   updateQuestWithEffects(id, { deleted: true })
   emit({ type: 'quest_deleted', data: { questId: id, projectId: quest.projectId } })
 }

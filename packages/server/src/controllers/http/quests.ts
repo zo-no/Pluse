@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type {
   ApiResult,
@@ -18,6 +17,7 @@ import { listEvents } from '../../models/history'
 import { getQuest } from '../../models/quest'
 import { listQuestProgress } from '../../models/todo'
 import { cancelQueuedRequest, clearQueuedRequests, startQuestRun, submitQuestMessage } from '../../runtime/session-runner'
+import { errBody, httpStatus, ok, sc } from '../../support/errors'
 import {
   createQuestWithEffects,
   deleteQuestWithEffects,
@@ -27,18 +27,6 @@ import {
   moveQuestWithEffects,
   updateQuestWithEffects,
 } from '../../services/quests'
-
-function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data }
-}
-
-function errBody(error: string): ApiResult<never> {
-  return { ok: false, error }
-}
-
-function sc(n: number): ContentfulStatusCode {
-  return n as ContentfulStatusCode
-}
 
 const QuestSchema = z.object({
   projectId: z.string().min(1),
@@ -161,7 +149,7 @@ questsRouter.patch('/quests/:id', async (c) => {
     return c.json(ok(updateQuestWithEffects(c.req.param('id'), parsed.data as UpdateQuestInput)))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -171,7 +159,7 @@ questsRouter.delete('/quests/:id', (c) => {
     return c.json(ok({ deleted: true }))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -226,7 +214,7 @@ questsRouter.post('/quests/:id/messages', async (c) => {
     })))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -263,7 +251,7 @@ questsRouter.delete('/quests/:id/queue/:requestId', (c) => {
     return c.json(ok(cancelQueuedRequest(c.req.param('id'), c.req.param('requestId'))))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -272,6 +260,6 @@ questsRouter.delete('/quests/:id/queue', (c) => {
     return c.json(ok(clearQueuedRequests(c.req.param('id'))))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })

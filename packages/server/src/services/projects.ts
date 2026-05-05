@@ -19,6 +19,7 @@ import { listQuests } from '../models/quest'
 import { listTodos } from '../models/todo'
 import { emit } from './events'
 import { now } from '../support/db-utils'
+import { NotFoundError } from '../support/errors'
 import {
   ensureDir,
   getDefaultEntryProjectDir,
@@ -94,7 +95,7 @@ function assertDomainAssignable(domainId: string | null | undefined): void {
   if (domainId === undefined || domainId === null) return
   const domain = getDomain(domainId)
   if (!domain) {
-    throw new Error(`Domain not found: ${domainId}`)
+    throw new NotFoundError('Domain', domainId)
   }
 }
 
@@ -469,7 +470,7 @@ export function openProject(input: OpenProjectInput): Project {
 
 export function updateProject(id: string, input: UpdateProjectInput): Project {
   const project = getProject(id)
-  if (!project) throw new Error(`Project not found: ${id}`)
+  if (!project) throw new NotFoundError('Project', id)
   if (project.id === SYSTEM_PROJECT_ID && input.archived) {
     throw new Error('System project cannot be archived')
   }

@@ -1,21 +1,9 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type { ApiResult, CreateTodoInput, Todo, UpdateTodoInput } from '@pluse/types'
 import { getTodo, listProjectTags, listTodos } from '../../models/todo'
 import { createTodoWithEffects, deleteTodoWithEffects, listTodoViews, updateTodoWithEffects } from '../../services/todos'
-
-function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data }
-}
-
-function errBody(error: string): ApiResult<never> {
-  return { ok: false, error }
-}
-
-function sc(n: number): ContentfulStatusCode {
-  return n as ContentfulStatusCode
-}
+import { errBody, httpStatus, ok, sc } from '../../support/errors'
 
 const TodoStatusSchema = z.enum(['pending', 'doing', 'done', 'cancelled'])
 
@@ -102,7 +90,7 @@ todosRouter.patch('/todos/:id', async (c) => {
     return c.json(ok(updateTodoWithEffects(c.req.param('id'), parsed.data as UpdateTodoInput)))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -112,6 +100,6 @@ todosRouter.delete('/todos/:id', (c) => {
     return c.json(ok({ deleted: true }))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })

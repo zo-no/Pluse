@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type {
   ApiResult,
@@ -21,23 +20,12 @@ import {
   listCheckInViews,
   updateCheckInWithEffects,
 } from '../../services/check-ins'
+import { errBody, httpStatus, ok, sc } from '../../support/errors'
 import {
   deleteReminderWithEffects,
   listReminderViews,
   updateReminderWithEffects,
 } from '../../services/reminders'
-
-function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data }
-}
-
-function errBody(error: string): ApiResult<never> {
-  return { ok: false, error }
-}
-
-function sc(n: number): ContentfulStatusCode {
-  return n as ContentfulStatusCode
-}
 
 const ReminderTypeSchema = z.enum(['custom', 'review', 'follow_up', 'needs_input', 'failure'])
 const ReminderPrioritySchema = z.enum(['urgent', 'high', 'normal', 'low'])
@@ -130,7 +118,7 @@ remindersRouter.patch('/check-ins/:id', async (c) => {
     return c.json(ok(updateCheckInWithEffects(c.req.param('id'), parsed.data as UpdateCheckInInput)))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -145,7 +133,7 @@ remindersRouter.post('/check-ins/:id/complete', async (c) => {
     )), sc(201))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -155,7 +143,7 @@ remindersRouter.delete('/check-ins/:id', (c) => {
     return c.json(ok({ deleted: true }))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -188,7 +176,7 @@ remindersRouter.patch('/reminders/:id', async (c) => {
     return c.json(ok(updateReminderWithEffects(c.req.param('id'), parsed.data as UpdateReminderInput)))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -205,7 +193,7 @@ remindersRouter.post('/reminders/:id/check-in', async (c) => {
     return c.json(errBody('Check-in not found'), sc(404))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
@@ -215,6 +203,6 @@ remindersRouter.delete('/reminders/:id', (c) => {
     return c.json(ok({ deleted: true }))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })

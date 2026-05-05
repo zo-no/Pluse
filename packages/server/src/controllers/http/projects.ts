@@ -1,22 +1,10 @@
 import { Hono } from 'hono'
-import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { z } from 'zod'
 import type { ApiResult, Project, ProjectOverview, TokenUsageSummary } from '@pluse/types'
 import { getProject } from '../../models/project'
 import { getProjectTokenSummary } from '../../models/run'
 import { archiveProject, deleteProjectWithCascade, getProjectOverview, listVisibleProjects, openProject, updateProject } from '../../services/projects'
-
-function ok<T>(data: T): ApiResult<T> {
-  return { ok: true, data }
-}
-
-function errBody(error: string): ApiResult<never> {
-  return { ok: false, error }
-}
-
-function sc(n: number): ContentfulStatusCode {
-  return n as ContentfulStatusCode
-}
+import { errBody, httpStatus, ok, sc } from '../../support/errors'
 
 const OpenProjectSchema = z.object({
   workDir: z.string().min(1),
@@ -114,7 +102,7 @@ projectsRouter.post('/projects/:id/archive', (c) => {
     return c.json(ok(archiveProject(c.req.param('id'))))
   } catch (error) {
     const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
+    return c.json(errBody(message), httpStatus(error))
   }
 })
 
