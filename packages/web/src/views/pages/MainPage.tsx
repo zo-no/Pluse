@@ -1704,7 +1704,7 @@ function Shell({
     }
   }, [])
 
-  const handleProjectSelected = useCallback((projectId: string) => {
+  const handleProjectSelected = useCallback((projectId: string | null) => {
     setActiveProjectId(projectId)
   }, [])
 

@@ -37,7 +37,7 @@ interface ContextWorkbenchProps {
   projectName?: string | null
   projects: Project[]
   activeQuestId?: string | null
-  onSelectProject: (projectId: string) => void
+  onSelectProject: (projectId: string | null) => void
   onProjectsChanged: () => Promise<void>
   onRequestClose?: () => void
 }
@@ -119,11 +119,12 @@ export function ContextWorkbench({
     navigate(`/projects/${result.data.id}`)
   }
 
-  function handleSelectProject(pid: string) {
+  function handleSelectProject(pid: string | null) {
     onSelectProject(pid)
     setProjectPickerOpen(false)
     setActiveTab('progress')
-    navigate(`/projects/${pid}`)
+    if (pid) navigate(`/projects/${pid}`)
+    else navigate('/')
   }
 
   const activeProject = useMemo(
@@ -184,6 +185,16 @@ export function ContextWorkbench({
                 {projectPickerOpen ? (
                   <div className="pluse-project-picker">
                     <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
+                      <button
+                        type="button"
+                        className={`pluse-project-picker-item${projectId === null ? ' is-active' : ''}`}
+                        onClick={() => handleSelectProject(null)}
+                      >
+                        <span className="pluse-project-avatar is-compact" aria-hidden="true">☆</span>
+                        <div className="pluse-project-picker-item-text">
+                          <strong>{t('全部项目')}</strong>
+                        </div>
+                      </button>
                       {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
                         const groupOpen = expandedPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
                         return (

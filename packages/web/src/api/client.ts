@@ -410,9 +410,13 @@ export function uploadAsset(input: { questId: string; file: File }): Promise<Api
   const form = new FormData()
   form.set('questId', input.questId)
   form.set('file', input.file)
+  const csrfToken = getCookie('pluse_csrf')
+  const headers: Record<string, string> = {}
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken
   return fetch(`${BASE}/assets`, {
     method: 'POST',
     credentials: 'include',
+    headers,
     body: form,
   }).then((res) => res.json() as Promise<ApiResult<UploadedAsset>>)
 }
