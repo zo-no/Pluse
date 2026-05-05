@@ -17,6 +17,7 @@ import {
   resolveRuntimeModelSelection,
 } from '@/views/utils/runtime'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
+import { ProgressInlineCard } from './ProgressPanel'
 import { TaskComposerModal } from './TaskComposerModal'
 
 const DRAWING_MODEL_KEYWORDS = ['image', 'dalle', 'flux', 'imagen', 'midjourney', 'stable', 'draw', 'painting']
@@ -918,13 +919,6 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
   return (
     <div className="pluse-page pluse-session-page">
       <div className="pluse-chat-shell" style={chatShellStyle}>
-        {currentSessionCategory ? (
-          <div className="pluse-chat-session-category">
-            <span className="pluse-inline-pill pluse-chat-session-category-pill" title={currentSessionCategory.name}>
-              {t('分类')} · {currentSessionCategory.name}
-            </span>
-          </div>
-        ) : null}
         <div className="pluse-thread" ref={threadRef} onScroll={updateScrollBottomVisibility}>
           <div className="pluse-thread-inner">
             {events.length === 0 ? (
@@ -965,6 +959,8 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
           </button>
         ) : null}
 
+        <ProgressInlineCard questId={quest.id} />
+
         <footer className="pluse-composer" ref={composerRef}>
           <button
             type="button"
@@ -975,6 +971,8 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
           >
             <span />
           </button>
+
+          {/* 状态区：队列、错误等上下文信息 */}
           {quest.followUpQueue.length > 0 ? (
             <div className="pluse-queue-panel">
               <div className="pluse-queue-panel-head">
@@ -1016,16 +1014,90 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
             </div>
           ) : null}
 
-          <div className="pluse-composer-settings">
-            <div className="pluse-composer-toolbar">
-              <div className="pluse-composer-mainline">
-                <div className="pluse-inline-status pluse-inline-status-compact">
-                  {quest.activeRunId ? <span>{t('运行中')}</span> : null}
-                  {quest.followUpQueue.length > 0 ? <span>{t('待发送 {count}', { count: quest.followUpQueue.length })}</span> : null}
-                  {!quest.activeRunId && quest.followUpQueue.length === 0 ? <span>{t('Enter 发送')}</span> : null}
-                  {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? <span>{t('上次：{{state}}', { state: formatRunState(latestRun.state, t) })}</span> : null}
-                  {latestRun?.state === 'failed' && latestRun.failureReason ? <span>{summarizeFailureReason(latestRun.failureReason, t)}</span> : null}
-                </div>
+          {/* 状态提示区：上次运行结果、错误等，浮在输入卡片上方 */}
+          {(latestRun || uploadError || error) ? (
+            <div className="pluse-composer-status-hint">
+              {latestRun && (!quest.activeRunId || latestRun.state !== 'running') ? (
+                <span className={latestRun.state === 'failed' ? 'is-error' : ''}>
+                  {latestRun.state === 'failed' && latestRun.failureReason
+                    ? summarizeFailureReason(latestRun.failureReason, t)
+                    : t('上次：{{state}}', { state: formatRunState(latestRun.state, t) })}
+                </span>
+              ) : null}
+              {uploadError ? <span className="is-error">{uploadError}</span> : null}
+              {error ? <span className="is-error">{error}</span> : null}
+            </div>
+          ) : null}
+
+          {/* 主输入卡片：textarea + 底部控件栏 */}
+          <div className="pluse-composer-input-shell">
+            {pendingFiles.length > 0 ? (
+              <div className="pluse-attachment-strip">
+                {pendingFiles.map((file, index) => {
+                  const previewUrl = previewUrls[index]
+                  const isImage = file.type.startsWith('image/')
+                  return (
+                    <div key={`${file.name}:${index}`} className="pluse-attachment-item">
+                      {isImage && previewUrl ? (
+                        <img src={previewUrl} alt={file.name} className="pluse-attachment-thumb" />
+                      ) : (
+                        <div className="pluse-attachment-file-chip">
+                          <span className="pluse-attachment-file-name">{file.name}</span>
+                          <span className="pluse-attachment-file-type">{getFileTypeLabel(file)}</span>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="pluse-attachment-remove-btn"
+                        onClick={() => removeFile(index)}
+                        aria-label={t('移除')}
+                        title={t('移除')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              style={inputHeight ? { height: `${inputHeight}px` } : undefined}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                if (event.metaKey || event.ctrlKey || event.shiftKey) return
+                event.preventDefault()
+                void handleSend()
+              }}
+              onPaste={(event) => {
+                const items = event.clipboardData?.items
+                if (!items) return
+                const files: File[] = []
+                for (const item of Array.from(items)) {
+                  const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null
+                  if (file) files.push(file)
+                }
+                if (files.length > 0) {
+                  event.preventDefault()
+                  addFiles(files)
+                }
+              }}
+              placeholder={t('给当前会话发送消息…')}
+              rows={2}
+            />
+
+            {/* 底部控件栏：运行状态 + 模型选择 + 操作按钮 */}
+            <div className="pluse-composer-bottom-bar">
+              <div className="pluse-composer-bottom-left">
+                {/* 运行中状态 chip */}
+                {quest.activeRunId ? (
+                  <span className="pluse-composer-run-state is-running">{t('运行中')}</span>
+                ) : quest.followUpQueue.length > 0 ? (
+                  <span className="pluse-composer-run-state">{t('待发送 {count}', { count: quest.followUpQueue.length })}</span>
+                ) : null}
                 <div className="pluse-runtime-controls pluse-runtime-controls-inline pluse-runtime-controls-composer-compact">
                   <select
                     value={runtimeSelection.tool}
@@ -1079,125 +1151,64 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
                     </select>
                   ) : null}
                 </div>
-                <div className="pluse-composer-quick-actions">
-                  {(isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? (
-                    <ComposerToggle
-                      label={t('Think')}
-                      active={runtimeSelection.thinking}
-                      onToggle={() => {
-                        const thinking = !runtimeSelection.thinking
-                        setRuntimeSelection((current) => ({ ...current, thinking }))
-                        void patchQuest({ thinking })
-                      }}
-                    />
-                  ) : null}
+                {(isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? (
+                  <ComposerToggle
+                    label={t('Think')}
+                    active={runtimeSelection.thinking}
+                    onToggle={() => {
+                      const thinking = !runtimeSelection.thinking
+                      setRuntimeSelection((current) => ({ ...current, thinking }))
+                      void patchQuest({ thinking })
+                    }}
+                  />
+                ) : null}
+              </div>
+              <div className="pluse-composer-bottom-right">
+                <button
+                  type="button"
+                  className="pluse-icon-button pluse-transfer-action"
+                  title={t('转为自动化')}
+                  aria-label={t('转为自动化')}
+                  onClick={() => setConvertTaskModalOpen(true)}
+                  disabled={Boolean(quest.activeRunId)}
+                >
+                  <ConvertIcon className="pluse-icon" />
+                </button>
+                <button
+                  type="button"
+                  className="pluse-icon-button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || pendingFiles.length >= MAX_ATTACHMENTS}
+                  aria-label={t('附加文件')}
+                  title={t('附加文件')}
+                >
+                  <AttachIcon className="pluse-icon" />
+                </button>
+                {quest.activeRunId ? (
                   <button
                     type="button"
-                    className="pluse-icon-button pluse-transfer-action"
-                    title={t('转为自动化')}
-                    aria-label={t('转为自动化')}
-                    onClick={() => setConvertTaskModalOpen(true)}
-                    disabled={Boolean(quest.activeRunId)}
+                    className="pluse-button pluse-button-danger"
+                    onClick={() => void handleCancel()}
+                    disabled={cancelling}
                   >
-                    <ConvertIcon className="pluse-icon" />
+                    <span className="pluse-label-desktop">{cancelling ? t('取消中…') : t('停止')}</span>
+                    <span className="pluse-label-mobile" aria-hidden="true">⏹</span>
                   </button>
-                </div>
+                ) : null}
+                <button
+                  type="button"
+                  className="pluse-icon-button pluse-send-btn"
+                  onClick={() => void handleSend()}
+                  disabled={sending}
+                  aria-label={sending ? t('发送中') : t('发送')}
+                  title={t('发送 (Enter) · 换行 (Cmd/Ctrl+Enter)')}
+                >
+                  <SendIcon className="pluse-icon" />
+                </button>
               </div>
             </div>
           </div>
 
-          {pendingFiles.length > 0 ? (
-            <div className="pluse-attachment-strip">
-              {pendingFiles.map((file, index) => {
-                const previewUrl = previewUrls[index]
-                const isImage = file.type.startsWith('image/')
-                return (
-                  <div key={`${file.name}:${index}`} className="pluse-attachment-item">
-                    {isImage && previewUrl ? (
-                      <img src={previewUrl} alt={file.name} className="pluse-attachment-thumb" />
-                    ) : (
-                      <div className="pluse-attachment-file-chip">
-                        <span className="pluse-attachment-file-name">{file.name}</span>
-                        <span className="pluse-attachment-file-type">{getFileTypeLabel(file)}</span>
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="pluse-attachment-remove-btn"
-                      onClick={() => removeFile(index)}
-                      aria-label={t('移除')}
-                      title={t('移除')}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-
-          <div className="pluse-composer-input-shell">
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              style={inputHeight ? { height: `${inputHeight}px` } : undefined}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-                if (event.metaKey || event.ctrlKey || event.shiftKey) return
-                event.preventDefault()
-                void handleSend()
-              }}
-              onPaste={(event) => {
-                const items = event.clipboardData?.items
-                if (!items) return
-                const files: File[] = []
-                for (const item of Array.from(items)) {
-                  const file = typeof item.getAsFile === 'function' ? item.getAsFile() : null
-                  if (file) files.push(file)
-                }
-                if (files.length > 0) {
-                  event.preventDefault()
-                  addFiles(files)
-                }
-              }}
-              placeholder={t('给当前会话发送消息…')}
-              rows={2}
-            />
-            <div className="pluse-composer-input-actions">
-              <button
-                type="button"
-                className="pluse-icon-button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending || pendingFiles.length >= MAX_ATTACHMENTS}
-                aria-label={t('附加文件')}
-                title={t('附加文件')}
-              >
-                <AttachIcon className="pluse-icon" />
-              </button>
-              {quest.activeRunId ? (
-                <button
-                  type="button"
-                  className="pluse-button pluse-button-danger"
-                  onClick={() => void handleCancel()}
-                  disabled={cancelling}
-                >
-                  <span className="pluse-label-desktop">{cancelling ? t('取消中…') : t('停止')}</span>
-                  <span className="pluse-label-mobile" aria-hidden="true">⏹</span>
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="pluse-icon-button pluse-send-btn"
-                onClick={() => void handleSend()}
-                disabled={sending}
-                aria-label={sending ? t('发送中') : t('发送')}
-                title={t('发送 (Enter) · 换行 (Cmd/Ctrl+Enter)')}
-              >
-                <SendIcon className="pluse-icon" />
-              </button>
-            </div>
-          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -1208,13 +1219,6 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
               event.target.value = ''
             }}
           />
-
-          <div className="pluse-composer-toolbar">
-            <div className="pluse-inline-status">
-              {uploadError ? <span>{uploadError}</span> : null}
-              {error ? <span>{error}</span> : null}
-            </div>
-          </div>
         </footer>
 
         <TaskComposerModal
