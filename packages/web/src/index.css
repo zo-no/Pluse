@@ -8354,7 +8354,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   }
 
   .pluse-workspace.is-session-route .pluse-runtime-controls-composer-compact {
-    grid-template-columns: repeat(3, minmax(66px, max-content));
     gap: 5px;
   }
 
