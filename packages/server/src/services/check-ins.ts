@@ -5,7 +5,6 @@ import type {
   CheckInRecord,
   CompleteCheckInInput,
   CreateCheckInInput,
-  ReminderProjectPriority,
   UpdateCheckInInput,
 } from '@pluse/types'
 import { getDb } from '../db'
@@ -19,7 +18,6 @@ import {
   updateCheckIn,
 } from '../models/check-in'
 import { createProjectActivity } from '../models/project-activity'
-import { listReminderProjectPriorities } from '../modules/reminders/project-priorities'
 import { emit } from './events'
 
 export type CheckInListFilter = {
@@ -29,13 +27,6 @@ export type CheckInListFilter = {
   priority?: CheckInPriority
   time?: 'all' | 'due' | 'future'
   order?: CheckInListOrder
-}
-
-const PROJECT_PRIORITY_RANK: Record<ReminderProjectPriority, number> = {
-  mainline: 0,
-  priority: 1,
-  normal: 2,
-  low: 3,
 }
 
 const CHECK_IN_PRIORITY_RANK: Record<CheckInPriority, number> = {
@@ -54,17 +45,7 @@ function attentionTimeValue(item: CheckIn): number {
   return Date.parse(item.remindAt ?? item.updatedAt)
 }
 
-function compareCheckInsByAttention(
-  left: CheckIn,
-  right: CheckIn,
-  projectPriorityMap: Map<string, ReminderProjectPriority>,
-): number {
-  const projectPriorityDelta = (
-    PROJECT_PRIORITY_RANK[projectPriorityMap.get(left.projectId) ?? 'normal']
-    - PROJECT_PRIORITY_RANK[projectPriorityMap.get(right.projectId) ?? 'normal']
-  )
-  if (projectPriorityDelta !== 0) return projectPriorityDelta
-
+function compareCheckInsByAttention(left: CheckIn, right: CheckIn): number {
   const readyDelta = attentionReadyRank(left) - attentionReadyRank(right)
   if (readyDelta !== 0) return readyDelta
 
@@ -106,10 +87,7 @@ export function listCheckInViews(filter: CheckInListFilter = {}): CheckIn[] {
   const { order = 'attention', ...modelFilter } = filter
   const items = listCheckIns(modelFilter)
   if (order === 'time') return items
-  const projectPriorityMap = new Map(
-    listReminderProjectPriorities().map((setting) => [setting.projectId, setting.priority] as const),
-  )
-  return [...items].sort((left, right) => compareCheckInsByAttention(left, right, projectPriorityMap))
+  return [...items].sort(compareCheckInsByAttention)
 }
 
 export { getCheckIn, listCheckInRecords }
@@ -179,9 +157,18 @@ export function completeCheckInWithEffects(
     subjectId: item.id,
     questId: item.originQuestId,
     title: checkInActivityTitle(item),
-    op: 'done',
+    op: 'completed',
     actor: createdBy,
   })
   emitCheckInDeleted(item)
+  emit({
+    type: 'check_in_recorded',
+    data: {
+      checkInId: item.id,
+      recordId: record.id,
+      projectId: item.projectId,
+      originQuestId: item.originQuestId,
+    },
+  })
   return record
 }

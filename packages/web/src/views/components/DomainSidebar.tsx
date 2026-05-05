@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom'
 import type { Domain, Project, ProjectPriority } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
-import { getPreferredSessionId } from '@/views/utils/session-selection'
 import { PlusIcon, SettingsIcon, SlidersIcon, TrashIcon } from './icons'
 
 interface DomainSidebarProps {
@@ -105,17 +104,6 @@ export function DomainSidebar({
     navigate(`/projects/${projectId}`)
   }
 
-  async function openProjectFirstSession(projectId: string): Promise<void> {
-    onSelectProject(projectId)
-    onNavigate?.()
-    const questId = await getPreferredSessionId(projectId)
-    if (questId) {
-      navigate(`/quests/${questId}`)
-      return
-    }
-    navigate(`/projects/${projectId}`)
-  }
-
   function resetCreateForm(): void {
     setCreateForm(EMPTY_FORM)
     setCreating(false)
@@ -203,34 +191,33 @@ export function DomainSidebar({
 
   function renderProject(project: Project) {
     const isActive = project.id === activeProjectId
+    const summary = project.goal?.trim() || shortProjectPath(project.workDir)
+    const detail = project.description?.trim() || project.goal?.trim() || shortProjectPath(project.workDir)
     return (
-      <div
+      <article
         key={project.id}
-        className={`pluse-sidebar-item pluse-domain-project-item${isActive ? ' is-active' : ''}`}
+        className={`pluse-domain-project-card${isActive ? ' is-active' : ''}`}
       >
         <button
           type="button"
-          className="pluse-project-avatar pluse-project-avatar-button"
+          className="pluse-domain-project-surface"
           onClick={() => openProject(project.id)}
-          aria-label={t('打开')}
-          title={t('打开')}
         >
-          {projectAvatar(project)}
-        </button>
-        <button
-          type="button"
-          className="pluse-sidebar-item-main pluse-domain-project-main"
-          onClick={() => void openProjectFirstSession(project.id)}
-        >
+          <div className="pluse-domain-project-top">
+            <span className="pluse-project-avatar pluse-domain-project-avatar" aria-hidden="true">{projectAvatar(project)}</span>
             <div className="pluse-domain-project-copy">
-              <div className="pluse-sidebar-item-title">
+              <div className="pluse-domain-project-title-row">
                 <strong>{project.name}</strong>
                 <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
               </div>
-              <p title={project.workDir}>{shortProjectPath(project.workDir)}</p>
+              <p className="pluse-domain-project-summary" title={summary}>{summary}</p>
             </div>
+          </div>
+          <div className="pluse-domain-project-bottom">
+            <p title={detail}>{detail}</p>
+          </div>
         </button>
-        <div className="pluse-sidebar-item-actions pluse-domain-project-actions">
+        <div className="pluse-domain-project-actions">
           <button
             type="button"
             className="pluse-sidebar-more-btn pluse-domain-project-action"
@@ -244,7 +231,7 @@ export function DomainSidebar({
             <SlidersIcon className="pluse-icon" />
           </button>
         </div>
-      </div>
+      </article>
     )
   }
 

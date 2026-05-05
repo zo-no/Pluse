@@ -279,19 +279,6 @@ function initSchema(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_check_ins_origin_quest
     ON check_ins (origin_quest_id, updated_at DESC)`)
 
-  db.run(`
-    INSERT OR IGNORE INTO check_ins (
-      id, project_id, created_by, origin_quest_id, origin_run_id,
-      title, body, remind_at, priority, created_at, updated_at
-    )
-    SELECT
-      id, project_id, created_by, origin_quest_id, origin_run_id,
-      title, body, remind_at, priority, created_at, updated_at
-    FROM reminders
-    WHERE type = 'check_in'
-  `)
-  db.run(`DELETE FROM reminders WHERE type = 'check_in'`)
-
   migrateLegacyCheckInRecords(db)
   createCheckInRecordsTable(db)
   db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_project
@@ -300,31 +287,6 @@ function initSchema(db: Database): void {
     ON check_in_records (check_in_id, checked_at DESC)`)
   db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_origin_quest
     ON check_in_records (origin_quest_id, checked_at DESC)`)
-
-  db.run(`CREATE TABLE IF NOT EXISTS reminder_project_priorities (
-    project_id      TEXT PRIMARY KEY NOT NULL REFERENCES projects(id),
-    priority        TEXT NOT NULL DEFAULT 'normal',
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-  ) STRICT`)
-  db.run(`CREATE INDEX IF NOT EXISTS idx_reminder_project_priorities_priority
-    ON reminder_project_priorities (priority, updated_at DESC)`)
-
-  db.run(`
-    UPDATE projects
-       SET priority = (
-         SELECT priority
-           FROM reminder_project_priorities
-          WHERE reminder_project_priorities.project_id = projects.id
-          LIMIT 1
-       )
-     WHERE EXISTS (
-       SELECT 1
-         FROM reminder_project_priorities
-        WHERE reminder_project_priorities.project_id = projects.id
-          AND reminder_project_priorities.priority IN ('mainline', 'priority', 'normal', 'low')
-     )
-  `)
 
   db.run(`CREATE TABLE IF NOT EXISTS notifications (
     id              TEXT PRIMARY KEY NOT NULL,

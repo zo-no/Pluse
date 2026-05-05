@@ -8,8 +8,6 @@ import type {
 } from '@pluse/types'
 import { createProjectActivity } from '../models/project-activity'
 import { createReminder, deleteReminder, getReminder, listReminders, updateReminder } from '../models/reminder'
-import { listReminderProjectPriorities, setReminderProjectPriority } from '../modules/reminders/project-priorities'
-import { sortRemindersForAttention } from '../modules/reminders/ranking'
 import { emit } from './events'
 
 export type ReminderListFilter = {
@@ -20,6 +18,37 @@ export type ReminderListFilter = {
   priority?: ReminderPriority
   time?: 'all' | 'due' | 'future'
   order?: ReminderListOrder
+}
+
+const REMINDER_PRIORITY_RANK: Record<ReminderPriority, number> = {
+  urgent: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+}
+
+function reminderTimeRank(reminder: Reminder): number {
+  if (!reminder.remindAt) return 0
+  return Date.parse(reminder.remindAt) <= Date.now() ? 0 : 1
+}
+
+function reminderTimestamp(reminder: Reminder): number {
+  return reminder.remindAt ? Date.parse(reminder.remindAt) : Number.POSITIVE_INFINITY
+}
+
+function sortRemindersForAttention(reminders: Reminder[]): Reminder[] {
+  return [...reminders].sort((left, right) => {
+    const dueDelta = reminderTimeRank(left) - reminderTimeRank(right)
+    if (dueDelta !== 0) return dueDelta
+
+    const priorityDelta = REMINDER_PRIORITY_RANK[left.priority] - REMINDER_PRIORITY_RANK[right.priority]
+    if (priorityDelta !== 0) return priorityDelta
+
+    const timeDelta = reminderTimestamp(left) - reminderTimestamp(right)
+    if (timeDelta !== 0) return timeDelta
+
+    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })
 }
 
 function emitReminderUpdated(reminder: Reminder): void {
@@ -41,22 +70,7 @@ export function listReminderViews(filter: ReminderListFilter = {}): Reminder[] {
   const { order = 'attention', ...modelFilter } = filter
   const reminders = listReminders(modelFilter)
   if (order === 'time') return reminders
-  return sortRemindersForAttention(reminders, listReminderProjectPriorities())
-}
-
-export { listReminderProjectPriorities }
-
-export function setReminderProjectPriorityWithEffects(
-  projectId: string,
-  priority: Parameters<typeof setReminderProjectPriority>[1],
-): ReturnType<typeof setReminderProjectPriority> {
-  const result = setReminderProjectPriority(projectId, priority)
-  emit({
-    type: 'reminder_project_priority_updated',
-    data: { projectId },
-  })
-  emit({ type: 'project_updated', data: { projectId } })
-  return result
+  return sortRemindersForAttention(reminders)
 }
 
 export function createReminderWithEffects(input: CreateReminderInput): Reminder {
@@ -68,7 +82,7 @@ export function createReminderWithEffects(input: CreateReminderInput): Reminder 
     questId: reminder.originQuestId,
     title: reminderActivityTitle(reminder),
     op: 'created',
-    actor: input.createdBy ?? 'human',
+    actor: input.createdBy ?? 'system',
   })
   emitReminderUpdated(reminder)
   return reminder

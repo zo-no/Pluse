@@ -3,7 +3,7 @@ import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, typ
 import type { AuthMe, Domain, Project, ProjectActivityItem, ProjectOverview, ProjectPriority, Quest, Todo, TokenUsageSummary } from '@pluse/types'
 import * as api from '@/api/client'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
-import { ArchiveIcon, ClockIcon, MenuIcon, MoonIcon, PauseIcon, PlayIcon, PlusIcon, RailIcon, RouteIcon, SidebarIcon, SlidersIcon, SparkIcon, SunIcon } from '@/views/components/icons'
+import { ArchiveIcon, ClockIcon, MenuIcon, MoonIcon, PauseIcon, PlayIcon, PlusIcon, RouteIcon, SidebarIcon, SlidersIcon, SparkIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
 import { TodoPanel } from '@/views/components/TodoPanel'
 import { TaskComposerModal } from '@/views/components/TaskComposerModal'
@@ -1513,13 +1513,10 @@ function WorkspaceHeader(props: {
   overlayOpen?: boolean
   hideContext?: boolean
   sidebarVisible: boolean
-  railVisible: boolean
   showSidebarToggle: boolean
-  showRailToggle: boolean
   showSettingsToggle: boolean
   onToggleTheme: () => void
   onToggleSidebar: () => void
-  onToggleRail: () => void
   onOpenSettings: () => void
   onOpenWorkspace: () => void
 }) {
@@ -1607,17 +1604,6 @@ function WorkspaceHeader(props: {
             <SidebarIcon className="pluse-icon" />
           </button>
         ) : null}
-        {props.showRailToggle ? (
-          <button
-            type="button"
-            className={`pluse-icon-button pluse-header-action-icon pluse-header-rail-toggle${props.railVisible ? ' is-active' : ''}`}
-            onClick={props.onToggleRail}
-            aria-label={t('切换工作台')}
-            title={t('切换工作台')}
-          >
-            <RailIcon className="pluse-icon" />
-          </button>
-        ) : null}
       </div>
     </header>
   )
@@ -1643,9 +1629,7 @@ function Shell({
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 861 : true)
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true)
-  const [desktopRailVisible, setDesktopRailVisible] = useState(true)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const [mobileRailOpen, setMobileRailOpen] = useState(false)
   const projectsReloadTimerRef = useRef<number | null>(null)
 
   const activeQuestId = activeQuest?.id ?? (location.pathname.startsWith('/quests/') ? location.pathname.split('/')[2] : null)
@@ -1659,9 +1643,7 @@ function Shell({
   const isSettingsRoute = location.pathname === '/settings'
   const routeState = location.state as QuestRouteState | null
   const backgroundLocation = routeState?.backgroundLocation ?? null
-  const showRail = Boolean(activeProjectId)
   const sidebarVisible = isDesktop ? desktopSidebarVisible : mobileSidebarOpen
-  const railVisible = showRail && (isDesktop ? desktopRailVisible : mobileRailOpen)
   const isSessionRoute = activeQuest?.kind === 'session'
 
   useEffect(() => {
@@ -1728,14 +1710,13 @@ function Shell({
 
   useEffect(() => {
     setMobileSidebarOpen(false)
-    setMobileRailOpen(false)
   }, [location.pathname])
 
   useEffect(() => {
-    const hasOverlay = mobileSidebarOpen || mobileRailOpen
+    const hasOverlay = mobileSidebarOpen
     document.body.classList.toggle('pluse-overlay-open', hasOverlay)
     return () => document.body.classList.remove('pluse-overlay-open')
-  }, [mobileSidebarOpen, mobileRailOpen])
+  }, [mobileSidebarOpen])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 861px)')
@@ -1798,21 +1779,15 @@ function Shell({
         title={isSettingsRoute ? t('设置') : undefined}
         subtitle={isSettingsRoute ? t('全局系统 Prompt') : undefined}
         floating={!isDesktop && isQuestRoute && isSessionRoute}
-        overlayOpen={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
-        hideContext={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
+        overlayOpen={!isDesktop && mobileSidebarOpen}
+        hideContext={!isDesktop && mobileSidebarOpen}
         sidebarVisible={sidebarVisible}
-        railVisible={railVisible}
         showSidebarToggle={isDesktop}
-        showRailToggle={showRail}
         showSettingsToggle={!isSettingsRoute}
         onToggleTheme={onToggleTheme}
         onToggleSidebar={() => {
           if (isDesktop) setDesktopSidebarVisible((value) => !value)
           else setMobileSidebarOpen((value) => !value)
-        }}
-        onToggleRail={() => {
-          if (isDesktop) setDesktopRailVisible((value) => !value)
-          else setMobileRailOpen((value) => !value)
         }}
         onOpenSettings={() => navigate('/settings')}
         onOpenWorkspace={() => {
@@ -1833,18 +1808,15 @@ function Shell({
         className={`pluse-workspace${isProjectRoute ? ' is-project-route' : ''}${isQuestRoute && isSessionRoute ? ' is-session-route' : ''}`}
         style={isDesktop
           ? {
-              gridTemplateColumns: showRail
-                ? `${desktopSidebarVisible ? 'var(--sidebar-width)' : '0px'} minmax(0, 1fr) ${desktopRailVisible ? 'var(--rail-width)' : '0px'}`
-                : `${desktopSidebarVisible ? 'var(--sidebar-width)' : '0px'} minmax(0, 1fr)`,
+              gridTemplateColumns: `${desktopSidebarVisible ? 'var(--sidebar-width)' : '0px'} minmax(0, 1fr) var(--rail-width)`,
             }
           : undefined}
       >
         <button
           type="button"
-          className={`pluse-backdrop${mobileSidebarOpen || mobileRailOpen ? ' is-visible' : ''}`}
+          className={`pluse-backdrop${mobileSidebarOpen ? ' is-visible' : ''}`}
           onClick={() => {
             setMobileSidebarOpen(false)
-            setMobileRailOpen(false)
           }}
           aria-label={t('关闭面板')}
           title={t('关闭面板')}
@@ -1909,17 +1881,15 @@ function Shell({
           </div>
         </main>
 
-        {showRail ? (
-          <div className={`pluse-rail-shell${railVisible ? ' is-open' : ''}${isDesktop && !desktopRailVisible ? ' is-hidden' : ''}`}>
-            <TodoPanel
-              projectId={activeProjectId}
-              projectName={activeProject?.name ?? null}
-              projects={projects}
-              activeQuestId={activeQuestId}
-              onRequestClose={() => setMobileRailOpen(false)}
-            />
-          </div>
-        ) : null}
+        <div className="pluse-rail-shell is-open">
+          <TodoPanel
+            projectId={activeProjectId}
+            projectName={activeProject?.name ?? null}
+            projects={projects}
+            activeQuestId={activeQuestId}
+            onRequestClose={() => setMobileSidebarOpen(false)}
+          />
+        </div>
       </div>
     </div>
   )

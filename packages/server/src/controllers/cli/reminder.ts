@@ -1,22 +1,15 @@
 import { Command } from 'commander'
 import type {
-  CreateReminderInput,
   Reminder,
   ReminderListOrder,
   ReminderPriority,
-  ReminderProjectPriority,
-  ReminderProjectPrioritySetting,
   ReminderType,
-  SetReminderProjectPriorityResult,
   UpdateReminderInput,
 } from '@pluse/types'
 import { getReminder } from '../../models/reminder'
 import {
-  createReminderWithEffects,
   deleteReminderWithEffects,
-  listReminderProjectPriorities,
   listReminderViews,
-  setReminderProjectPriorityWithEffects,
   updateReminderWithEffects,
 } from '../../services/reminders'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
@@ -34,18 +27,6 @@ function printReminder(reminder: Reminder): void {
   if (reminder.originRunId) console.log(`  run: ${reminder.originRunId}`)
   if (reminder.remindAt) console.log(`  remind: ${reminder.remindAt}`)
   if (reminder.body) console.log(`  body: ${reminder.body}`)
-}
-
-function projectPriorityLabel(priority: ReminderProjectPriority): string {
-  if (priority === 'mainline') return 'mainline'
-  if (priority === 'priority') return 'priority'
-  if (priority === 'low') return 'low'
-  return 'normal'
-}
-
-function printProjectPriority(setting: ReminderProjectPrioritySetting): void {
-  console.log(`${setting.projectId}  ${projectPriorityLabel(setting.priority)}`)
-  if (setting.updatedAt) console.log(`  updated: ${setting.updatedAt}`)
 }
 
 async function fetchReminder(id: string): Promise<Reminder> {
@@ -111,87 +92,11 @@ reminderCommand
     opts.json ? printJson(reminders) : reminders.forEach(printReminder)
   })
 
-const projectPriorityCommand = reminderCommand
-  .command('project-priority')
-  .description('Manage reminder project priorities')
-
-projectPriorityCommand
-  .command('list')
-  .option('--json', 'Output as JSON', false)
-  .action(async (opts: { json: boolean }) => {
-    const mode = getCliMode()
-    const baseUrl = await resolveDaemonBaseUrl(mode)
-    const settings = baseUrl
-      ? await daemonRequest<ReminderProjectPrioritySetting[]>(baseUrl, '/api/reminders/project-priorities')
-      : listReminderProjectPriorities()
-    opts.json ? printJson(settings) : settings.forEach(printProjectPriority)
-  })
-
-projectPriorityCommand
-  .command('set <project-id>')
-  .requiredOption('--priority <priority>', 'mainline, priority, normal, or low')
-  .option('--json', 'Output as JSON', false)
-  .action(async (projectId: string, opts: { priority: ReminderProjectPriority; json: boolean }) => {
-    const input = { priority: opts.priority }
-    const mode = getCliMode()
-    const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
-    const result = baseUrl
-      ? await daemonRequest<SetReminderProjectPriorityResult>(
-          baseUrl,
-          `/api/reminders/project-priorities/${projectId}`,
-          { method: 'PATCH', body: JSON.stringify(input) },
-        )
-      : setReminderProjectPriorityWithEffects(projectId, opts.priority)
-    if (opts.json) printJson(result)
-    else printProjectPriority(result.setting)
-  })
-
 reminderCommand
   .command('get <id>')
   .option('--json', 'Output as JSON', false)
   .action(async (id: string, opts: { json: boolean }) => {
     const reminder = await fetchReminder(id)
-    opts.json ? printJson(reminder) : printReminder(reminder)
-  })
-
-reminderCommand
-  .command('create')
-  .requiredOption('--project-id <id>', 'Project id')
-  .requiredOption('--title <title>', 'Reminder title')
-  .option('--body <body>', 'Reminder body')
-  .option('--remind-at <time>', 'Reminder time (ISO 8601)')
-  .option('--type <type>', 'custom, review, follow_up, needs_input, or failure')
-  .option('--priority <priority>', 'urgent, high, normal, or low')
-  .option('--origin-quest-id <id>', 'Origin quest')
-  .option('--origin-run-id <id>', 'Origin run')
-  .option('--json', 'Output as JSON', false)
-  .action(async (opts: {
-    projectId: string
-    title: string
-    body?: string
-    remindAt?: string
-    type?: ReminderType
-    priority?: ReminderPriority
-    originQuestId?: string
-    originRunId?: string
-    json: boolean
-  }) => {
-    const input: CreateReminderInput = {
-      projectId: opts.projectId,
-      title: opts.title,
-      body: opts.body,
-      remindAt: opts.remindAt,
-      type: opts.type,
-      priority: opts.priority,
-      originQuestId: opts.originQuestId,
-      originRunId: opts.originRunId,
-      createdBy: 'ai',
-    }
-    const mode = getCliMode()
-    const baseUrl = await resolveDaemonBaseUrl(mode, { requireWrite: true })
-    const reminder = baseUrl
-      ? await daemonRequest<Reminder>(baseUrl, '/api/reminders', { method: 'POST', body: JSON.stringify(input) })
-      : createReminderWithEffects(input)
     opts.json ? printJson(reminder) : printReminder(reminder)
   })
 

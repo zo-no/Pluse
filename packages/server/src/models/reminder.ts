@@ -16,12 +16,6 @@ function now(): string {
   return new Date().toISOString()
 }
 
-function getReminderColumns(): Set<string> {
-  const db = getDb()
-  const rows = db.query<{ name: string }, []>('PRAGMA table_info(reminders)').all()
-  return new Set(rows.map((row) => row.name))
-}
-
 type ReminderRow = {
   id: string
   project_id: string
@@ -63,13 +57,8 @@ export function listReminders(filter: {
   time?: 'all' | 'due' | 'future'
 } = {}): Reminder[] {
   const db = getDb()
-  const columns = getReminderColumns()
   const conditions: string[] = []
   const params: Array<string | number> = []
-
-  if (columns.has('deleted')) {
-    conditions.push('deleted = 0')
-  }
 
   if (filter.projectId) {
     conditions.push('project_id = ?')
@@ -78,8 +67,6 @@ export function listReminders(filter: {
   if (filter.type) {
     conditions.push('type = ?')
     params.push(filter.type)
-  } else {
-    conditions.push("type != 'check_in'")
   }
   if (filter.originQuestId) {
     conditions.push('origin_quest_id = ?')
@@ -114,10 +101,7 @@ export function listReminders(filter: {
 
 export function getReminder(id: string): Reminder | null {
   const db = getDb()
-  const columns = getReminderColumns()
-  const row = db.query<ReminderRow, [string]>(
-    `SELECT * FROM reminders WHERE id = ?${columns.has('deleted') ? ' AND deleted = 0' : ''}`,
-  ).get(id)
+  const row = db.query<ReminderRow, [string]>('SELECT * FROM reminders WHERE id = ?').get(id)
   return row ? rowToReminder(row) : null
 }
 
@@ -125,49 +109,25 @@ export function createReminder(input: CreateReminderInput): Reminder {
   const db = getDb()
   const id = genId()
   const ts = now()
-  const legacyColumns = getReminderColumns()
-  const columns = [
-    'id', 'project_id', 'created_by', 'origin_quest_id', 'origin_run_id',
-    'type', 'title', 'body', 'remind_at', 'priority',
-    'created_at', 'updated_at',
-  ]
-  const values: Array<string | number | null> = [
-    id,
-    input.projectId,
-    input.createdBy ?? 'human',
-    input.originQuestId ?? null,
-    input.originRunId ?? null,
-    input.type ?? 'custom',
-    input.title,
-    input.body ?? null,
-    input.remindAt ?? null,
-    input.priority ?? 'normal',
-    ts,
-    ts,
-  ]
-  if (legacyColumns.has('tags')) {
-    columns.push('tags')
-    values.push('[]')
-  }
-  if (legacyColumns.has('status')) {
-    columns.push('status')
-    values.push('pending')
-  }
-  if (legacyColumns.has('read_at')) {
-    columns.push('read_at')
-    values.push(null)
-  }
-  if (legacyColumns.has('deleted')) {
-    columns.push('deleted')
-    values.push(0)
-  }
-  if (legacyColumns.has('deleted_at')) {
-    columns.push('deleted_at')
-    values.push(null)
-  }
   db.run(
-    `INSERT INTO reminders (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
-    values,
+    `INSERT INTO reminders (
+      id, project_id, created_by, origin_quest_id, origin_run_id,
+      type, title, body, remind_at, priority, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.projectId,
+      input.createdBy ?? 'system',
+      input.originQuestId ?? null,
+      input.originRunId ?? null,
+      input.type ?? 'custom',
+      input.title,
+      input.body ?? null,
+      input.remindAt ?? null,
+      input.priority ?? 'normal',
+      ts,
+      ts,
+    ],
   )
   return getReminder(id)!
 }

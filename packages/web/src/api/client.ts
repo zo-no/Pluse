@@ -8,7 +8,6 @@ import type {
   CreateCheckInInput,
   CreateDomainInput,
   CreateQuestInput,
-  CreateReminderInput,
   CreateTodoInput,
   Domain,
   OpenProjectInput,
@@ -20,15 +19,12 @@ import type {
   QuestOp,
   Reminder,
   ReminderListOrder,
-  ReminderProjectPrioritySetting,
   Run,
   RuntimeModelCatalog,
   RuntimeTool,
   SendMessageInput,
   SessionCategory,
   AppSettings,
-  SetReminderProjectPriorityInput,
-  SetReminderProjectPriorityResult,
   Todo,
   TokenUsageSummary,
   UpdateDomainInput,
@@ -54,7 +50,6 @@ function getCookie(name: string): string | null {
 }
 
 interface RequestOptions {
-  /** Request timeout in milliseconds. If exceeded, returns an error result. */
   timeout?: number
 }
 
@@ -338,23 +333,8 @@ export function getReminders(params: {
   return request<Reminder[]>('GET', `/reminders${search.toString() ? `?${search.toString()}` : ''}`)
 }
 
-export function getReminderProjectPriorities(): Promise<ApiResult<ReminderProjectPrioritySetting[]>> {
-  return request<ReminderProjectPrioritySetting[]>('GET', '/reminders/project-priorities')
-}
-
-export function setReminderProjectPriority(
-  projectId: string,
-  input: SetReminderProjectPriorityInput,
-): Promise<ApiResult<SetReminderProjectPriorityResult>> {
-  return request<SetReminderProjectPriorityResult>('PATCH', `/reminders/project-priorities/${projectId}`, input)
-}
-
 export function getReminder(id: string): Promise<ApiResult<Reminder>> {
   return request<Reminder>('GET', `/reminders/${id}`)
-}
-
-export function createReminder(input: CreateReminderInput): Promise<ApiResult<Reminder>> {
-  return request<Reminder>('POST', '/reminders', input)
 }
 
 export function updateReminder(id: string, input: UpdateReminderInput): Promise<ApiResult<Reminder>> {
@@ -420,45 +400,65 @@ export function getCheckInRecords(params: {
   return request<CheckInRecord[]>('GET', `/check-in-records${search.toString() ? `?${search.toString()}` : ''}`)
 }
 
-export async function uploadAsset(questId: string, file: File): Promise<ApiResult<UploadedAsset>> {
+export function getAssets(params: { questId?: string } = {}): Promise<ApiResult<UploadedAsset[]>> {
+  const search = new URLSearchParams()
+  if (params.questId) search.set('questId', params.questId)
+  return request<UploadedAsset[]>('GET', `/assets${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
+export function uploadAsset(input: { questId: string; file: File }): Promise<ApiResult<UploadedAsset>> {
   const form = new FormData()
-  form.append('questId', questId)
-  form.append('file', file)
-  const csrfToken = getCookie('pluse_csrf')
-  const headers = new Headers()
-  if (csrfToken) headers.set('X-CSRF-Token', csrfToken)
-  let res: Response
-  try {
-    res = await fetch(`${BASE}/assets/upload`, { method: 'POST', credentials: 'include', headers, body: form })
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  form.set('questId', input.questId)
+  form.set('file', input.file)
+  return fetch(`${BASE}/assets`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  }).then((res) => res.json() as Promise<ApiResult<UploadedAsset>>)
+}
+
+export function deleteAsset(id: string): Promise<ApiResult<{ deleted: boolean }>> {
+  return request<{ deleted: boolean }>('DELETE', `/assets/${id}`)
+}
+
+export interface KairosStatus {
+  installed: boolean
+  path: string | null
+  version: string | null
+  source: {
+    repo: string
+    ref: string
   }
-  return res.json() as Promise<ApiResult<UploadedAsset>>
+}
+
+export interface KairosInstallResult {
+  path: string
+  version: string
+  sourcePath: string
+  source: {
+    repo: string
+    ref: string
+  }
+}
+
+export function getRuntimeCatalog(tool?: string): Promise<ApiResult<RuntimeModelCatalog>> {
+  const search = new URLSearchParams()
+  if (tool) search.set('tool', tool)
+  return request<RuntimeModelCatalog>('GET', `/models${search.toString() ? `?${search.toString()}` : ''}`)
+}
+
+export function getRuntimeModelCatalog(tool?: string): Promise<ApiResult<RuntimeModelCatalog>> {
+  return getRuntimeCatalog(tool)
 }
 
 export function getRuntimeTools(): Promise<ApiResult<RuntimeTool[]>> {
   return request<RuntimeTool[]>('GET', '/tools')
 }
 
-export function getRuntimeModelCatalog(tool: string): Promise<ApiResult<RuntimeModelCatalog>> {
-  return request<RuntimeModelCatalog>('GET', `/models?tool=${encodeURIComponent(tool)}`)
-}
-
-export interface KairosStatus {
-  installed: boolean
-  path: string | null
-  version?: string | null
-  sourcePath?: string
-  source?: {
-    repo: string
-    ref: string
-  }
-}
-
 export function getKairosStatus(): Promise<ApiResult<KairosStatus>> {
   return request<KairosStatus>('GET', '/tools/kairos')
 }
 
-export function installKairos(): Promise<ApiResult<Omit<KairosStatus, 'installed'>>> {
-  return request<Omit<KairosStatus, 'installed'>>('POST', '/tools/kairos/install', undefined, { timeout: 60000 })
+export function installKairos(): Promise<ApiResult<KairosInstallResult>> {
+  return request<KairosInstallResult>('POST', '/tools/kairos/install')
 }

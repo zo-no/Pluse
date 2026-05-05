@@ -7,10 +7,7 @@ import type {
   CheckInRecord,
   CompleteCheckInInput,
   CreateCheckInInput,
-  CreateReminderInput,
   Reminder,
-  ReminderProjectPrioritySetting,
-  SetReminderProjectPriorityResult,
   UpdateCheckInInput,
   UpdateReminderInput,
 } from '@pluse/types'
@@ -25,11 +22,8 @@ import {
   updateCheckInWithEffects,
 } from '../../services/check-ins'
 import {
-  createReminderWithEffects,
   deleteReminderWithEffects,
-  listReminderProjectPriorities,
   listReminderViews,
-  setReminderProjectPriorityWithEffects,
   updateReminderWithEffects,
 } from '../../services/reminders'
 
@@ -47,22 +41,9 @@ function sc(n: number): ContentfulStatusCode {
 
 const ReminderTypeSchema = z.enum(['custom', 'review', 'follow_up', 'needs_input', 'failure'])
 const ReminderPrioritySchema = z.enum(['urgent', 'high', 'normal', 'low'])
-const ReminderProjectPrioritySchema = z.enum(['mainline', 'priority', 'normal', 'low'])
 const ReminderOrderSchema = z.enum(['attention', 'time'])
 const CheckInOrderSchema = z.enum(['attention', 'time'])
 const ReminderCreatedBySchema = z.enum(['human', 'ai', 'system'])
-
-const ReminderSchema = z.object({
-  projectId: z.string().min(1),
-  createdBy: z.enum(['human', 'ai', 'system']).optional(),
-  originQuestId: z.string().nullable().optional(),
-  originRunId: z.string().nullable().optional(),
-  type: ReminderTypeSchema.optional(),
-  title: z.string().min(1),
-  body: z.string().optional(),
-  remindAt: z.string().optional(),
-  priority: ReminderPrioritySchema.optional(),
-})
 
 const ReminderPatchSchema = z.object({
   originQuestId: z.string().nullable().optional(),
@@ -72,10 +53,6 @@ const ReminderPatchSchema = z.object({
   body: z.string().nullable().optional(),
   remindAt: z.string().nullable().optional(),
   priority: ReminderPrioritySchema.optional(),
-})
-
-const ReminderProjectPriorityPatchSchema = z.object({
-  priority: ReminderProjectPrioritySchema,
 })
 
 const CheckInCompleteSchema = z.object({
@@ -197,39 +174,10 @@ remindersRouter.get('/reminders', (c) => {
   })))
 })
 
-remindersRouter.get('/reminders/project-priorities', (c) => {
-  return c.json(ok<ReminderProjectPrioritySetting[]>(listReminderProjectPriorities()))
-})
-
-remindersRouter.patch('/reminders/project-priorities/:projectId', async (c) => {
-  const body = await c.req.json().catch(() => undefined)
-  const parsed = ReminderProjectPriorityPatchSchema.safeParse(body)
-  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
-  try {
-    return c.json(ok<SetReminderProjectPriorityResult>(
-      setReminderProjectPriorityWithEffects(c.req.param('projectId'), parsed.data.priority),
-    ))
-  } catch (error) {
-    const message = String(error)
-    return c.json(errBody(message), message.includes('not found') ? sc(404) : sc(400))
-  }
-})
-
 remindersRouter.get('/reminders/:id', (c) => {
   const reminder = getReminder(c.req.param('id'))
   if (!reminder) return c.json(errBody('Reminder not found'), sc(404))
   return c.json(ok(reminder))
-})
-
-remindersRouter.post('/reminders', async (c) => {
-  const body = await c.req.json().catch(() => undefined)
-  const parsed = ReminderSchema.safeParse(body)
-  if (!parsed.success) return c.json(errBody(parsed.error.message), sc(400))
-  try {
-    return c.json(ok(createReminderWithEffects(parsed.data as CreateReminderInput)), sc(201))
-  } catch (error) {
-    return c.json(errBody(String(error)), sc(400))
-  }
 })
 
 remindersRouter.patch('/reminders/:id', async (c) => {

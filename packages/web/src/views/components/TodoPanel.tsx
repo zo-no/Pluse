@@ -4,11 +4,8 @@ import { Link } from 'react-router-dom'
 import type {
   CheckIn,
   Project,
-  ProjectOverview,
   Quest,
   Reminder,
-  ReminderProjectPriority,
-  ReminderProjectPrioritySetting,
   Todo,
   UpdateTodoInput,
 } from '@pluse/types'
@@ -16,6 +13,7 @@ import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
+import { ProgressRailPanel } from './ProgressPanel'
 import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, DelayIcon, DetailIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
 import { TaskComposerModal } from './TaskComposerModal'
 
@@ -28,15 +26,13 @@ interface TodoPanelProps {
   onDataChanged?: () => Promise<void> | void
 }
 
-type SourceTab = 'human' | 'reminder' | 'check_in'
+type SourceTab = 'progress' | 'human' | 'reminder' | 'check_in'
 type SnoozePreset = 'later' | 'tomorrow' | 'next_week'
 
 type ProjectRailGroup = {
   key: string
   label: string
-  reminderPriority: ReminderProjectPriority
   openTodos: Todo[]
-  reminders: Reminder[]
   checkIns: CheckIn[]
 }
 
@@ -97,13 +93,6 @@ function reminderPriorityLabel(priority: Reminder['priority'], t?: (key: string)
   if (priority === 'high') return t ? t('高优先级') : '高优先级'
   if (priority === 'low') return t ? t('低优先级') : '低优先级'
   return t ? t('普通') : '普通'
-}
-
-const REMINDER_PROJECT_PRIORITY_RANK: Record<ReminderProjectPriority, number> = {
-  mainline: 0,
-  priority: 1,
-  normal: 2,
-  low: 3,
 }
 
 const REMINDER_PRIORITY_RANK: Record<Reminder['priority'], number> = {
@@ -169,6 +158,7 @@ function formatEmptyMessage(
   source: SourceTab,
   t?: (key: string) => string,
 ): string {
+  if (source === 'progress') return t ? t('当前会话尚无计划项。') : '当前会话尚无计划项。'
   if (source === 'reminder') return t ? t('当前范围暂无提醒。') : '当前范围暂无提醒。'
   if (source === 'check_in') return t ? t('当前范围暂无打卡。') : '当前范围暂无打卡。'
   return t ? t('当前范围暂无待办。') : '当前范围暂无待办。'
@@ -179,17 +169,14 @@ function buildProjectRailGroups(params: {
   activeProjectId: string | null
   activeProjectName?: string | null
   openTodos: Todo[]
-  reminders: Reminder[]
   checkIns: CheckIn[]
-  source: SourceTab
-  reminderProjectPriorities?: Map<string, ReminderProjectPriority>
+  source: 'human' | 'check_in'
   t: (key: string) => string
 }): ProjectRailGroup[] {
   const projectMap = new Map(params.projects.map((project) => [project.id, project] as const))
   const keys = new Set<string>()
   for (const project of params.projects) keys.add(project.id)
   for (const todo of params.openTodos) keys.add(todo.projectId)
-  for (const reminder of params.reminders) keys.add(reminder.projectId)
   for (const item of params.checkIns) keys.add(item.projectId)
   if (params.activeProjectId) keys.add(params.activeProjectId)
 
@@ -199,34 +186,20 @@ function buildProjectRailGroups(params: {
       return {
         key,
         label: project?.name ?? (key === params.activeProjectId && params.activeProjectName ? params.activeProjectName : `${params.t('项目')} ${key}`),
-        reminderPriority: project?.priority ?? params.reminderProjectPriorities?.get(key) ?? 'normal',
         openTodos: params.openTodos.filter((todo) => todo.projectId === key),
-        reminders: params.reminders.filter((reminder) => reminder.projectId === key),
         checkIns: params.checkIns.filter((item) => item.projectId === key),
       }
     })
     .filter((group) => {
-      const hasItems = group.openTodos.length > 0 || group.reminders.length > 0 || group.checkIns.length > 0
+      const hasItems = group.openTodos.length > 0 || group.checkIns.length > 0
       return hasItems || group.key === params.activeProjectId
     })
     .sort((left, right) => {
       if (left.key === params.activeProjectId) return -1
       if (right.key === params.activeProjectId) return 1
-      if (params.source === 'reminder' || params.source === 'check_in') {
-        const priorityDelta = REMINDER_PROJECT_PRIORITY_RANK[left.reminderPriority] - REMINDER_PROJECT_PRIORITY_RANK[right.reminderPriority]
-        if (priorityDelta !== 0) return priorityDelta
-      }
-      if (params.source === 'reminder') {
-        if (left.reminders[0] && right.reminders[0]) {
-          const reminderDelta = compareRemindersByAttention(left.reminders[0], right.reminders[0])
-          if (reminderDelta !== 0) return reminderDelta
-        }
-      }
-      if (params.source === 'check_in') {
-        if (left.checkIns[0] && right.checkIns[0]) {
-          const checkInDelta = compareCheckInsByAttention(left.checkIns[0], right.checkIns[0])
-          if (checkInDelta !== 0) return checkInDelta
-        }
+      if (params.source === 'check_in' && left.checkIns[0] && right.checkIns[0]) {
+        const checkInDelta = compareCheckInsByAttention(left.checkIns[0], right.checkIns[0])
+        if (checkInDelta !== 0) return checkInDelta
       }
       return left.label.localeCompare(right.label, 'zh-Hans-CN')
     })
@@ -628,14 +601,11 @@ export function TodoPanel({
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
   const [globalReminders, setGlobalReminders] = useState<Reminder[]>([])
   const [globalCheckIns, setGlobalCheckIns] = useState<CheckIn[]>([])
-  const [projectOverview, setProjectOverview] = useState<ProjectOverview | null>(null)
-  const [reminderProjectPriorities, setReminderProjectPriorities] = useState<ReminderProjectPrioritySetting[]>([])
-  const [sourceTab, setSourceTab] = useState<SourceTab>('human')
+  const [sourceTab, setSourceTab] = useState<SourceTab>(activeQuestId ? 'progress' : 'human')
   const [expandedProjectGroupKey, setExpandedProjectGroupKey] = useState<string | null>(projectId)
-  const [collapsedReminderProjectKeys, setCollapsedReminderProjectKeys] = useState<string[]>([])
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
-  const [createReminderOpen, setCreateReminderOpen] = useState(false)
+  const [createCheckInOpen, setCreateCheckInOpen] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
   const [selectedReminderId, setSelectedReminderId] = useState<string | null>(null)
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
@@ -650,15 +620,15 @@ export function TodoPanel({
     tags: [] as string[],
     tagInput: '',
   })
-  const [reminderDraft, setReminderDraft] = useState({
+  const [checkInDraft, setCheckInDraft] = useState({
     title: '',
     body: '',
     remindAt: '',
-    priority: 'normal' as Reminder['priority'],
+    priority: 'normal' as CheckIn['priority'],
   })
   const [checkInNoteDraft, setCheckInNoteDraft] = useState('')
   const [todoSaving, setTodoSaving] = useState(false)
-  const [reminderSaving, setReminderSaving] = useState(false)
+  const [checkInSaving, setCheckInSaving] = useState(false)
   const [snoozeMenuReminderId, setSnoozeMenuReminderId] = useState<string | null>(null)
   const [snoozingReminderId, setSnoozingReminderId] = useState<string | null>(null)
   const [customSnoozeReminderId, setCustomSnoozeReminderId] = useState<string | null>(null)
@@ -686,7 +656,6 @@ export function TodoPanel({
         globalArchivedTodoResult,
         globalReminderResult,
         globalCheckInResult,
-        reminderProjectPriorityResult,
       ],
       projectResults,
     ] = await Promise.all([
@@ -695,14 +664,8 @@ export function TodoPanel({
         api.getTodos({ deleted: true }),
         api.getReminders({ order: 'attention' }),
         api.getCheckIns({ order: 'attention' }),
-        api.getReminderProjectPriorities(),
       ]),
-      projectId
-        ? Promise.all([
-            api.getProjectTags(projectId),
-            api.getProjectOverview(projectId),
-          ])
-        : Promise.resolve(null),
+      projectId ? api.getProjectTags(projectId) : Promise.resolve(null),
     ])
     if (requestId !== dataRequestSeqRef.current) return
 
@@ -722,28 +685,20 @@ export function TodoPanel({
       setError(globalCheckInResult.error)
       return
     }
-    if (!reminderProjectPriorityResult.ok) {
-      setError(reminderProjectPriorityResult.error)
-      return
-    }
 
     setGlobalTodos(globalTodoResult.data)
     setGlobalArchivedTodos(globalArchivedTodoResult.data)
     setGlobalReminders(globalReminderResult.data)
     setGlobalCheckIns(globalCheckInResult.data)
-    setReminderProjectPriorities(reminderProjectPriorityResult.data)
 
     if (!projectResults) {
       setProjectTags([])
-      setProjectOverview(null)
       setError(null)
       return
     }
 
-    const [tagsResult, overviewResult] = projectResults
     setError(null)
-    setProjectTags(tagsResult.ok ? tagsResult.data.tags : [])
-    setProjectOverview(overviewResult.ok ? overviewResult.data : null)
+    setProjectTags(projectResults.ok ? projectResults.data.tags : [])
   }, [projectId])
 
   useEffect(() => {
@@ -800,9 +755,15 @@ export function TodoPanel({
     setExpandedProjectGroupKey(projectId)
   }, [projectId, sourceTab])
 
+  useEffect(() => {
+    if (!activeQuestId && sourceTab === 'progress') {
+      setSourceTab('human')
+    }
+  }, [activeQuestId, sourceTab])
+
   useSseEvent(
     (event) => {
-      const shouldReloadData = event.type === 'reminder_project_priority_updated' || (
+      const shouldReloadData = (
         event.type === 'todo_updated'
         || event.type === 'todo_deleted'
         || event.type === 'reminder_updated'
@@ -972,20 +933,6 @@ export function TodoPanel({
     setCustomSnoozeAt('')
   }
 
-  const handleReminderProjectPriorityChange = useCallback(async (
-    projectId: string,
-    priority: ReminderProjectPriority,
-  ) => {
-    const result = await api.setReminderProjectPriority(projectId, { priority })
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setReminderProjectPriorities(result.data.settings)
-    await loadData()
-    await onDataChanged?.()
-  }, [loadData, onDataChanged])
-
   const visibleTodos = useMemo(() => {
     const base = globalTodos
     if (filterTags.length === 0) return base
@@ -1015,6 +962,13 @@ export function TodoPanel({
     [globalTodos],
   )
 
+  const progressCount = useMemo(
+    () => activeQuestId
+      ? globalTodos.filter((todo) => todo.originQuestId === activeQuestId && !todo.deleted).length
+      : 0,
+    [activeQuestId, globalTodos],
+  )
+
   const reminderCount = useMemo(
     () => globalReminders.length,
     [globalReminders],
@@ -1040,24 +994,19 @@ export function TodoPanel({
     [visibleCheckIns],
   )
 
-  const reminderProjectPriorityMap = useMemo(
-    () => new Map(reminderProjectPriorities.map((setting) => [setting.projectId, setting.priority] as const)),
-    [reminderProjectPriorities],
-  )
-
   const projectRailGroups = useMemo(
-    () => buildProjectRailGroups({
-      projects,
-      activeProjectId: sourceTab === 'reminder' || sourceTab === 'check_in' ? null : projectId,
-      activeProjectName: sourceTab === 'reminder' || sourceTab === 'check_in' ? null : projectName,
-      openTodos: sourceTab === 'human' ? openHumanTodos : [],
-      reminders: sourceTab === 'reminder' ? sortedReminders : [],
-      checkIns: sourceTab === 'check_in' ? sortedCheckIns : [],
-      source: sourceTab,
-      reminderProjectPriorities: reminderProjectPriorityMap,
-      t,
-    }),
-    [openHumanTodos, projectId, projectName, projects, reminderProjectPriorityMap, sortedCheckIns, sortedReminders, sourceTab, t],
+    () => sourceTab === 'reminder'
+      ? []
+      : buildProjectRailGroups({
+          projects,
+          activeProjectId: sourceTab === 'check_in' ? null : projectId,
+          activeProjectName: sourceTab === 'check_in' ? null : projectName,
+          openTodos: sourceTab === 'human' ? openHumanTodos : [],
+          checkIns: sourceTab === 'check_in' ? sortedCheckIns : [],
+          source: sourceTab === 'check_in' ? 'check_in' : 'human',
+          t,
+        }),
+    [openHumanTodos, projectId, projectName, projects, sortedCheckIns, sourceTab, t],
   )
 
   const visibleArchivedTodosSorted = useMemo(
@@ -1149,6 +1098,50 @@ export function TodoPanel({
     setCreateModalOpen(true)
   }
 
+  async function handleCreateCheckIn() {
+    if (!projectId) return
+    const nextTitle = checkInDraft.title.trim()
+    if (!nextTitle) {
+      setError(t('打卡标题不能为空'))
+      return
+    }
+    setCheckInSaving(true)
+    const result = await api.createCheckIn({
+      projectId,
+      createdBy: 'human',
+      originQuestId: activeQuestId || undefined,
+      title: nextTitle,
+      body: checkInDraft.body.trim() || undefined,
+      remindAt: checkInDraft.remindAt.trim() ? fromDateTimeLocalValue(checkInDraft.remindAt) ?? undefined : undefined,
+      priority: checkInDraft.priority,
+    })
+    setCheckInSaving(false)
+    if (!result.ok) {
+      setError(result.error)
+      return
+    }
+    setCheckInDraft({
+      title: '',
+      body: '',
+      remindAt: '',
+      priority: 'normal',
+    })
+    setCreateCheckInOpen(false)
+    await loadData()
+    await onDataChanged?.()
+  }
+
+  function closeCreateCheckIn() {
+    if (checkInSaving) return
+    setCreateCheckInOpen(false)
+    setCheckInDraft({
+      title: '',
+      body: '',
+      remindAt: '',
+      priority: 'normal',
+    })
+  }
+
   async function handleSaveSelectedTodo() {
     if (!selectedTodo) return
     const nextTitle = todoDraft.title.trim()
@@ -1168,53 +1161,6 @@ export function TodoPanel({
     })
     setTodoSaving(false)
     if (ok) setTodoEditOpen(false)
-  }
-
-  async function handleCreateReminder() {
-    if (!projectId) return
-    const nextTitle = reminderDraft.title.trim()
-    if (!nextTitle) {
-      setError(sourceTab === 'check_in' ? t('打卡标题不能为空') : t('提醒标题不能为空'))
-      return
-    }
-    setReminderSaving(true)
-    const input = {
-      projectId,
-      createdBy: 'human' as const,
-      originQuestId: activeQuestId || undefined,
-      title: nextTitle,
-      body: reminderDraft.body.trim() || undefined,
-      remindAt: reminderDraft.remindAt.trim() ? fromDateTimeLocalValue(reminderDraft.remindAt) ?? undefined : undefined,
-      priority: reminderDraft.priority,
-    }
-    const result = sourceTab === 'check_in'
-      ? await api.createCheckIn(input)
-      : await api.createReminder(input)
-    setReminderSaving(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setReminderDraft({
-      title: '',
-      body: '',
-      remindAt: '',
-      priority: 'normal',
-    })
-    setCreateReminderOpen(false)
-    await loadData()
-    await onDataChanged?.()
-  }
-
-  function closeCreateReminder() {
-    if (reminderSaving) return
-    setCreateReminderOpen(false)
-    setReminderDraft({
-      title: '',
-      body: '',
-      remindAt: '',
-      priority: 'normal',
-    })
   }
 
   const handleOpenTodo = useCallback((todoId: string) => {
@@ -1292,7 +1238,19 @@ export function TodoPanel({
               )}
             </div>
           </div>
-          <div className="pluse-sidebar-tabs pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
+          <div className="pluse-sidebar-tabs pluse-sidebar-tabs-vertical pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
+            <button
+              type="button"
+              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'progress' ? ' is-active' : ''}`}
+              onClick={() => activeQuestId && setSourceTab('progress')}
+              aria-selected={sourceTab === 'progress'}
+              aria-disabled={!activeQuestId}
+              disabled={!activeQuestId}
+              title={activeQuestId ? t('查看当前会话计划') : t('进入任一会话后可查看 Progress')}
+            >
+              {t('Progress')}
+              {progressCount > 0 ? <span className="pluse-tab-count">{progressCount}</span> : null}
+            </button>
             <button
               type="button"
               className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
@@ -1323,6 +1281,19 @@ export function TodoPanel({
           </div>
         </div>
 
+        {sourceTab === 'progress' ? (
+          <div className="pluse-task-list">
+            {activeQuestId ? (
+              <ProgressRailPanel questId={activeQuestId} />
+            ) : (
+              <div className="pluse-rail-empty pluse-task-empty-state">
+                <strong>{t('暂无 Progress')}</strong>
+                <p>{t('进入一个会话后，这里会显示从上到下的计划流。')}</p>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {sourceTab === 'human' && projectTags.length > 0 ? (
           <div className="pluse-todo-tag-filter-row">
             {projectTags.map((tag) => (
@@ -1340,19 +1311,35 @@ export function TodoPanel({
           </div>
         ) : null}
 
-        <div className="pluse-task-list">
+        {sourceTab !== 'progress' ? (
+          <div className="pluse-task-list">
+          {sourceTab === 'reminder' ? (
+            <div className="pluse-note-list">
+              {sortedReminders.map((reminder) => (
+                <ReminderRailItem
+                  key={reminder.id}
+                  reminder={reminder}
+                  activeQuestId={activeQuestId}
+                  locale={locale}
+                  t={t}
+                  snoozeMenuOpen={snoozeMenuReminderId === reminder.id}
+                  snoozing={snoozingReminderId === reminder.id}
+                  highlighted={highlightedReminderId === reminder.id}
+                  onDeleteReminder={handleDeleteReminder}
+                  onOpenReminder={handleOpenReminder}
+                  onOpenSnoozeMenu={(reminderId) => setSnoozeMenuReminderId((current) => current === reminderId ? null : reminderId)}
+                  onSnoozeReminder={handlePresetSnoozeReminder}
+                  onCustomSnoozeReminder={handleOpenCustomSnooze}
+                  onRequestClose={onRequestClose}
+                />
+              ))}
+            </div>
+          ) : null}
+
           {projectRailGroups.map((group) => {
-            const attentionTab = sourceTab === 'reminder' || sourceTab === 'check_in'
-            const reminderCollapsed = attentionTab && collapsedReminderProjectKeys.includes(group.key)
-            const reminderDefaultCollapsed = attentionTab && (group.reminderPriority === 'normal' || group.reminderPriority === 'low')
-            const expanded = attentionTab
-              ? reminderDefaultCollapsed ? reminderCollapsed : !reminderCollapsed
-              : expandedProjectGroupKey === group.key
-            const groupCount = sourceTab === 'human'
-              ? group.openTodos.length
-              : sourceTab === 'reminder'
-                ? group.reminders.length
-                : group.checkIns.length
+            const attentionTab = sourceTab === 'check_in'
+            const expanded = attentionTab ? true : expandedProjectGroupKey === group.key
+            const groupCount = sourceTab === 'human' ? group.openTodos.length : group.checkIns.length
             const hasGroupContent = groupCount > 0
             return (
             <section
@@ -1364,13 +1351,7 @@ export function TodoPanel({
                   type="button"
                   className="pluse-domain-group-toggle"
                   onClick={() => {
-                    if (attentionTab) {
-                      setCollapsedReminderProjectKeys((current) =>
-                        current.includes(group.key)
-                          ? current.filter((key) => key !== group.key)
-                          : [...current, group.key]
-                      )
-                    } else {
+                    if (!attentionTab) {
                       setExpandedProjectGroupKey((current) => current === group.key ? null : group.key)
                     }
                   }}
@@ -1381,23 +1362,6 @@ export function TodoPanel({
                     <span>{groupCount}</span>
                   </div>
                 </button>
-                {attentionTab ? (
-                  <select
-                    className={`pluse-reminder-project-priority-select is-${group.reminderPriority}`}
-                    value={group.reminderPriority}
-                    aria-label={t('项目提醒优先级')}
-                    title={t('项目提醒优先级')}
-                    onChange={(event) => void handleReminderProjectPriorityChange(
-                      group.key,
-                      event.currentTarget.value as ReminderProjectPriority,
-                    )}
-                  >
-                    <option value="mainline">{t('主线')}</option>
-                    <option value="priority">{t('优先')}</option>
-                    <option value="normal">{t('普通')}</option>
-                    <option value="low">{t('低优先')}</option>
-                  </select>
-                ) : null}
               </div>
               {expanded ? (
                 <div className="pluse-task-project-folder">
@@ -1416,31 +1380,6 @@ export function TodoPanel({
                             onToggleTodoStatus={handleToggleTodoStatus}
                             onArchiveTodo={handleArchiveTodo}
                             onOpenTodoSource={handleOpenTodoSource}
-                            onRequestClose={onRequestClose}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {sourceTab === 'reminder' && group.reminders.length > 0 ? (
-                    <div className="pluse-task-folder-section">
-                      <div className="pluse-note-list">
-                        {group.reminders.map((reminder) => (
-                          <ReminderRailItem
-                            key={reminder.id}
-                            reminder={reminder}
-                            activeQuestId={activeQuestId}
-                            locale={locale}
-                            t={t}
-                            snoozeMenuOpen={snoozeMenuReminderId === reminder.id}
-                            snoozing={snoozingReminderId === reminder.id}
-                            highlighted={highlightedReminderId === reminder.id}
-                            onDeleteReminder={handleDeleteReminder}
-                            onOpenReminder={handleOpenReminder}
-                            onOpenSnoozeMenu={(reminderId) => setSnoozeMenuReminderId((current) => current === reminderId ? null : reminderId)}
-                            onSnoozeReminder={handlePresetSnoozeReminder}
-                            onCustomSnoozeReminder={handleOpenCustomSnooze}
                             onRequestClose={onRequestClose}
                           />
                         ))}
@@ -1529,22 +1468,22 @@ export function TodoPanel({
             </section>
           ) : null}
         </div>
+        ) : null}
 
-        <section className="pluse-rail-section-new-task">
-          <button
-            type="button"
-            className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
-            onClick={() => {
-              if (sourceTab === 'reminder' || sourceTab === 'check_in') setCreateReminderOpen(true)
-              else openCreateModal()
-            }}
-            aria-label={sourceTab === 'reminder' ? t('新建提醒') : sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}
-            disabled={!projectId}
-          >
-            <PlusIcon className="pluse-icon" />
-            <span>{sourceTab === 'reminder' ? t('新建提醒') : sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}</span>
-          </button>
-        </section>
+        {sourceTab !== 'reminder' && sourceTab !== 'progress' ? (
+          <section className="pluse-rail-section-new-task">
+            <button
+              type="button"
+              className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
+              onClick={sourceTab === 'check_in' ? () => setCreateCheckInOpen(true) : openCreateModal}
+              aria-label={sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}
+              disabled={!projectId}
+            >
+              <PlusIcon className="pluse-icon" />
+              <span>{sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}</span>
+            </button>
+          </section>
+        ) : null}
 
         {error ? <p className="pluse-error" style={{ padding: '0 14px 14px' }}>{error}</p> : null}
       </aside>
@@ -1562,29 +1501,29 @@ export function TodoPanel({
         }}
       />
 
-      {createReminderOpen && modalRoot ? createPortal(
-        <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={closeCreateReminder}>
+      {createCheckInOpen && modalRoot ? createPortal(
+        <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={closeCreateCheckIn}>
           <section
             className="pluse-modal-panel pluse-todo-detail-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="reminder-create-title"
+            aria-labelledby="check-in-create-title"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="pluse-todo-detail-head">
               <div className="pluse-todo-detail-identity">
-                <span className="pluse-task-detail-kicker">{sourceTab === 'check_in' ? t('打卡') : t('提醒')}</span>
+                <span className="pluse-task-detail-kicker">{t('打卡')}</span>
                 <div className="pluse-task-detail-title-row">
-                  <h2 id="reminder-create-title">{sourceTab === 'check_in' ? t('新建打卡') : t('新建提醒')}</h2>
+                  <h2 id="check-in-create-title">{t('新建打卡')}</h2>
                 </div>
               </div>
               <button
                 type="button"
                 className="pluse-icon-button"
-                onClick={closeCreateReminder}
+                onClick={closeCreateCheckIn}
                 aria-label={t('关闭')}
                 title={t('关闭')}
-                disabled={reminderSaving}
+                disabled={checkInSaving}
               >
                 <CloseIcon className="pluse-icon" />
               </button>
@@ -1595,9 +1534,9 @@ export function TodoPanel({
                 <label>
                   <span>{t('标题')}</span>
                   <input
-                    value={reminderDraft.title}
-                    onChange={(event) => setReminderDraft((current) => ({ ...current, title: event.target.value }))}
-                    placeholder={sourceTab === 'check_in' ? t('输入打卡标题') : t('输入提醒标题')}
+                    value={checkInDraft.title}
+                    onChange={(event) => setCheckInDraft((current) => ({ ...current, title: event.target.value }))}
+                    placeholder={t('输入打卡标题')}
                     maxLength={160}
                     autoFocus
                   />
@@ -1606,8 +1545,8 @@ export function TodoPanel({
                   <span>{t('时间')}</span>
                   <input
                     type="datetime-local"
-                    value={reminderDraft.remindAt}
-                    onChange={(event) => setReminderDraft((current) => ({ ...current, remindAt: event.target.value }))}
+                    value={checkInDraft.remindAt}
+                    onChange={(event) => setCheckInDraft((current) => ({ ...current, remindAt: event.target.value }))}
                   />
                 </label>
                 <div className="pluse-form-field">
@@ -1617,8 +1556,8 @@ export function TodoPanel({
                       <button
                         key={p}
                         type="button"
-                        className={`pluse-priority-option is-${p}${reminderDraft.priority === p ? ' is-active' : ''}`}
-                        onClick={() => setReminderDraft((current) => ({ ...current, priority: p }))}
+                        className={`pluse-priority-option is-${p}${checkInDraft.priority === p ? ' is-active' : ''}`}
+                        onClick={() => setCheckInDraft((current) => ({ ...current, priority: p }))}
                       >
                         {p === 'urgent' ? t('紧急') : p === 'high' ? t('高') : p === 'normal' ? t('普通') : t('低')}
                       </button>
@@ -1628,9 +1567,9 @@ export function TodoPanel({
                 <label>
                   <span>{t('内容')}</span>
                   <textarea
-                    value={reminderDraft.body}
-                    onChange={(event) => setReminderDraft((current) => ({ ...current, body: event.target.value }))}
-                    placeholder={sourceTab === 'check_in' ? t('补充打卡内容') : t('补充提醒内容')}
+                    value={checkInDraft.body}
+                    onChange={(event) => setCheckInDraft((current) => ({ ...current, body: event.target.value }))}
+                    placeholder={t('补充打卡内容')}
                     rows={5}
                   />
                 </label>
@@ -1641,16 +1580,16 @@ export function TodoPanel({
               <button
                 type="button"
                 className="pluse-button"
-                onClick={() => void handleCreateReminder()}
-                disabled={reminderSaving || !reminderDraft.title.trim()}
+                onClick={() => void handleCreateCheckIn()}
+                disabled={checkInSaving || !checkInDraft.title.trim()}
               >
-                {reminderSaving ? t('保存中…') : sourceTab === 'check_in' ? t('创建打卡') : t('创建提醒')}
+                {checkInSaving ? t('保存中…') : t('创建打卡')}
               </button>
               <button
                 type="button"
                 className="pluse-button pluse-button-ghost"
-                onClick={closeCreateReminder}
-                disabled={reminderSaving}
+                onClick={closeCreateCheckIn}
+                disabled={checkInSaving}
               >
                 {t('取消')}
               </button>

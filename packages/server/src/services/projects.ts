@@ -55,38 +55,6 @@ function demoteOtherMainlineProjects(projectId: string, fallback: ProjectPriorit
         AND archived = 0`,
     [fallback, ts, projectId],
   )
-  if (fallback === 'normal') {
-    db.run(
-      `DELETE FROM reminder_project_priorities
-       WHERE priority = 'mainline'
-         AND project_id <> ?`,
-      [projectId],
-    )
-    return
-  }
-  db.run(
-    `UPDATE reminder_project_priorities
-        SET priority = ?,
-            updated_at = ?
-      WHERE priority = 'mainline'
-        AND project_id <> ?`,
-    [fallback, ts, projectId],
-  )
-}
-
-function mirrorLegacyReminderProjectPriority(projectId: string, priority: ProjectPriority): void {
-  const db = getDb()
-  if (priority === 'normal') {
-    db.run('DELETE FROM reminder_project_priorities WHERE project_id = ?', [projectId])
-    return
-  }
-  const ts = now()
-  db.run(
-    `INSERT INTO reminder_project_priorities (project_id, priority, created_at, updated_at)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(project_id) DO UPDATE SET priority = excluded.priority, updated_at = excluded.updated_at`,
-    [projectId, priority, ts, ts],
-  )
 }
 
 function readManifest(workDir: string): ProjectManifest | null {
@@ -261,7 +229,6 @@ function alignProjectToManifest(projectId: string, manifest: ProjectManifest, se
     priority: seed?.priority,
     archived: false,
   })
-  if (seed?.priority) mirrorLegacyReminderProjectPriority(project.id, seed.priority)
   writeManifest(manifestFromProject(project))
   emit({ type: 'project_updated', data: { projectId: project.id } })
   return project
@@ -282,7 +249,6 @@ function createProjectForManifest(manifest: ProjectManifest, seed?: Partial<Open
     createdAt: manifest.createdAt,
     updatedAt: manifest.updatedAt,
   })
-  mirrorLegacyReminderProjectPriority(created.id, created.priority)
   writeManifest(manifestFromProject(created))
   emit({ type: 'project_opened', data: { projectId: created.id } })
   return created
@@ -397,7 +363,6 @@ export function openProject(input: OpenProjectInput): Project {
       priority: input.priority ?? 'normal',
     })
     if (created.priority === 'mainline') demoteOtherMainlineProjects(created.id)
-    mirrorLegacyReminderProjectPriority(created.id, created.priority)
     writeManifest(manifestFromProject(created))
     emit({ type: 'project_opened', data: { projectId: created.id } })
     return created
@@ -416,7 +381,6 @@ export function openProject(input: OpenProjectInput): Project {
       priority: input.priority,
       archived: false,
     })
-    if (input.priority) mirrorLegacyReminderProjectPriority(updated.id, input.priority)
     writeManifest(manifestFromProject(updated))
     emit({ type: 'project_opened', data: { projectId: updated.id } })
     return updated
@@ -450,7 +414,6 @@ export function openProject(input: OpenProjectInput): Project {
           priority: input.priority ?? 'normal',
         })
         if (copied.priority === 'mainline') demoteOtherMainlineProjects(copied.id)
-        mirrorLegacyReminderProjectPriority(copied.id, copied.priority)
         writeManifest(manifestFromProject(copied))
         emit({ type: 'project_opened', data: { projectId: copied.id } })
         return copied
@@ -525,7 +488,6 @@ export function updateProject(id: string, input: UpdateProjectInput): Project {
   assertDomainAssignable(input.domainId)
   if (input.priority === 'mainline') demoteOtherMainlineProjects(id)
   const updated = updateProjectRecord(id, input)
-  if (input.priority) mirrorLegacyReminderProjectPriority(id, input.priority)
   if (updated.visibility === 'user') {
     writeManifest(manifestFromProject(updated))
   }

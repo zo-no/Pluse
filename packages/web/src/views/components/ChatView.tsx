@@ -17,7 +17,6 @@ import {
   resolveRuntimeModelSelection,
 } from '@/views/utils/runtime'
 import { AttachIcon, ConvertIcon, SendIcon } from './icons'
-import { ProgressInlineCard } from './ProgressPanel'
 import { TaskComposerModal } from './TaskComposerModal'
 
 const DRAWING_MODEL_KEYWORDS = ['image', 'dalle', 'flux', 'imagen', 'midjourney', 'stable', 'draw', 'painting']
@@ -805,7 +804,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
 
     let attachments: MessageAttachment[] = []
     if (pendingFiles.length > 0) {
-      const results = await Promise.all(pendingFiles.map((file) => api.uploadAsset(questId, file)))
+      const results = await Promise.all(pendingFiles.map((file) => api.uploadAsset({ questId, file })))
       const failed = results.find((result) => !result.ok)
       if (failed && !failed.ok) {
         setSending(false)
@@ -965,8 +964,6 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
             ) : null}
           </button>
         ) : null}
-
-        <ProgressInlineCard questId={quest.id} />
 
         <footer className="pluse-composer" ref={composerRef}>
           <button

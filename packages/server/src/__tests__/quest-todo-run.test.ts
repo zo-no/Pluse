@@ -14,7 +14,6 @@ import type {
   Reminder,
   Run,
   SessionCategory,
-  SetReminderProjectPriorityResult,
   Todo,
   UploadedAsset,
 } from '@pluse/types'
@@ -27,7 +26,7 @@ import { listReminders } from '../models/reminder'
 import { listProjectTags, listTodos } from '../models/todo'
 import { loadGlobalHooksConfig, saveGlobalHooksConfig } from '../services/hooks'
 import { stopScheduler } from '../services/scheduler'
-import { deleteReminderWithEffects } from '../services/reminders'
+import { createReminderWithEffects, deleteReminderWithEffects } from '../services/reminders'
 import { getAssetsDir, getHistoryRoot, getManagedCodexHome } from '../support/paths'
 import { DEL, GET, PATCH, POST, getTestRoot, makeWorkDir, resetTestDb, setupTestDb, waitFor } from './helpers'
 
@@ -422,10 +421,7 @@ describe('quest/todo/run APIs', () => {
     const reminderModule = commandCatalog.modules.find((module) => module.name === 'reminder')
     expect(reminderModule?.commands.map((command) => command.name)).toEqual([
       'reminder list',
-      'reminder project-priority list',
-      'reminder project-priority set',
       'reminder get',
-      'reminder create',
       'reminder update',
       'reminder snooze',
       'reminder delete',
@@ -438,10 +434,10 @@ describe('quest/todo/run APIs', () => {
       'check-in records',
     ])
     expect(reminderModule?.commands.some((command) => command.name === 'reminder snooze')).toBe(true)
-    expect(reminderModule?.commands.find((command) => command.name === 'reminder create')?.api).toBe('POST /api/reminders')
+    expect(reminderModule?.commands.some((command) => command.name === 'reminder create')).toBe(false)
   })
 
-  it('supports reminder api lifecycle and source links', async () => {
+  it('supports reminder update/delete lifecycle and blocks public creation', async () => {
     const project = await openProject('reminder-api')
     const quest = await createQuest({
       projectId: project.id,
@@ -458,8 +454,9 @@ describe('quest/todo/run APIs', () => {
       tool: 'codex',
     })
 
-    const created = await POST<Reminder>('/api/reminders', {
+    const createdData = createReminderWithEffects({
       projectId: project.id,
+      createdBy: 'ai',
       originQuestId: quest.id,
       originRunId: run.id,
       type: 'review',
@@ -468,11 +465,15 @@ describe('quest/todo/run APIs', () => {
       remindAt: '2099-04-27T09:00:00.000Z',
       priority: 'high',
     })
-    expect(created.status).toBe(201)
-    const createdData = mustOk(created)
     expect(createdData.id).toStartWith('rmd_')
     expect(createdData.originQuestId).toBe(quest.id)
     expect(createdData.originRunId).toBe(run.id)
+
+    const deniedCreate = await POST<Reminder>('/api/reminders', {
+      projectId: project.id,
+      title: 'Manual reminder',
+    })
+    expect(deniedCreate.status).toBe(404)
 
     const future = await GET<Reminder[]>(`/api/reminders?projectId=${project.id}&time=future&type=review`)
     expect(future.status).toBe(200)
@@ -538,50 +539,38 @@ describe('quest/todo/run APIs', () => {
     expect(records.status).toBe(200)
     expect(mustOk(records).map((item) => item.id)).toContain(record.id)
 
-    const ordinaryReminder = mustOk(await POST<Reminder>('/api/reminders', {
+    const ordinaryReminder = createReminderWithEffects({
       projectId: project.id,
+      createdBy: 'ai',
       title: 'Plain reminder',
       type: 'custom',
-    }))
+    })
     const rejected = await POST<CheckInRecord>(`/api/reminders/${ordinaryReminder.id}/check-in`, {})
     expect(rejected.status).toBe(400)
     expect((await GET(`/api/reminders/${ordinaryReminder.id}`)).status).toBe(200)
   })
 
-  it('orders reminders by reminder project priority and keeps one mainline project', async () => {
+  it('orders reminders globally by due state and priority', async () => {
     const mainProject = await openProject('reminder-mainline')
     const otherProject = await openProject('reminder-other')
 
-    const otherReminder = mustOk(await POST<Reminder>('/api/reminders', {
+    const otherReminder = createReminderWithEffects({
       projectId: otherProject.id,
+      createdBy: 'ai',
       title: 'Other urgent reminder',
       priority: 'urgent',
-    }))
-    const mainReminder = mustOk(await POST<Reminder>('/api/reminders', {
+    })
+    const mainReminder = createReminderWithEffects({
       projectId: mainProject.id,
+      createdBy: 'ai',
       title: 'Mainline normal reminder',
       priority: 'normal',
-    }))
-
-    const mainlineResult = await PATCH<SetReminderProjectPriorityResult>(
-      `/api/reminders/project-priorities/${mainProject.id}`,
-      { priority: 'mainline' },
-    )
-    expect(mainlineResult.status).toBe(200)
-    expect(mustOk(mainlineResult).setting.priority).toBe('mainline')
+      remindAt: '2099-04-29T09:00:00.000Z',
+    })
 
     const ordered = await GET<Reminder[]>('/api/reminders?order=attention')
     expect(ordered.status).toBe(200)
-    expect(mustOk(ordered).map((item) => item.id)).toEqual([mainReminder.id, otherReminder.id])
-
-    const movedMainline = await PATCH<SetReminderProjectPriorityResult>(
-      `/api/reminders/project-priorities/${otherProject.id}`,
-      { priority: 'mainline' },
-    )
-    expect(movedMainline.status).toBe(200)
-    const settings = mustOk(movedMainline).settings
-    expect(settings.find((setting) => setting.projectId === otherProject.id)?.priority).toBe('mainline')
-    expect(settings.find((setting) => setting.projectId === mainProject.id)?.priority).toBe('priority')
+    expect(mustOk(ordered).map((item) => item.id)).toEqual([otherReminder.id, mainReminder.id])
   })
 
   it('filters deleted=false tasks from active list', async () => {

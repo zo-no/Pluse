@@ -1,446 +1,364 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import type { SseMessage, Todo } from '@pluse/types'
-import * as api from '@/api/client'
-import { useSseEvent } from '@/views/hooks/useSseEvent'
+import { useMemo, type CSSProperties } from 'react'
+import type { QuestPlanRow } from '@/views/utils/todo'
+import { useQuestPlan } from '@/views/hooks/useQuestPlan'
 
 interface ProgressPanelProps {
   questId: string
 }
 
-// ── 旋转动画：doing spinner ───────────────────────────────────────────────
-function Spinner() {
+type ProgressSurface = 'detail' | 'rail' | 'inline'
+
+// ─── Colors ────────────────────────────────────────────────────────────────────
+
+function resolveIndicatorColor(state: QuestPlanRow['state']): string {
+  if (state === 'done') return 'var(--progress-done, #22c55e)'
+  if (state === 'doing') return 'var(--progress-doing, #3b82f6)'
+  if (state === 'waiting') return 'var(--progress-waiting, #f59e0b)'
+  if (state === 'cancelled') return 'var(--progress-cancelled, #9ca3af)'
+  return 'var(--progress-pending, #d1d5db)'
+}
+
+function resolveSummaryColor(summary: { waiting: number; doing: number; done: number; total: number }): string {
+  if (summary.waiting > 0) return '#f59e0b'
+  if (summary.doing > 0) return '#3b82f6'
+  if (summary.total > 0 && summary.done === summary.total) return '#22c55e'
+  return '#9ca3af'
+}
+
+function stateLabel(state: QuestPlanRow['state']): string {
+  if (state === 'doing') return '进行中'
+  if (state === 'waiting') return '等待中'
+  if (state === 'done') return '已完成'
+  if (state === 'cancelled') return '已取消'
+  return '待开始'
+}
+
+// ─── Spinner ────────────────────────────────────────────────────────────────────
+
+function Spinner({ size = 11 }: { size?: number }) {
   return (
     <span
-      style={{
-        display: 'inline-block',
-        width: 10,
-        height: 10,
-        border: '1.5px solid currentColor',
-        borderTopColor: 'transparent',
-        borderRadius: '50%',
-        animation: 'pluse-spin 0.7s linear infinite',
-        flexShrink: 0,
-      }}
+      className="pluse-progress-spinner"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
     />
   )
 }
 
-// ── 单条 AI Progress 条目 ─────────────────────────────────────────────────
-function AiProgressItem({ item }: { item: Todo }) {
-  const isDone = item.status === 'done'
-  const isRunning = item.status === 'doing'
-  const isCancelled = item.status === 'cancelled'
-  const label = isRunning && item.activeForm ? item.activeForm : item.title
+// ─── Status indicator icon ─────────────────────────────────────────────────────
 
+function StatusIcon({ row }: { row: QuestPlanRow }) {
+  const color = resolveIndicatorColor(row.state)
+  if (row.state === 'doing') return <Spinner size={11} />
+  if (row.state === 'done') {
+    return (
+      <svg className="pluse-progress-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+        <circle cx="6.5" cy="6.5" r="6" fill={color} />
+        <path d="M4 6.5l2 2 3.5-3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (row.state === 'waiting') {
+    return (
+      <svg className="pluse-progress-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <circle cx="6" cy="6" r="4.8" stroke={color} strokeWidth="1.4" />
+        <circle cx="6" cy="6" r="1.6" fill={color} />
+      </svg>
+    )
+  }
+  if (row.state === 'cancelled') {
+    return (
+      <svg className="pluse-progress-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <circle cx="6" cy="6" r="5" stroke={color} strokeWidth="1.2" />
+        <path d="M3.5 6h5" stroke={color} strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    )
+  }
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '5px 0',
-        opacity: isCancelled ? 0.4 : 1,
-      }}
-    >
-      {/* 状态指示器 */}
-      <div
-        style={{
-          width: 14,
-          height: 14,
-          flexShrink: 0,
-          marginTop: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: isDone ? '#22c55e' : isRunning ? '#3b82f6' : '#9ca3af',
-        }}
-      >
-        {isRunning ? (
-          <Spinner />
-        ) : isDone ? (
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-            <circle cx="6.5" cy="6.5" r="6" fill="#22c55e" />
-            <path d="M4 6.5l2 2 3.5-3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        ) : (
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-            <circle cx="5.5" cy="5.5" r="5" stroke="#d1d5db" strokeWidth="1.2" />
-          </svg>
-        )}
-      </div>
-
-      {/* 文本 */}
-      <span
-        style={{
-          fontSize: 12.5,
-          lineHeight: '19px',
-          color: isDone
-            ? '#9ca3af'
-            : isRunning
-              ? '#111827'
-              : '#374151',
-          fontWeight: isRunning ? 500 : 400,
-          textDecoration: isCancelled ? 'line-through' : 'none',
-          flex: 1,
-          minWidth: 0,
-          wordBreak: 'break-word',
-        }}
-      >
-        {label}
-      </span>
-    </div>
+    <svg className="pluse-progress-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true">
+      <circle cx="5.5" cy="5.5" r="5" stroke={color} strokeWidth="1.2" />
+    </svg>
   )
 }
 
-// ── 单条人工/等待 Todo 条目 ────────────────────────────────────────────────
-function HumanTodoItem({
-  item,
+// ─── Single plan item ──────────────────────────────────────────────────────────
+
+function canToggleRow(row: QuestPlanRow): boolean {
+  return row.createdBy === 'human' || row.state === 'waiting'
+}
+
+function QuestPlanItem({
+  row,
+  index,
+  total,
   onToggle,
 }: {
-  item: Todo
-  onToggle: (id: string, done: boolean) => void
+  row: QuestPlanRow
+  index: number
+  total: number
+  onToggle?: (row: QuestPlanRow) => void
 }) {
-  const isDone = item.status === 'done'
-  const isWaiting = Boolean(item.waitingInstructions) && !isDone
+  const isDone = row.state === 'done'
+  const isCancelled = row.state === 'cancelled'
+  const isDoing = row.state === 'doing'
+  const isPending = row.state === 'pending'
+  const isWaiting = row.state === 'waiting'
+  const toggleable = Boolean(onToggle) && canToggleRow(row)
+  const helperText = row.helperText?.trim()
+  const isLast = index === total - 1
+
+  // Text color
+  const textColor = isDone || isCancelled
+    ? 'var(--text-muted)'
+    : isDoing
+      ? 'var(--text)'
+      : isWaiting
+        ? 'var(--warning)'
+        : isPending
+          ? 'var(--text-secondary)'
+          : 'var(--text-secondary)'
+
+  const indicatorColor = resolveIndicatorColor(row.state)
+
+  const itemStyle: CSSProperties = {
+    animationDelay: `${index * 48}ms`,
+    opacity: isCancelled ? 0.45 : 1,
+  }
+
+  const indicator = (
+    <span
+      className="pluse-progress-indicator-wrap"
+      style={{ color: indicatorColor }}
+      aria-hidden="true"
+    >
+      {isDoing ? (
+        // Glow ring behind spinner for "doing" state
+        <span className="pluse-progress-doing-ring" />
+      ) : null}
+      <StatusIcon row={row} />
+      {/* Vertical connector line */}
+      {!isLast ? (
+        <span
+          className={`pluse-progress-track${isDone ? ' is-done' : ''}`}
+          aria-hidden="true"
+        />
+      ) : null}
+    </span>
+  )
+
+  const indicatorNode = toggleable ? (
+    <button
+      type="button"
+      className="pluse-progress-indicator-btn"
+      onClick={() => onToggle?.(row)}
+      aria-label={isDone ? '恢复计划项' : '完成计划项'}
+      title={isDone ? '恢复计划项' : '完成计划项'}
+    >
+      {indicator}
+    </button>
+  ) : (
+    <span className="pluse-progress-indicator-btn" aria-hidden="true">
+      {indicator}
+    </span>
+  )
 
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 8,
-        padding: '4px 6px',
-        marginLeft: -6,
-        marginRight: -6,
-        borderRadius: 6,
-        background: isWaiting ? 'rgba(251, 191, 36, 0.08)' : 'transparent',
-      }}
+      className={`pluse-progress-item${isDoing ? ' is-doing' : ''}${isDone ? ' is-done' : ''}${isCancelled ? ' is-cancelled' : ''}${isWaiting ? ' is-waiting' : ''}`}
+      style={itemStyle}
     >
-      {/* 复选框 */}
-      <button
-        type="button"
-        onClick={() => onToggle(item.id, !isDone)}
-        title={isDone ? '点击取消完成' : '点击标记完成'}
-        style={{
-          width: 13,
-          height: 13,
-          borderRadius: 3,
-          border: isDone
-            ? '1.5px solid #22c55e'
-            : isWaiting
-              ? '1.5px solid #f59e0b'
-              : '1.5px solid #d1d5db',
-          background: isDone ? '#22c55e' : 'transparent',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-          marginTop: 3,
-          padding: 0,
-          outline: 'none',
-          transition: 'border-color 0.15s, background 0.15s',
-        }}
-      >
-        {isDone && (
-          <svg width="8" height="8" viewBox="0 0 9 9" fill="none">
-            <path d="M1.5 4.5l2 2 3.5-3.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {/* 标题 */}
+      {indicatorNode}
+      <div className="pluse-progress-item-body">
         <div
+          className="pluse-progress-item-title"
           style={{
-            fontSize: 12,
-            lineHeight: '18px',
-            color: isDone
-              ? '#9ca3af'
-              : isWaiting
-                ? '#92400e'
-                : '#374151',
-            textDecoration: isDone ? 'line-through' : 'none',
-            wordBreak: 'break-word',
+            color: textColor,
+            fontWeight: isDoing ? 600 : 400,
+            textDecoration: isCancelled ? 'line-through' : 'none',
           }}
         >
-          {item.title}
+          {row.displayText}
         </div>
-
-        {/* 等待说明 */}
-        {isWaiting && (
+        {helperText ? (
           <div
+            className="pluse-progress-item-helper"
+            style={{ color: isWaiting ? 'var(--warning)' : 'var(--text-muted)' }}
+          >
+            {helperText}
+          </div>
+        ) : null}
+        <div className="pluse-progress-item-meta">
+          <span
+            className="pluse-progress-state-badge"
             style={{
-              fontSize: 11,
-              lineHeight: '15px',
-              color: '#b45309',
-              marginTop: 2,
+              color: isDoing
+                ? '#3b82f6'
+                : isWaiting
+                  ? 'var(--warning)'
+                  : isDone
+                    ? '#22c55e'
+                    : 'var(--text-muted)',
             }}
           >
-            {item.waitingInstructions}
-          </div>
-        )}
+            {stateLabel(row.state)}
+          </span>
+          <span className="pluse-progress-meta-dot" aria-hidden="true">·</span>
+          <span className="pluse-progress-meta-source">
+            {row.createdBy === 'human' ? 'Human' : row.createdBy === 'ai' ? 'AI' : 'System'}
+          </span>
+        </div>
       </div>
-
-      {/* AI 标记 */}
-      {item.createdBy === 'ai' && isWaiting && (
-        <span
-          style={{
-            fontSize: 10,
-            color: '#f59e0b',
-            fontWeight: 600,
-            flexShrink: 0,
-            marginTop: 2,
-            letterSpacing: '0.02em',
-          }}
-        >
-          AI
-        </span>
-      )}
     </div>
   )
 }
 
-// ── 可折叠 Progress 卡片（嵌入到聊天区域，.coworker 风格）──────────────────
-export function ProgressInlineCard({ questId }: ProgressPanelProps) {
-  const [items, setItems] = useState<Todo[]>([])
-  const [loading, setLoading] = useState(true)
-  const [collapsed, setCollapsed] = useState(true)
+// ─── Sequence ─────────────────────────────────────────────────────────────────
 
-  const fetchProgress = useCallback(async () => {
-    const result = await api.getQuestProgress(questId)
-    if (result.ok) setItems(result.data)
-    setLoading(false)
-  }, [questId])
-
-  useEffect(() => {
-    setLoading(true)
-    void fetchProgress()
-  }, [fetchProgress])
-
-  // useSseEvent uses useEffectEvent internally — no need for useCallback wrapper
-  useSseEvent((event: SseMessage) => {
-    if ((event.type === 'todo_updated' || event.type === 'todo_deleted')
-      && (event.data as { originQuestId?: string }).originQuestId === questId) {
-      void fetchProgress()
-    }
-  })
-
-  const handleToggle = useCallback(
-    async (id: string, done: boolean) => {
-      await api.updateTodo(id, { status: done ? 'done' : 'pending' })
-      void fetchProgress()
-    },
-    [fetchProgress],
+function QuestPlanSequence({
+  rows,
+  onToggle,
+}: {
+  rows: QuestPlanRow[]
+  onToggle?: (row: QuestPlanRow) => void
+}) {
+  return (
+    <div className="pluse-progress-sequence">
+      {rows.map((row, index) => (
+        <QuestPlanItem
+          key={row.id}
+          row={row}
+          index={index}
+          total={rows.length}
+          onToggle={onToggle}
+        />
+      ))}
+    </div>
   )
+}
 
-  // 分组
-  const aiItems = items.filter((t) => t.createdBy !== 'human')
-  const humanItems = items.filter((t) => t.createdBy === 'human')
-  const waitingItems = aiItems.filter((t) => t.waitingInstructions && t.status !== 'done')
-  const pureAiItems = aiItems.filter((t) => !t.waitingInstructions || t.status === 'done')
+// ─── Summary bar ──────────────────────────────────────────────────────────────
 
-  const hasAi = pureAiItems.length > 0
-  const hasHuman = humanItems.length > 0 || waitingItems.length > 0
-  const isEmpty = items.length === 0
-
-  const hasRunning = pureAiItems.some((t) => t.status === 'doing')
-  const hasWaiting = waitingItems.length > 0
-
-  if (loading || isEmpty) return null
-
-  const runningCount = pureAiItems.filter((t) => t.status === 'doing').length
-  const doneCount = pureAiItems.filter((t) => t.status === 'done').length
-  const totalCount = items.length
-  const pendingHuman = [...waitingItems, ...humanItems.filter(t => t.status !== 'done')].length
-
-  // 状态点颜色：进行中=蓝，等待=橙，全完成=绿
-  const dotColor = hasWaiting ? '#f59e0b' : hasRunning ? '#3b82f6' : '#22c55e'
-
-  // 摘要文字精确对照 .coworker：「Todos · 2 items · 1 done」格式
-  const summaryParts: string[] = [`${totalCount} 条`]
-  if (doneCount > 0) summaryParts.push(`${doneCount} 已完成`)
-  if (runningCount > 0) summaryParts.push(`${runningCount} 进行中`)
-  if (pendingHuman > 0) summaryParts.push(`${pendingHuman} 待处理`)
-  const summary = summaryParts.join(' · ')
+function ProgressSummaryBar({
+  summary,
+}: {
+  summary: { pending: number; doing: number; done: number; waiting: number; total: number }
+}) {
+  if (summary.total === 0) return null
+  const pct = Math.round((summary.done / summary.total) * 100)
 
   return (
-    <div className="pluse-inline-todo-bar">
-      {/* 折叠触发行 */}
-      <button
-        type="button"
-        onClick={() => setCollapsed((v) => !v)}
-        className="pluse-inline-todo-trigger"
-      >
-        {/* 状态点 */}
-        <span
-          className="pluse-inline-todo-dot"
-          style={{
-            background: dotColor,
-            boxShadow: hasRunning ? `0 0 0 3px ${dotColor}30` : 'none',
-          }}
+    <div className="pluse-progress-summary-bar">
+      <div className="pluse-progress-bar-track">
+        <div
+          className="pluse-progress-bar-fill"
+          style={{ width: `${pct}%` }}
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
         />
-        {/* 标题 */}
-        <span className="pluse-inline-todo-label">
-          {hasWaiting ? '等待处理' : 'Todos'}
-        </span>
-        {/* 摘要（灰色，中点分隔） */}
-        <span className="pluse-inline-todo-summary">· {summary}</span>
-        {/* 箭头 */}
-        <span
-          className="pluse-inline-todo-chevron"
-          style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
-        >
-          ›
-        </span>
-      </button>
-
-      {/* 展开内容区 */}
-      {!collapsed && (
-        <div className="pluse-inline-todo-body">
-          {hasAi && (
-            <div style={{ marginBottom: hasHuman ? 4 : 0 }}>
-              {pureAiItems.map((item) => (
-                <AiProgressItem key={item.id} item={item} />
-              ))}
-            </div>
-          )}
-          {hasHuman && (
-            <div>
-              {hasAi && <div className="pluse-inline-todo-divider" />}
-              {waitingItems.map((item) => (
-                <HumanTodoItem key={item.id} item={item} onToggle={handleToggle} />
-              ))}
-              {humanItems.map((item) => (
-                <HumanTodoItem key={item.id} item={item} onToggle={handleToggle} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      </div>
+      <span className="pluse-progress-bar-label">{pct}%</span>
     </div>
   )
 }
 
-// ── 任务详情页使用的展开 Progress 面板 ─────────────────────────────────────
-export function ProgressPanel({ questId }: ProgressPanelProps) {
-  const [items, setItems] = useState<Todo[]>([])
-  const [loading, setLoading] = useState(true)
+// ─── Rail surface ──────────────────────────────────────────────────────────────
 
-  const fetchProgress = useCallback(async () => {
-    const result = await api.getQuestProgress(questId)
-    if (result.ok) setItems(result.data)
-    setLoading(false)
-  }, [questId])
+function QuestPlanSurface({
+  questId,
+  surface,
+}: {
+  questId: string
+  surface: ProgressSurface
+}) {
+  const { rows, summary, loading, error, setTodoDone } = useQuestPlan(questId)
 
-  useEffect(() => {
-    setLoading(true)
-    void fetchProgress()
-  }, [fetchProgress])
+  const summaryText = useMemo(() => {
+    const parts: string[] = []
+    if (summary.done > 0) parts.push(`${summary.done} 已完成`)
+    if (summary.doing > 0) parts.push(`${summary.doing} 进行中`)
+    if (summary.waiting > 0) parts.push(`${summary.waiting} 等待中`)
+    if (summary.pending > 0) parts.push(`${summary.pending} 待开始`)
+    return parts.length > 0 ? parts.join(' · ') : '暂无条目'
+  }, [summary])
 
-  // useSseEvent uses useEffectEvent internally — no need for useCallback wrapper
-  useSseEvent((event: SseMessage) => {
-    if ((event.type === 'todo_updated' || event.type === 'todo_deleted')
-      && (event.data as { originQuestId?: string }).originQuestId === questId) {
-      void fetchProgress()
-    }
-  })
+  const accentColor = resolveSummaryColor(summary)
 
-  const handleToggle = useCallback(
-    async (id: string, done: boolean) => {
-      await api.updateTodo(id, { status: done ? 'done' : 'pending' })
-      void fetchProgress()
-    },
-    [fetchProgress],
-  )
+  const handleToggle = async (row: QuestPlanRow) => {
+    await setTodoDone(row.id, row.state !== 'done')
+  }
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <PanelHeader />
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 12, color: '#9ca3af' }}>加载中…</span>
+      <div className="pluse-progress-surface-shell">
+        <div className="pluse-progress-loading">
+          <Spinner size={12} />
+          <span>加载中…</span>
         </div>
       </div>
     )
   }
 
-  const aiItems = items.filter((t) => t.createdBy !== 'human')
-  const humanItems = items.filter((t) => t.createdBy === 'human')
-  const waitingItems = aiItems.filter((t) => t.waitingInstructions && t.status !== 'done')
-  const pureAiItems = aiItems.filter((t) => !t.waitingInstructions || t.status === 'done')
+  if (error) {
+    return (
+      <div className="pluse-progress-surface-shell">
+        <div className="pluse-progress-error">
+          <span>{error}</span>
+        </div>
+      </div>
+    )
+  }
 
-  const hasAi = pureAiItems.length > 0
-  const hasHuman = humanItems.length > 0 || waitingItems.length > 0
-  const isEmpty = items.length === 0
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <PanelHeader />
-      {isEmpty ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
-          <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', lineHeight: '18px' }}>
-            AI 执行任务时<br />进度将自动出现在这里
+  if (rows.length === 0) {
+    return (
+      <div className="pluse-progress-surface-shell">
+        <div className="pluse-progress-empty">
+          <p>
+            {surface === 'rail'
+              ? '进入会话后，计划流会自动出现在这里。'
+              : 'AI 执行时，当前会话的计划流会自动出现在这里。'}
           </p>
         </div>
-      ) : (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px 12px' }}>
-          {hasAi && (
-            <>
-              <SectionLabel>执行进度</SectionLabel>
-              <div>
-                {pureAiItems.map((item) => (
-                  <AiProgressItem key={item.id} item={item} />
-                ))}
-              </div>
-            </>
-          )}
-          {hasHuman && (
-            <>
-              <SectionLabel>待处理</SectionLabel>
-              <div>
-                {waitingItems.map((item) => (
-                  <HumanTodoItem key={item.id} item={item} onToggle={handleToggle} />
-                ))}
-                {humanItems.map((item) => (
-                  <HumanTodoItem key={item.id} item={item} onToggle={handleToggle} />
-                ))}
-              </div>
-            </>
-          )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="pluse-progress-surface-shell">
+      {/* Header */}
+      <div className="pluse-progress-rail-head">
+        <span className="pluse-progress-rail-dot" style={{ background: accentColor }} />
+        <div className="pluse-progress-rail-head-copy">
+          <strong>当前会话计划</strong>
+          <span>{summaryText}</span>
         </div>
-      )}
+        <span className="pluse-progress-rail-count">{summary.total}</span>
+      </div>
+
+      {/* Progress bar */}
+      <ProgressSummaryBar summary={summary} />
+
+      {/* Items */}
+      <div className="pluse-progress-list-scroll">
+        <QuestPlanSequence rows={rows} onToggle={handleToggle} />
+      </div>
     </div>
   )
 }
 
-function PanelHeader() {
-  return (
-    <div
-      style={{
-        padding: '10px 12px',
-        borderBottom: '1px solid #f3f4f6',
-        flexShrink: 0,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />
-      <h3 style={{ margin: 0, fontSize: 12, fontWeight: 600, color: '#374151', letterSpacing: '0.01em' }}>
-        Progress
-      </h3>
-    </div>
-  )
+// ─── Exports ───────────────────────────────────────────────────────────────────
+
+export function ProgressRailPanel({ questId }: ProgressPanelProps) {
+  return <QuestPlanSurface questId={questId} surface="rail" />
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '8px 0 4px' }}>
-      <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#9ca3af' }}>
-        {children}
-      </span>
-      <div style={{ flex: 1, height: 1, background: '#f3f4f6' }} />
-    </div>
-  )
+export function ProgressPanel({ questId }: ProgressPanelProps) {
+  return <QuestPlanSurface questId={questId} surface="detail" />
+}
+
+// ─── Inline card (kept for API compat but returns null) ───────────────────────
+// Inline card was removed from ChatView; this stub prevents import errors elsewhere.
+export function ProgressInlineCard(_props: ProgressPanelProps) {
+  return null
 }

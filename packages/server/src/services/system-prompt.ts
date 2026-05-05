@@ -16,10 +16,10 @@ const PLUSE_CONCEPT_BLOCK = `你在 Pluse 系统中运行。
 Pluse 的核心概念：
 - Project（项目）：工作容器，对应本地文件夹。
 - Quest（统一工作容器）：内部技术概念。UI 上按 kind 显示为会话态或任务态。
-- Todo（待办 / Progress）：记录任务步骤和待办事项，可由人工或 AI 创建，可选绑定来源 Quest。
-  - createdBy=ai + originQuestId：AI 执行步骤，显示在 Progress 面板
-  - createdBy=ai + waitingInstructions：AI 等待人类处理，面板中高亮提示
-  - createdBy=human：人工待办，可在 Progress 面板直接勾选完成
+- Todo（待办 / Progress）：当前作为 \`Pluse Plan\` 的底层结构，承载 Quest 级 Plan Mode 条目；可由人工或 AI 创建，可选绑定来源 Quest。
+  - createdBy=ai + originQuestId：AI 执行步骤，显示在当前 Quest 的 Progress 顺序流中
+  - createdBy=ai + waitingInstructions：AI 等待人类处理，仍保留在同一条主计划流中
+  - createdBy=human + originQuestId：人工条目，可作为同一 Quest Plan 的补充步骤
 - Run（执行）：Quest 的一次执行记录，可能来自 chat、manual 或 automation。
 - Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。
 
@@ -34,7 +34,11 @@ Pluse 的核心概念：
 
 function buildProgressBlock(cli: string, questId: string, projectId: string): string {
   const c = `${cli} todo`
-  return `## Progress Tracking
+  return `## Pluse Plan / Progress Tracking
+
+\`Pluse Plan\` 是当前 Quest 的 Plan Mode。Progress 面板显示的是同一个 Quest 从上到下的主计划流，而不是状态分栏或项目总看板。
+
+在创建任何新步骤前，先读取当前 Quest 的已有计划（例如用 \`${c} list --quest-id ${questId} --json\`），优先续写已有未完成步骤，避免为同一步创建重复条目。
 
 Progress 面板显示当前会话的所有执行步骤和待处理事项。有两种条目类型，用途截然不同：
 
@@ -83,7 +87,7 @@ ${c} progress-create ... --title “读取配置文件”
 ---
 
 ### 类型二：等待人类处理（加 --waiting）
-需要用户做某件事时才用。条目在 Progress 面板高亮显示，用户直接勾选完成。
+需要用户做某件事时才用。条目在 Progress 面板高亮显示，但仍停留在同一条主计划流里，用户直接勾选完成。
 
 \`\`\`
 ${c} progress-create --quest-id ${questId} --project-id ${projectId} \\
@@ -126,7 +130,12 @@ IDC=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --tit
 
 **什么时候不需要：**
 - 纯对话、查询、分析
-- 用户已给出明确的操作指令`
+- 用户已给出明确的操作指令
+
+额外规则：
+- 优先更新已有条目，而不是为同一个完成步骤反复创建新项
+- human 与 ai 条目共用同一底层结构，区别只体现在 createdBy 与等待说明
+- waiting 项完成后，应继续沿用原 Quest Plan，而不是重开一套新的计划流`
 }
 
 // ─── 第一层：系统级提示 ────────────────────────────────────────────────────
@@ -164,6 +173,7 @@ export function buildSessionSystemPrompt(
     '你正在与人类对话。',
     '需要执行独立自动化工作时，把当前 Quest 切换为任务态，或创建新的任务态 Quest。',
     '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions；只有存在明确时间窗口时才写入 dueAt。',
+    '把 Progress 视为当前 Quest 的 Pluse Plan：先读已有计划，再续写、更新或等待，不要重复造相同步骤。',
     '',
     '发送图片给用户：',
     `  1. 创建或获取图片文件（如通过工具生成 PNG/SVG/JPG 等）`,
@@ -200,6 +210,7 @@ export function buildTaskSystemPrompt(
     '你正在执行一个自动化任务。',
     '执行配置来自当前 Quest 的任务配置。',
     '需要人类介入时，优先创建 Reminder；只有需要定时触达时才写 remindAt，只有确实是人工执行事项时才创建 Todo。',
+    '如果创建 Quest Progress 条目，保持同一条 Pluse Plan 顺序流：先读取当前计划，再更新已有步骤或追加新步骤。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
   ].join('\n')

@@ -1,5 +1,20 @@
 import type { Todo, TodoRepeat } from '@pluse/types'
 
+export type QuestPlanRowState = 'pending' | 'doing' | 'waiting' | 'done' | 'cancelled'
+
+export interface QuestPlanRow {
+  id: string
+  questId: string
+  createdBy: Todo['createdBy']
+  state: QuestPlanRowState
+  displayText: string
+  helperText?: string
+  order: number
+  createdAt: string
+  updatedAt: string
+  source: Todo
+}
+
 function toDate(value?: string): Date | null {
   if (!value) return null
   const parsed = new Date(value)
@@ -50,4 +65,67 @@ export function fromDateTimeLocalValue(value: string): string | undefined {
   if (!trimmed) return undefined
   const parsed = new Date(trimmed)
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
+}
+
+function compareQuestPlanDate(left: string, right: string): number {
+  const leftTs = Date.parse(left)
+  const rightTs = Date.parse(right)
+  if (!Number.isFinite(leftTs) && !Number.isFinite(rightTs)) return 0
+  if (!Number.isFinite(leftTs)) return 1
+  if (!Number.isFinite(rightTs)) return -1
+  return leftTs - rightTs
+}
+
+export function compareQuestPlanItems(
+  left: Pick<Todo, 'order' | 'createdAt' | 'id'>,
+  right: Pick<Todo, 'order' | 'createdAt' | 'id'>,
+): number {
+  if (left.order !== right.order) return left.order - right.order
+  const createdAtDelta = compareQuestPlanDate(left.createdAt, right.createdAt)
+  if (createdAtDelta !== 0) return createdAtDelta
+  return left.id.localeCompare(right.id)
+}
+
+export function sortQuestPlanItems(items: readonly Todo[]): Todo[] {
+  return [...items].sort(compareQuestPlanItems)
+}
+
+export function projectQuestPlanRow(todo: Todo): QuestPlanRow {
+  const waitingInstructions = todo.waitingInstructions?.trim()
+  const isWaiting = Boolean(waitingInstructions) && todo.status !== 'done' && todo.status !== 'cancelled'
+  const activeForm = todo.activeForm?.trim()
+
+  return {
+    id: todo.id,
+    questId: todo.originQuestId ?? '',
+    createdBy: todo.createdBy,
+    state: isWaiting ? 'waiting' : todo.status,
+    displayText: todo.status === 'doing' ? (activeForm || todo.title) : todo.title,
+    helperText: isWaiting ? waitingInstructions : undefined,
+    order: todo.order,
+    createdAt: todo.createdAt,
+    updatedAt: todo.updatedAt,
+    source: todo,
+  }
+}
+
+export function projectQuestPlanRows(items: readonly Todo[]): QuestPlanRow[] {
+  return sortQuestPlanItems(items).map(projectQuestPlanRow)
+}
+
+export function summarizeQuestPlanRows(rows: readonly QuestPlanRow[]) {
+  const summary = {
+    total: rows.length,
+    pending: 0,
+    doing: 0,
+    waiting: 0,
+    done: 0,
+    cancelled: 0,
+  }
+
+  for (const row of rows) {
+    summary[row.state] += 1
+  }
+
+  return summary
 }
