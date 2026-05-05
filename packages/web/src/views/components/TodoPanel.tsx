@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type {
   CheckIn,
+  Domain,
   Project,
+  ProjectPriority,
   Quest,
   Reminder,
   Todo,
@@ -14,8 +16,17 @@ import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { formatTodoDueAt, formatTodoRepeat, fromDateTimeLocalValue, toDateTimeLocalValue } from '@/views/utils/todo'
 import { ProgressRailPanel } from './ProgressPanel'
+import { AutomationRailPanel } from './AutomationRailPanel'
 import { ArchiveIcon, CheckIcon, ClockIcon, CloseIcon, DelayIcon, DetailIcon, PlusIcon, RouteIcon, SparkIcon } from './icons'
-import { TaskComposerModal } from './TaskComposerModal'
+import { TaskComposerModal, type TaskComposerKind } from './TaskComposerModal'
+
+/**
+ * scope 控制 TodoPanel 的作用域语义：
+ * - 'global'（默认）：左侧栏全局视图，展示全部待办/提醒/打卡，按项目分组
+ * - 'project'：右侧工作台项目上下文视图，聚焦于 projectId 对应项目
+ *   （当前仅展示过滤后视图，未来可进一步裁剪 tabs 和数据拉取范围）
+ */
+export type TodoPanelScope = 'global' | 'project'
 
 interface TodoPanelProps {
   projectId: string | null
@@ -24,9 +35,19 @@ interface TodoPanelProps {
   activeQuestId?: string | null
   onRequestClose?: () => void
   onDataChanged?: () => Promise<void> | void
+  onSelectProject?: (projectId: string) => void
+  /** 嵌入左侧栏时为 true，不渲染外层 aside */
+  embedded?: boolean
+  /** 嵌入模式下，外部控制的初始 tab */
+  initialTab?: 'human' | 'reminder' | 'check_in' | 'automation' | 'progress'
+  /**
+   * 作用域：'global' 为全局视图（左侧栏默认），'project' 为项目上下文（右侧工作台用）
+   * @default 'global'
+   */
+  scope?: TodoPanelScope
 }
 
-type SourceTab = 'progress' | 'human' | 'reminder' | 'check_in'
+type SourceTab = 'progress' | 'human' | 'reminder' | 'check_in' | 'automation'
 type SnoozePreset = 'later' | 'tomorrow' | 'next_week'
 
 type ProjectRailGroup = {
@@ -61,6 +82,33 @@ function formatSidebarTime(value?: string, t?: (key: string, values?: Record<str
   return t ? t('{count} 周', { count: Math.max(1, Math.floor(delta / week)) }) : `${Math.max(1, Math.floor(delta / week))} 周`
 }
 
+function formatDueTime(
+  dueAt: string,
+  locale: string,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): { label: string; overdue: boolean } {
+  const ts = new Date(dueAt).getTime()
+  const now = Date.now()
+  const diff = ts - now
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const overdue = diff < 0
+  if (overdue) {
+    const absDiff = Math.abs(diff)
+    if (absDiff < hour) return { label: t('逾期 {count} 分钟', { count: Math.max(1, Math.floor(absDiff / minute)) }), overdue: true }
+    if (absDiff < day) return { label: t('逾期 {count} 小时', { count: Math.max(1, Math.floor(absDiff / hour)) }), overdue: true }
+    return { label: t('逾期 {count} 天', { count: Math.max(1, Math.floor(absDiff / day)) }), overdue: true }
+  }
+  if (diff < hour) return { label: t('{count} 分钟后截止', { count: Math.max(1, Math.floor(diff / minute)) }), overdue: false }
+  if (diff < day) return { label: t('{count} 小时后截止', { count: Math.max(1, Math.floor(diff / hour)) }), overdue: false }
+  if (diff < 7 * day) return { label: t('{count} 天后截止', { count: Math.max(1, Math.floor(diff / day)) }), overdue: false }
+  return {
+    label: new Intl.DateTimeFormat(locale, { month: 'numeric', day: 'numeric' }).format(new Date(dueAt)),
+    overdue: false,
+  }
+}
+
 function snoozeDate(preset: SnoozePreset): string {
   const next = new Date()
   if (preset === 'later') {
@@ -93,6 +141,20 @@ function reminderPriorityLabel(priority: Reminder['priority'], t?: (key: string)
   if (priority === 'high') return t ? t('高优先级') : '高优先级'
   if (priority === 'low') return t ? t('低优先级') : '低优先级'
   return t ? t('普通') : '普通'
+}
+
+function todoPriorityBadgeText(priority: Todo['priority'] | Reminder['priority']): string {
+  if (priority === 'urgent') return '!!'
+  if (priority === 'high') return '!'
+  if (priority === 'low') return '↓'
+  return ''
+}
+
+function todoPriorityAriaLabel(priority: Todo['priority'] | Reminder['priority'], t?: (key: string) => string): string {
+  if (priority === 'urgent') return t ? t('紧急') : '紧急'
+  if (priority === 'high') return t ? t('高优先级') : '高优先级'
+  if (priority === 'low') return t ? t('低优先级') : '低优先级'
+  return ''
 }
 
 const REMINDER_PRIORITY_RANK: Record<Reminder['priority'], number> = {
@@ -161,6 +223,7 @@ function formatEmptyMessage(
   if (source === 'progress') return t ? t('当前会话尚无计划项。') : '当前会话尚无计划项。'
   if (source === 'reminder') return t ? t('当前范围暂无提醒。') : '当前范围暂无提醒。'
   if (source === 'check_in') return t ? t('当前范围暂无打卡。') : '当前范围暂无打卡。'
+  if (source === 'automation') return t ? t('当前项目暂无自动化。') : '当前项目暂无自动化。'
   return t ? t('当前范围暂无待办。') : '当前范围暂无待办。'
 }
 
@@ -235,10 +298,11 @@ const TodoRailItem = memo(function TodoRailItem({
   const canToggle = !archived && todo.status !== 'cancelled'
   const visibleTags = todo.tags.slice(0, 3)
   const extraTagCount = Math.max(0, todo.tags.length - visibleTags.length)
+  const priorityClass = todo.priority !== 'normal' ? ` is-priority-${todo.priority}` : ''
 
   return (
     <article
-      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-todo${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}${isDone ? ' is-done' : ''}`}
+      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-todo${priorityClass}${isActive ? ' is-active' : ''}${archived ? ' is-archived' : ''}${isDone ? ' is-done' : ''}`}
     >
       <button
         type="button"
@@ -258,17 +322,50 @@ const TodoRailItem = memo(function TodoRailItem({
       >
         <div className="pluse-task-list-copy">
           <div className="pluse-sidebar-item-title">
-            {todo.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${todo.priority}`} aria-label={todo.priority} /> : null}
+            {todo.priority !== 'normal' ? (
+              <span
+                className={`pluse-todo-priority-badge is-${todo.priority}`}
+                aria-label={todoPriorityAriaLabel(todo.priority, t)}
+                title={todoPriorityAriaLabel(todo.priority, t)}
+              >
+                {todoPriorityBadgeText(todo.priority)}
+              </span>
+            ) : null}
             <strong>{todo.title}</strong>
           </div>
-          <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
-            <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
-            <span className="pluse-task-list-dot" aria-hidden="true">·</span>
-            <span className="pluse-meta-inline">
-              <ClockIcon className="pluse-icon pluse-inline-icon" />
-              {formatSidebarTime(todo.updatedAt, t)}
-            </span>
-          </div>
+          {todo.status === 'pending' ? (
+            <div className="pluse-task-list-meta" title={todo.dueAt ? formatDateTime(todo.dueAt, locale, t) : formatDateTime(todo.updatedAt, locale, t)}>
+              {todo.dueAt ? (() => {
+                const due = formatDueTime(todo.dueAt, locale, t)
+                return (
+                  <span className={`pluse-meta-inline${due.overdue ? ' pluse-meta-overdue' : ''}`}>
+                    <ClockIcon className="pluse-icon pluse-inline-icon" />
+                    {due.label}
+                  </span>
+                )
+              })() : (
+                <span className="pluse-meta-inline">
+                  <ClockIcon className="pluse-icon pluse-inline-icon" />
+                  {formatSidebarTime(todo.updatedAt, t)}
+                </span>
+              )}
+              {isRecurring ? (
+                <>
+                  <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+                  <span className="pluse-task-list-state">{t('重复')}</span>
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <div className="pluse-task-list-meta" title={formatDateTime(todo.updatedAt, locale, t)}>
+              <span className={`pluse-task-list-state is-${todo.status}`}>{todoStatusLabel(todo.status, t)}</span>
+              <span className="pluse-task-list-dot" aria-hidden="true">·</span>
+              <span className="pluse-meta-inline">
+                <ClockIcon className="pluse-icon pluse-inline-icon" />
+                {formatSidebarTime(todo.updatedAt, t)}
+              </span>
+            </div>
+          )}
           {visibleTags.length > 0 ? (
             <div className="pluse-todo-tags" aria-label={t('标签')}>
               {visibleTags.map((tag) => (
@@ -365,7 +462,15 @@ const ReminderRailItem = memo(function ReminderRailItem({
   const copy = (
     <div className="pluse-task-list-copy">
       <div className="pluse-sidebar-item-title">
-        {reminder.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${reminder.priority}`} aria-label={reminder.priority} /> : null}
+        {reminder.priority !== 'normal' ? (
+          <span
+            className={`pluse-todo-priority-badge is-${reminder.priority}`}
+            aria-label={todoPriorityAriaLabel(reminder.priority, t)}
+            title={todoPriorityAriaLabel(reminder.priority, t)}
+          >
+            {todoPriorityBadgeText(reminder.priority)}
+          </span>
+        ) : null}
         <strong>{reminder.title}</strong>
       </div>
       <div className="pluse-task-list-meta" title={formatDateTime(timeValue, locale, t)}>
@@ -496,7 +601,15 @@ const CheckInRailItem = memo(function CheckInRailItem({
   const copy = (
     <div className="pluse-task-list-copy">
       <div className="pluse-sidebar-item-title">
-        {item.priority !== 'normal' ? <span className={`pluse-todo-priority-dot is-${item.priority}`} aria-label={item.priority} /> : null}
+        {item.priority !== 'normal' ? (
+          <span
+            className={`pluse-todo-priority-badge is-${item.priority}`}
+            aria-label={todoPriorityAriaLabel(item.priority, t)}
+            title={todoPriorityAriaLabel(item.priority, t)}
+          >
+            {todoPriorityBadgeText(item.priority)}
+          </span>
+        ) : null}
         <strong>{item.title}</strong>
       </div>
       <div className="pluse-task-list-meta" title={formatDateTime(timeValue, locale, t)}>
@@ -588,6 +701,22 @@ const CheckInRailItem = memo(function CheckInRailItem({
   )
 })
 
+const PROJECT_PRIORITY_ORDER: ProjectPriority[] = ['mainline', 'priority', 'normal', 'low']
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
+}
+
+function sortProjectsByPriorityGroup(projects: Project[]): Project[] {
+  return [...projects].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1
+    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })
+}
+
 export function TodoPanel({
   projectId,
   projectName,
@@ -595,16 +724,27 @@ export function TodoPanel({
   activeQuestId,
   onRequestClose,
   onDataChanged,
+  onSelectProject,
+  embedded,
+  initialTab,
+  scope = 'global',
 }: TodoPanelProps) {
   const { locale, t } = useI18n()
+  const navigate = useNavigate()
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
   const [globalReminders, setGlobalReminders] = useState<Reminder[]>([])
   const [globalCheckIns, setGlobalCheckIns] = useState<CheckIn[]>([])
-  const [sourceTab, setSourceTab] = useState<SourceTab>(activeQuestId ? 'progress' : 'human')
-  const [expandedProjectGroupKey, setExpandedProjectGroupKey] = useState<string | null>(projectId)
+  const [sourceTab, setSourceTab] = useState<SourceTab>(initialTab ?? (activeQuestId ? 'progress' : 'human'))
+
+  // embedded 模式下由父组件通过 initialTab 控制当前 tab
+  useEffect(() => {
+    if (embedded && initialTab) setSourceTab(initialTab)
+  }, [embedded, initialTab])
+  const [expandedProjectGroupKeys, setExpandedProjectGroupKeys] = useState<string[]>(() => (projectId ? [projectId] : []))
   const [archivedExpanded, setArchivedExpanded] = useState(false)
   const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createModalKind, setCreateModalKind] = useState<TaskComposerKind>('human')
   const [createCheckInOpen, setCreateCheckInOpen] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
   const [selectedReminderId, setSelectedReminderId] = useState<string | null>(null)
@@ -642,6 +782,12 @@ export function TodoPanel({
   const [reloadTick, setReloadTick] = useState(0)
   const [filterTags, setFilterTags] = useState<string[]>([])
   const [projectTags, setProjectTags] = useState<string[]>([])
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [domains, setDomains] = useState<Domain[]>([])
+  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({
+    normal: false,
+    low: false,
+  })
   const reloadTimerRef = useRef<number | null>(null)
   const highlightedReminderTimerRef = useRef<number | null>(null)
   const pendingDataReloadRef = useRef(false)
@@ -752,7 +898,7 @@ export function TodoPanel({
   }, [projectTags])
 
   useEffect(() => {
-    setExpandedProjectGroupKey(projectId)
+    setExpandedProjectGroupKeys(projectId ? [projectId] : [])
   }, [projectId, sourceTab])
 
   useEffect(() => {
@@ -796,6 +942,51 @@ export function TodoPanel({
       },
     },
   )
+
+  const activeProject = useMemo(
+    () => projects.find((project) => project.id === projectId) ?? null,
+    [projects, projectId],
+  )
+
+  const activeDomainName = useMemo(() => {
+    if (!activeProject?.domainId) return t('未分组')
+    return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
+  }, [activeProject, domains, t])
+
+  const activeProjectContextLabel = useMemo(() => (
+    activeProject
+      ? `${projectPriorityLabel(activeProject.priority, t)} · ${activeDomainName}`
+      : activeDomainName
+  ), [activeDomainName, activeProject, t])
+
+  type ProjectPickerGroup = {
+    key: string
+    label: string
+    priority: ProjectPriority
+    projects: Project[]
+  }
+
+  const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() => {
+    return PROJECT_PRIORITY_ORDER
+      .map((priority) => ({
+        key: priority,
+        label: projectPriorityLabel(priority, t),
+        priority,
+        projects: sortProjectsByPriorityGroup(projects.filter((project) => project.priority === priority)),
+      }))
+      .filter((group) => group.projects.length > 0)
+  }, [projects, t])
+
+  function projectDomainName(project: Project): string {
+    if (!project.domainId) return t('未分组')
+    return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+  }
+
+  function openProject(newProjectId: string) {
+    onSelectProject?.(newProjectId)
+    setProjectPickerOpen(false)
+    navigate(`/projects/${newProjectId}`)
+  }
 
   const handleUpdateTodo = useCallback(async (todo: Todo, patch: UpdateTodoInput): Promise<boolean> => {
     const result = await api.updateTodo(todo.id, {
@@ -1094,7 +1285,8 @@ export function TodoPanel({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedCheckInId, selectedReminderId, selectedTodoId])
 
-  function openCreateModal() {
+  function openCreateModal(kind: TaskComposerKind = 'human') {
+    setCreateModalKind(kind)
     setCreateModalOpen(true)
   }
 
@@ -1197,91 +1389,165 @@ export function TodoPanel({
     }
   }, [onRequestClose])
 
+  const Wrapper = embedded ? 'div' : 'aside'
+  const wrapperClass = embedded ? 'pluse-todo-embedded' : 'pluse-rail'
+
+  // 嵌入左侧栏时，外部 sidebarTab 已负责 tab 切换，不需要内部 tab 栏
+  const hideInternalTabs = embedded
+
   return (
     <>
-      <aside className="pluse-rail">
-        <div className="pluse-mobile-panel-header">
-          <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭工作台')} title={t('关闭工作台')}>
-            <CloseIcon className="pluse-icon" />
-          </button>
-        </div>
+      <Wrapper className={wrapperClass}>
+        {!embedded ? (
+          <div className="pluse-mobile-panel-header">
+            <button type="button" className="pluse-icon-button" onClick={onRequestClose} aria-label={t('关闭工作台')} title={t('关闭工作台')}>
+              <CloseIcon className="pluse-icon" />
+            </button>
+          </div>
+        ) : null}
 
-        <div className="pluse-rail-head pluse-rail-head-sidebar">
-          <div className="pluse-sidebar-project-context pluse-workbench-project-context">
-            <div className="pluse-workbench-project-strip">
-              <div className="pluse-workbench-project-copy">
-                <span>{t('工作台')}</span>
-                <strong>{projectName || t('当前项目')}</strong>
+        {!hideInternalTabs ? (
+          <div className="pluse-rail-head pluse-rail-head-sidebar">
+            <div className="pluse-sidebar-project-context pluse-workbench-project-context">
+              <div className="pluse-workbench-project-strip">
+                <div className="pluse-project-switcher pluse-rail-project-switcher">
+                  <button
+                    type="button"
+                    className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+                    onClick={() => setProjectPickerOpen((value) => !value)}
+                    aria-haspopup="listbox"
+                    aria-expanded={projectPickerOpen}
+                  >
+                    <div className="pluse-project-switcher-label">
+                      <strong>{activeProject?.name ?? t('选择项目')}</strong>
+                      <span>{activeProjectContextLabel}</span>
+                    </div>
+                    <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
+                  </button>
+
+                  {projectPickerOpen ? (
+                    <div className="pluse-project-picker pluse-project-picker-rail">
+                      <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
+                        {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
+                          const groupOpen = expandedProjectPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
+                          return (
+                            <section key={group.key} className="pluse-project-picker-group">
+                              <button
+                                type="button"
+                                className="pluse-project-picker-group-head"
+                                onClick={() => setExpandedProjectPriorityGroups((current) => ({
+                                  ...current,
+                                  [group.key]: !(current[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')),
+                                }))}
+                              >
+                                <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
+                                <span>{t('{count} 个项目', { count: group.projects.length })}</span>
+                              </button>
+                              {groupOpen ? group.projects.map((project) => (
+                                <button
+                                  key={project.id}
+                                  type="button"
+                                  className={`pluse-project-picker-item${project.id === projectId ? ' is-active' : ''}`}
+                                  onClick={() => openProject(project.id)}
+                                >
+                                  <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
+                                  <div className="pluse-project-picker-item-text">
+                                    <strong>{project.name}</strong>
+                                    <span className="pluse-project-picker-item-meta">
+                                      <span>{projectDomainName(project)}</span>
+                                      <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
+                                    </span>
+                                  </div>
+                                </button>
+                              )) : null}
+                            </section>
+                          )
+                        }) : (
+                          <p className="pluse-domain-empty">{t('暂无项目')}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                {projectId ? (
+                  <Link
+                    className="pluse-workbench-project-action"
+                    to={`/projects/${projectId}#automation`}
+                    onClick={handleOpenAutomationPanel}
+                    aria-label={t('进入自动化面板')}
+                    title={t('进入自动化面板')}
+                  >
+                    <SparkIcon className="pluse-icon" />
+                    <span>{t('自动化')}</span>
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className="pluse-workbench-project-action"
+                    disabled
+                    aria-label={t('进入自动化面板')}
+                    title={t('进入自动化面板')}
+                  >
+                    <SparkIcon className="pluse-icon" />
+                    <span>{t('自动化')}</span>
+                  </button>
+                )}
               </div>
-              {projectId ? (
-                <Link
-                  className="pluse-workbench-project-action"
-                  to={`/projects/${projectId}#automation`}
-                  onClick={handleOpenAutomationPanel}
-                  aria-label={t('进入自动化面板')}
-                  title={t('进入自动化面板')}
-                >
-                  <SparkIcon className="pluse-icon" />
-                  <span>{t('自动化')}</span>
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="pluse-workbench-project-action"
-                  disabled
-                  aria-label={t('进入自动化面板')}
-                  title={t('进入自动化面板')}
-                >
-                  <SparkIcon className="pluse-icon" />
-                  <span>{t('自动化')}</span>
-                </button>
-              )}
+            </div>
+            <div className="pluse-sidebar-tabs pluse-sidebar-tabs-vertical pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
+              <button
+                type="button"
+                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'progress' ? ' is-active' : ''}`}
+                onClick={() => activeQuestId && setSourceTab('progress')}
+                aria-selected={sourceTab === 'progress'}
+                aria-disabled={!activeQuestId}
+                disabled={!activeQuestId}
+                title={activeQuestId ? t('查看当前会话计划') : t('进入任一会话后可查看 Progress')}
+              >
+                {t('Progress')}
+                {progressCount > 0 ? <span className="pluse-tab-count">{progressCount}</span> : null}
+              </button>
+              <button
+                type="button"
+                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
+                onClick={() => setSourceTab('human')}
+                aria-selected={sourceTab === 'human'}
+              >
+                {t('待办')}
+                {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
+              </button>
+              <button
+                type="button"
+                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
+                onClick={() => setSourceTab('reminder')}
+                aria-selected={sourceTab === 'reminder'}
+              >
+                {t('提醒')}
+                {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
+              </button>
+              <button
+                type="button"
+                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'check_in' ? ' is-active' : ''}`}
+                onClick={() => setSourceTab('check_in')}
+                aria-selected={sourceTab === 'check_in'}
+              >
+                {t('打卡')}
+                {checkInCount > 0 ? <span className="pluse-tab-count">{checkInCount}</span> : null}
+              </button>
+              <button
+                type="button"
+                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'automation' ? ' is-active' : ''}`}
+                onClick={() => setSourceTab('automation')}
+                aria-selected={sourceTab === 'automation'}
+              >
+                {t('自动化')}
+              </button>
             </div>
           </div>
-          <div className="pluse-sidebar-tabs pluse-sidebar-tabs-vertical pluse-rail-object-tabs" role="tablist" aria-label={t('对象类型')}>
-            <button
-              type="button"
-              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'progress' ? ' is-active' : ''}`}
-              onClick={() => activeQuestId && setSourceTab('progress')}
-              aria-selected={sourceTab === 'progress'}
-              aria-disabled={!activeQuestId}
-              disabled={!activeQuestId}
-              title={activeQuestId ? t('查看当前会话计划') : t('进入任一会话后可查看 Progress')}
-            >
-              {t('Progress')}
-              {progressCount > 0 ? <span className="pluse-tab-count">{progressCount}</span> : null}
-            </button>
-            <button
-              type="button"
-              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab('human')}
-              aria-selected={sourceTab === 'human'}
-            >
-              {t('待办')}
-              {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
-            </button>
-            <button
-              type="button"
-              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab('reminder')}
-              aria-selected={sourceTab === 'reminder'}
-            >
-              {t('提醒')}
-              {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
-            </button>
-            <button
-              type="button"
-              className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'check_in' ? ' is-active' : ''}`}
-              onClick={() => setSourceTab('check_in')}
-              aria-selected={sourceTab === 'check_in'}
-            >
-              {t('打卡')}
-              {checkInCount > 0 ? <span className="pluse-tab-count">{checkInCount}</span> : null}
-            </button>
-          </div>
-        </div>
+        ) : null}
 
-        {sourceTab === 'progress' ? (
+        {/* 嵌入左侧栏时不渲染 Progress（会话级内容属于右侧工作台） */}
+        {sourceTab === 'progress' && !hideInternalTabs ? (
           <div className="pluse-task-list">
             {activeQuestId ? (
               <ProgressRailPanel questId={activeQuestId} />
@@ -1311,7 +1577,18 @@ export function TodoPanel({
           </div>
         ) : null}
 
-        {sourceTab !== 'progress' ? (
+        {sourceTab === 'automation' ? (
+          <AutomationRailPanel
+            projectId={projectId}
+            projectName={projectName ?? null}
+            projects={projects}
+            activeQuestId={activeQuestId}
+            onRequestClose={onRequestClose}
+            hideHeader
+          />
+        ) : null}
+
+        {sourceTab !== 'progress' && sourceTab !== 'automation' ? (
           <div className="pluse-task-list">
           {sourceTab === 'reminder' ? (
             <div className="pluse-note-list">
@@ -1338,7 +1615,7 @@ export function TodoPanel({
 
           {projectRailGroups.map((group) => {
             const attentionTab = sourceTab === 'check_in'
-            const expanded = attentionTab ? true : expandedProjectGroupKey === group.key
+            const expanded = attentionTab ? true : expandedProjectGroupKeys.includes(group.key)
             const groupCount = sourceTab === 'human' ? group.openTodos.length : group.checkIns.length
             const hasGroupContent = groupCount > 0
             return (
@@ -1352,7 +1629,11 @@ export function TodoPanel({
                   className="pluse-domain-group-toggle"
                   onClick={() => {
                     if (!attentionTab) {
-                      setExpandedProjectGroupKey((current) => current === group.key ? null : group.key)
+                      setExpandedProjectGroupKeys((current) => (
+                        current.includes(group.key)
+                          ? current.filter((k) => k !== group.key)
+                          : [...current, group.key]
+                      ))
                     }
                   }}
                 >
@@ -1475,7 +1756,13 @@ export function TodoPanel({
             <button
               type="button"
               className="pluse-sidebar-chip-link pluse-sidebar-new-session-card pluse-rail-new-task-card"
-              onClick={sourceTab === 'check_in' ? () => setCreateCheckInOpen(true) : openCreateModal}
+              onClick={() => {
+                if (sourceTab === 'check_in') {
+                  setCreateCheckInOpen(true)
+                  return
+                }
+                openCreateModal('human')
+              }}
               aria-label={sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}
               disabled={!projectId}
             >
@@ -1486,13 +1773,13 @@ export function TodoPanel({
         ) : null}
 
         {error ? <p className="pluse-error" style={{ padding: '0 14px 14px' }}>{error}</p> : null}
-      </aside>
+      </Wrapper>
 
       <TaskComposerModal
         open={createModalOpen}
         projectId={projectId}
         projectName={projectName}
-        initialKind="human"
+          initialKind={createModalKind}
         showKindSwitch={false}
         onClose={() => setCreateModalOpen(false)}
         onCreated={async () => {

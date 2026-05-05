@@ -5,7 +5,7 @@ import * as api from '@/api/client'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { ArchiveIcon, ClockIcon, MenuIcon, MoonIcon, PauseIcon, PlayIcon, PlusIcon, RouteIcon, SidebarIcon, SlidersIcon, SparkIcon, SunIcon } from '@/views/components/icons'
 import { SessionList } from '@/views/components/SessionList'
-import { TodoPanel } from '@/views/components/TodoPanel'
+import { ContextWorkbench } from '@/views/components/ContextWorkbench'
 import { TaskComposerModal } from '@/views/components/TaskComposerModal'
 import { displayQuestName } from '@/views/utils/display'
 import { getPreferredSession, rememberLastSession } from '@/views/utils/session-selection'
@@ -1882,11 +1882,13 @@ function Shell({
         </main>
 
         <div className="pluse-rail-shell is-open">
-          <TodoPanel
+          <ContextWorkbench
             projectId={activeProjectId}
             projectName={activeProject?.name ?? null}
             projects={projects}
             activeQuestId={activeQuestId}
+            onSelectProject={handleProjectSelected}
+            onProjectsChanged={loadProjects}
             onRequestClose={() => setMobileSidebarOpen(false)}
           />
         </div>

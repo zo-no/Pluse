@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Domain, Project, ProjectPriority, Quest, SessionCategory } from '@pluse/types'
+import type { Domain, Project, Quest, SessionCategory } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
 import { displayQuestName } from '@/views/utils/display'
 import { DomainSidebar } from './DomainSidebar'
+import { TodoPanel } from './TodoPanel'
 import { ArchiveIcon, ClockIcon, CloseIcon, FolderIcon, FolderOpenIcon, PinIcon, PlusIcon, RouteIcon } from './icons'
 
 interface SessionListProps {
@@ -61,33 +62,6 @@ function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'r
   return null
 }
 
-function projectDomainName(project: Project, domains: Domain[], t: (key: string, values?: Record<string, string | number>) => string): string {
-  if (!project.domainId) return t('未分组')
-  return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
-}
-
-const PROJECT_PRIORITY_ORDER: ProjectPriority[] = ['mainline', 'priority', 'normal', 'low']
-
-function projectPriorityLabel(priority: ProjectPriority, t: (key: string, values?: Record<string, string | number>) => string): string {
-  if (priority === 'mainline') return t('主线')
-  if (priority === 'priority') return t('优先')
-  if (priority === 'low') return t('低优先')
-  return t('普通')
-}
-
-function sortProjectsByPriorityGroup(projects: Project[]): Project[] {
-  return [...projects].sort((left, right) => {
-    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1
-    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
-  })
-}
-
-type ProjectPickerGroup = {
-  key: string
-  label: string
-  priority: ProjectPriority
-  projects: Project[]
-}
 
 const QuestItem = memo(function QuestItem({
   quest,
@@ -134,7 +108,7 @@ const QuestItem = memo(function QuestItem({
           <strong>{displayQuestName(quest, t)}</strong>
         </div>
         <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
-          <span className="pluse-meta-inline">
+          <span className="pluse-meta-inline pluse-sidebar-item-time">
             <ClockIcon className="pluse-icon pluse-inline-icon" />
             {formatSidebarTime(quest.updatedAt, t)}
           </span>
@@ -187,10 +161,10 @@ export function SessionList({
   const [sessions, setSessions] = useState<Quest[]>([])
   const [archivedSessions, setArchivedSessions] = useState<Quest[]>([])
   const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
+  const [uncategorizedSessionsExpanded, setUncategorizedSessionsExpanded] = useState(true)
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions'>(() => (activeProjectId ? 'sessions' : 'projects'))
+  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions' | 'todo' | 'reminder' | 'check_in'>(() => (activeProjectId ? 'sessions' : 'projects'))
   const [domains, setDomains] = useState<Domain[]>([])
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [newProjectModalOpen, setNewProjectModalOpen] = useState(false)
@@ -198,10 +172,6 @@ export function SessionList({
   const [projectDir, setProjectDir] = useState('')
   const [projectGoal, setProjectGoal] = useState('')
   const [projectDomainId, setProjectDomainId] = useState('')
-  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({
-    normal: false,
-    low: false,
-  })
   const [error, setError] = useState<string | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -216,32 +186,6 @@ export function SessionList({
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [projects, activeProjectId],
   )
-
-  const activeDomainName = useMemo(() => {
-    if (!activeProject?.domainId) return t('未分组')
-    return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
-  }, [activeProject, domains, t])
-
-  const activeProjectContextLabel = useMemo(() => (
-    activeProject
-      ? `${projectPriorityLabel(activeProject.priority, t)} · ${activeDomainName}`
-      : activeDomainName
-  ), [activeDomainName, activeProject, t])
-
-  const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() => {
-    return PROJECT_PRIORITY_ORDER
-      .map((priority) => ({
-        key: priority,
-        label: projectPriorityLabel(priority, t),
-        priority,
-        projects: sortProjectsByPriorityGroup(projects.filter((project) => project.priority === priority)),
-      }))
-      .filter((group) => group.projects.length > 0)
-  }, [projects, t])
-
-  const sidebarContextLabel = useMemo(() => (
-    sidebarTab === 'projects' ? t('项目') : t('会话')
-  ), [sidebarTab, t])
 
   const knownQuests = useMemo(
     () => [...sessions, ...archivedSessions],
@@ -292,14 +236,11 @@ export function SessionList({
   }, [loadQuests])
 
   useEffect(() => {
-    void loadDomains()
-  }, [loadDomains])
-
-  useEffect(() => {
     void loadSessionCategories()
   }, [loadSessionCategories])
 
   useEffect(() => {
+    void loadDomains()
     return () => {
       if (reloadTimerRef.current) {
         window.clearTimeout(reloadTimerRef.current)
@@ -315,18 +256,14 @@ export function SessionList({
   useEffect(() => {
     pendingQuestReloadRef.current = false
     pendingSessionCategoryReloadRef.current = false
-    pendingDomainReloadRef.current = false
-    sessionCategoryRequestSeqRef.current += 1
     if (reloadTimerRef.current) {
       window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = null
     }
 
     const previousProjectId = previousActiveProjectIdRef.current
-    if (!activeProjectId) {
-      setSidebarTab('projects')
-    } else if (previousProjectId !== activeProjectId) {
-      setSidebarTab('sessions')
+    if (previousProjectId !== activeProjectId) {
+      setUncategorizedSessionsExpanded(true)
     }
     previousActiveProjectIdRef.current = activeProjectId
   }, [activeProjectId])
@@ -339,24 +276,19 @@ export function SessionList({
       const shouldReloadSessionCategories = activeProjectId != null
         && event.type === 'project_updated'
         && event.data.projectId === activeProjectId
-      const shouldReloadDomains = event.type === 'domain_updated' || event.type === 'domain_deleted'
-      if (!shouldReloadQuests && !shouldReloadSessionCategories && !shouldReloadDomains) return
+      if (!shouldReloadQuests && !shouldReloadSessionCategories) return
 
       if (shouldReloadQuests) pendingQuestReloadRef.current = true
       if (shouldReloadSessionCategories) pendingSessionCategoryReloadRef.current = true
-      if (shouldReloadDomains) pendingDomainReloadRef.current = true
       if (reloadTimerRef.current) window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = window.setTimeout(() => {
         const nextQuestReload = pendingQuestReloadRef.current
         const nextSessionCategoryReload = pendingSessionCategoryReloadRef.current
-        const nextDomainReload = pendingDomainReloadRef.current
         pendingQuestReloadRef.current = false
         pendingSessionCategoryReloadRef.current = false
-        pendingDomainReloadRef.current = false
 
         if (nextQuestReload) void loadQuests()
         if (nextSessionCategoryReload) void loadSessionCategories()
-        if (nextDomainReload) void loadDomains()
       }, 300)
     },
     {
@@ -388,6 +320,12 @@ export function SessionList({
     setRenameValue(displayQuestName(quest, t))
   }, [t])
 
+  function openProject(projectId: string) {
+    onSelectProject(projectId)
+    onNavigate?.()
+    navigate(`/projects/${projectId}`)
+  }
+
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
     setError(null)
@@ -407,16 +345,7 @@ export function SessionList({
     setProjectDomainId('')
     setNewProjectModalOpen(false)
     await onProjectsChanged()
-    onNavigate?.()
     navigate(`/projects/${result.data.id}`)
-  }
-
-  function openProject(projectId: string) {
-    onSelectProject(projectId)
-    setProjectPickerOpen(false)
-    setSidebarTab('sessions')
-    onNavigate?.()
-    navigate(`/projects/${projectId}`)
   }
 
   async function handleCreateQuest(kind: Quest['kind']) {
@@ -630,14 +559,19 @@ export function SessionList({
     )
   }
 
-  function renderSessionCategorySection(category: SessionCategory, quests: Quest[]) {
-    const expanded = !category.collapsed
+  function renderSessionFolderSection(
+    folderKey: string,
+    label: string,
+    quests: Quest[],
+    expanded: boolean,
+    onToggle: () => void,
+  ) {
     return (
-      <div key={category.id} className="pluse-sidebar-category-group">
+      <div key={folderKey} className="pluse-sidebar-category-group">
         <button
           type="button"
           className={`pluse-sidebar-item pluse-sidebar-row pluse-sidebar-category-row${expanded ? ' is-expanded' : ''}`}
-          onClick={() => void handleToggleSessionCategoryCollapsed(category.id, !category.collapsed)}
+          onClick={onToggle}
           aria-expanded={expanded}
         >
           <div className="pluse-sidebar-item-main pluse-sidebar-category-main">
@@ -648,7 +582,7 @@ export function SessionList({
               ) : (
                 <FolderIcon className="pluse-icon pluse-sidebar-leading-icon is-folder" />
               )}
-              <strong title={category.name}>{category.name}</strong>
+              <strong title={label}>{label}</strong>
             </div>
             <div className="pluse-sidebar-item-meta">
               <span className="pluse-sidebar-category-count">{quests.length}</span>
@@ -664,6 +598,16 @@ export function SessionList({
     )
   }
 
+  function renderSessionCategorySection(category: SessionCategory, quests: Quest[]) {
+    return renderSessionFolderSection(
+      category.id,
+      category.name,
+      quests,
+      !category.collapsed,
+      () => void handleToggleSessionCategoryCollapsed(category.id, !category.collapsed),
+    )
+  }
+
   return (
     <>
     <aside className="pluse-sidebar" ref={sidebarRef}>
@@ -674,10 +618,6 @@ export function SessionList({
       </div>
 
       <div className="pluse-sidebar-body">
-        <div className="pluse-sidebar-project-context">
-          <span className="pluse-sidebar-project-context-domain">{sidebarContextLabel}</span>
-        </div>
-
         <div className="pluse-sidebar-tabs pluse-sidebar-tabs-vertical" role="tablist" aria-label={t('侧栏视图')}>
           <button
             type="button"
@@ -693,6 +633,27 @@ export function SessionList({
           >
             {t('会话')}
           </button>
+          <button
+            type="button"
+            className={`pluse-sidebar-tab${sidebarTab === 'todo' ? ' is-active' : ''}`}
+            onClick={() => setSidebarTab('todo')}
+          >
+            {t('待办')}
+          </button>
+          <button
+            type="button"
+            className={`pluse-sidebar-tab${sidebarTab === 'reminder' ? ' is-active' : ''}`}
+            onClick={() => setSidebarTab('reminder')}
+          >
+            {t('提醒')}
+          </button>
+          <button
+            type="button"
+            className={`pluse-sidebar-tab${sidebarTab === 'check_in' ? ' is-active' : ''}`}
+            onClick={() => setSidebarTab('check_in')}
+          >
+            {t('打卡')}
+          </button>
         </div>
 
         {sidebarTab === 'projects' ? (
@@ -706,91 +667,30 @@ export function SessionList({
             onCreateProject={() => setNewProjectModalOpen(true)}
             onNavigate={onNavigate}
           />
+        ) : sidebarTab === 'todo' || sidebarTab === 'reminder' || sidebarTab === 'check_in' ? (
+          <TodoPanel
+            projectId={activeProjectId}
+            projectName={activeProject?.name ?? null}
+            projects={projects}
+            activeQuestId={activeQuestId}
+            onRequestClose={onRequestClose}
+            embedded
+            initialTab={sidebarTab === 'todo' ? 'human' : sidebarTab}
+          />
         ) : (
           <>
-            <div className="pluse-sidebar-project-context pluse-sidebar-project-context-inline">
-              <div className="pluse-project-switcher">
-                <button
-                  type="button"
-                  className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
-                  onClick={() => setProjectPickerOpen((value) => !value)}
-                  aria-haspopup="listbox"
-                  aria-expanded={projectPickerOpen}
-                >
-                  <div className="pluse-project-switcher-label">
-                    <strong>{activeProject?.name ?? t('选择项目')}</strong>
-                    <span>{activeProjectContextLabel}</span>
-                  </div>
-                  <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
-                </button>
-
-                {projectPickerOpen ? (
-                  <div className="pluse-project-picker">
-                    <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
-                      {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
-                        const groupOpen = expandedProjectPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
-                        return (
-                        <section key={group.key} className="pluse-project-picker-group">
-                          <button
-                            type="button"
-                            className="pluse-project-picker-group-head"
-                            onClick={() => setExpandedProjectPriorityGroups((current) => ({
-                              ...current,
-                              [group.key]: !(current[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')),
-                            }))}
-                          >
-                            <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
-                            <span>{t('{count} 个项目', { count: group.projects.length })}</span>
-                          </button>
-                          {groupOpen ? group.projects.map((project) => (
-                            <button
-                              key={project.id}
-                              type="button"
-                              className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
-                              onClick={() => openProject(project.id)}
-                            >
-                              <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
-                              <div className="pluse-project-picker-item-text">
-                                <strong>{project.name}</strong>
-                                <span className="pluse-project-picker-item-meta">
-                                  <span>{projectDomainName(project, domains, t)}</span>
-                                  <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
-                                </span>
-                              </div>
-                            </button>
-                          )) : null}
-                        </section>
-                        )
-                      }) : (
-                        <p className="pluse-domain-empty">{t('暂无项目')}</p>
-                      )}
-                    </div>
-                    <div className="pluse-project-picker-footer">
-                      <button
-                        type="button"
-                        className="pluse-project-picker-add"
-                        onClick={() => {
-                          setProjectPickerOpen(false)
-                          setSidebarTab('projects')
-                        }}
-                        aria-label={t('领域管理/项目地图')}
-                        title={t('领域管理/项目地图')}
-                      >
-                        <RouteIcon className="pluse-icon" />
-                        <span>{t('领域管理/项目地图')}</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
             <div className="pluse-sidebar-scroll-pane">
               <section className="pluse-sidebar-section pluse-sidebar-section-list">
                 <div className="pluse-sidebar-list pluse-sidebar-list-dense">
                   {pinnedSessions.map((quest) => renderQuest(quest))}
                   {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
-                  {categorizedSessionSections.ungrouped.map((quest) => renderQuest(quest))}
+                  {categorizedSessionSections.ungrouped.length > 0 ? renderSessionFolderSection(
+                    'uncategorized-sessions',
+                    t('未分类'),
+                    categorizedSessionSections.ungrouped,
+                    uncategorizedSessionsExpanded,
+                    () => setUncategorizedSessionsExpanded((value) => !value),
+                  ) : null}
                   {sessions.length === 0 ? (
                     <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
                   ) : null}
@@ -842,67 +742,6 @@ export function SessionList({
 
     </aside>
 
-    {/* 新建项目 Modal — 全局弹窗，渲染到 body */}
-    {newProjectModalOpen ? createPortal(
-      <div className="pluse-modal-backdrop" onClick={() => setNewProjectModalOpen(false)}>
-        <section
-          className="pluse-modal-panel pluse-new-project-modal"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <h2>{t('新建项目')}</h2>
-          <form className="pluse-sidebar-form" onSubmit={handleCreateProject}>
-            <input
-              value={projectName}
-              onChange={(event) => setProjectName(event.target.value)}
-              placeholder={t('项目名称（可选）')}
-              autoFocus
-            />
-            <input
-              value={projectDir}
-              onChange={(event) => setProjectDir(event.target.value)}
-              placeholder={t('工作目录，如 ~/projects/xxx')}
-              required
-            />
-            <textarea
-              value={projectGoal}
-              onChange={(event) => setProjectGoal(event.target.value)}
-              placeholder={t('项目目标（可选）')}
-              rows={2}
-            />
-            <label>
-              <span className="pluse-form-label">{t('领域')}</span>
-              <select value={projectDomainId} onChange={(event) => setProjectDomainId(event.target.value)}>
-                <option value="">{t('未分组')}</option>
-                {domains.map((domain) => (
-                  <option key={domain.id} value={domain.id}>{domain.name}</option>
-                ))}
-              </select>
-            </label>
-            {error ? <p className="pluse-error">{error}</p> : null}
-            <div className="pluse-domain-form-actions">
-              <button type="submit" className="pluse-button">
-                {t('创建')}
-              </button>
-              <button
-                type="button"
-                className="pluse-button pluse-button-ghost"
-                onClick={() => {
-                  setNewProjectModalOpen(false)
-                  setProjectName('')
-                  setProjectDir('')
-                  setProjectGoal('')
-                  setProjectDomainId('')
-                  setError(null)
-                }}
-              >
-                {t('取消')}
-              </button>
-            </div>
-          </form>
-        </section>
-      </div>,
-      document.body,
-    ) : null}
     </>
   )
 }
