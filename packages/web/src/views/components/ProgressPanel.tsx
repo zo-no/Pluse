@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react'
+import { useEffect, useRef, useMemo, type CSSProperties } from 'react'
 import type { QuestPlanRow } from '@/views/utils/todo'
 import { useQuestPlan } from '@/views/hooks/useQuestPlan'
 
@@ -273,6 +273,22 @@ function QuestPlanSurface({
   surface: ProgressSurface
 }) {
   const { rows, summary, loading, error, setTodoDone } = useQuestPlan(questId)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const hasScrolledRef = useRef(false)
+
+  // 首次加载完成后滚到底部（显示最新步骤）
+  useEffect(() => {
+    if (loading || rows.length === 0) return
+    if (hasScrolledRef.current) return
+    hasScrolledRef.current = true
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [loading, rows.length])
+
+  // questId 切换时重置，确保切换会话后重新滚到底
+  useEffect(() => {
+    hasScrolledRef.current = false
+  }, [questId])
 
   const summaryText = useMemo(() => {
     const parts: string[] = []
@@ -340,7 +356,7 @@ function QuestPlanSurface({
       <ProgressSummaryBar summary={summary} />
 
       {/* Items */}
-      <div className="pluse-progress-list-scroll">
+      <div className="pluse-progress-list-scroll" ref={scrollRef}>
         <QuestPlanSequence rows={rows} onToggle={handleToggle} />
       </div>
     </div>
