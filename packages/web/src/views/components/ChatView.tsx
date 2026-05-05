@@ -25,6 +25,15 @@ const DRAWING_MODEL_KEYWORDS = ['image', 'dalle', 'flux', 'imagen', 'midjourney'
 const DRAWING_MARKDOWN_IMAGE_REGEX = /!\[[^\]]*\]\([^)]+\)|\bhttps?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|svg|bmp)\b/i
 const DRAWING_TOOL_RESULT_IMAGE_REGEX = /\b\.(?:png|jpe?g|gif|webp|svg|bmp)\b/i
 
+const PLUSE_ASSET_REGEX = /\[pluse-asset:(asset_[^\]]+)\]/g
+
+/** 将消息内容中的 [pluse-asset:asset_xxx] 标记替换为 Markdown 图片语法 */
+function expandPluseAssets(content: string): string {
+  return content.replace(PLUSE_ASSET_REGEX, (_, id: string) => {
+    return `![asset](/api/assets/${id}/file)`
+  })
+}
+
 interface ChatViewProps {
   questId: string
   initialQuest?: Quest | null
@@ -305,7 +314,7 @@ function MessageEventCard({
         ) : null}
       </div>
       <div className="pluse-assistant-copy pluse-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{event.content ?? ''}</ReactMarkdown>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{expandPluseAssets(event.content ?? '')}</ReactMarkdown>
       </div>
     </div>
   )

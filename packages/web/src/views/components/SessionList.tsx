@@ -107,12 +107,14 @@ const QuestItem = memo(function QuestItem({
           ) : null}
           <strong>{displayQuestName(quest, t)}</strong>
         </div>
-        <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
-          <span className="pluse-meta-inline pluse-sidebar-item-time">
-            <ClockIcon className="pluse-icon pluse-inline-icon" />
-            {formatSidebarTime(quest.updatedAt, t)}
-          </span>
-        </div>
+        {archived ? (
+          <div className="pluse-sidebar-item-meta" title={formatSidebarAbsoluteTime(quest.updatedAt, locale)}>
+            <span className="pluse-meta-inline pluse-sidebar-item-time">
+              <ClockIcon className="pluse-icon pluse-inline-icon" />
+              {formatSidebarTime(quest.updatedAt, t)}
+            </span>
+          </div>
+        ) : null}
       </Link>
       <div className="pluse-sidebar-item-actions">
         {!archived ? (
@@ -163,7 +165,7 @@ export function SessionList({
   const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
   const [uncategorizedSessionsExpanded, setUncategorizedSessionsExpanded] = useState(true)
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions' | 'todo' | 'reminder' | 'check_in'>(() => (activeProjectId ? 'sessions' : 'projects'))
+  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions' | 'automation' | 'todo' | 'reminder' | 'check_in'>(() => (activeProjectId ? 'sessions' : 'projects'))
   const [domains, setDomains] = useState<Domain[]>([])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -201,7 +203,9 @@ export function SessionList({
 
   const loadQuests = useCallback(async () => {
     if (!activeProjectId) {
-      setSessions([])
+      // 全部视图：只加载所有项目中 pinned 的会话
+      const result = await api.getQuests({ kind: 'session', deleted: false })
+      if (result.ok) setSessions(result.data.filter((q) => q.pinned))
       setArchivedSessions([])
       return
     }
@@ -270,9 +274,8 @@ export function SessionList({
 
   useSseEvent(
     (event) => {
-      const shouldReloadQuests = activeProjectId != null
-        && (event.type === 'quest_updated' || event.type === 'quest_deleted')
-        && event.data.projectId === activeProjectId
+      const shouldReloadQuests = (event.type === 'quest_updated' || event.type === 'quest_deleted')
+        && (activeProjectId == null || event.data.projectId === activeProjectId)
       const shouldReloadSessionCategories = activeProjectId != null
         && event.type === 'project_updated'
         && event.data.projectId === activeProjectId
@@ -511,6 +514,23 @@ export function SessionList({
     }
   }, [sessionCategories, unpinnedSessions])
 
+  // 全部视图：按项目分组展示 pinned 会话
+  const allProjectPinnedSections = useMemo(() => {
+    if (activeProjectId) return null
+    const grouped = new Map<string, Quest[]>()
+    for (const quest of sessions) {
+      const pid = quest.projectId ?? ''
+      const current = grouped.get(pid)
+      if (current) current.push(quest)
+      else grouped.set(pid, [quest])
+    }
+    return Array.from(grouped.entries()).map(([projectId, quests]) => ({
+      projectId,
+      projectName: projects.find((p) => p.id === projectId)?.name ?? projectId,
+      quests,
+    }))
+  }, [activeProjectId, sessions, projects])
+
   const archivedSessionsByDate = useMemo(() => {
     const groups = new Map<string, Quest[]>()
     for (const quest of archivedSessions) {
@@ -682,18 +702,39 @@ export function SessionList({
             <div className="pluse-sidebar-scroll-pane">
               <section className="pluse-sidebar-section pluse-sidebar-section-list">
                 <div className="pluse-sidebar-list pluse-sidebar-list-dense">
-                  {pinnedSessions.map((quest) => renderQuest(quest))}
-                  {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
-                  {categorizedSessionSections.ungrouped.length > 0 ? renderSessionFolderSection(
-                    'uncategorized-sessions',
-                    t('未分类'),
-                    categorizedSessionSections.ungrouped,
-                    uncategorizedSessionsExpanded,
-                    () => setUncategorizedSessionsExpanded((value) => !value),
-                  ) : null}
-                  {sessions.length === 0 ? (
-                    <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
-                  ) : null}
+                  {allProjectPinnedSections ? (
+                    // 全部视图：按项目分组显示 pinned 会话
+                    <>
+                      {allProjectPinnedSections.map(({ projectId, projectName, quests }) =>
+                        renderSessionFolderSection(
+                          `project-${projectId}`,
+                          projectName,
+                          quests,
+                          true,
+                          () => {},
+                        )
+                      )}
+                      {allProjectPinnedSections.length === 0 ? (
+                        <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
+                      ) : null}
+                    </>
+                  ) : (
+                    // 单项目视图：正常显示
+                    <>
+                      {pinnedSessions.map((quest) => renderQuest(quest))}
+                      {categorizedSessionSections.categories.map(({ category, quests }) => renderSessionCategorySection(category, quests))}
+                      {categorizedSessionSections.ungrouped.length > 0 ? renderSessionFolderSection(
+                        'uncategorized-sessions',
+                        t('未分类'),
+                        categorizedSessionSections.ungrouped,
+                        uncategorizedSessionsExpanded,
+                        () => setUncategorizedSessionsExpanded((value) => !value),
+                      ) : null}
+                      {sessions.length === 0 ? (
+                        <div className="pluse-empty-state pluse-sidebar-empty">{t('还没有内容')}</div>
+                      ) : null}
+                    </>
+                  )}
 
                   {archivedSessions.length > 0 ? (
                     <div className="pluse-sidebar-archive-group">

@@ -131,13 +131,15 @@ const RUN_KILL_GRACE_MS = parsePositiveInt(process.env['PLUSE_RUN_KILL_GRACE_MS'
 const AUTO_RENAME_TIMEOUT_MS = parsePositiveInt(process.env['PLUSE_AUTO_RENAME_TIMEOUT_MS'], 30_000)
 const activeRunners = new Map<string, ActiveRunner>()
 const AUTO_RENAME_SYSTEM_PROMPT = [
-  'You generate short titles for Pluse session quests.',
-  'Return only the title text.',
-  'Use the conversation language when it is clear.',
-  'Be concrete and specific, not generic.',
-  'For Chinese titles, prefer 4 to 8 characters.',
-  'For non-Chinese titles, prefer 2 to 6 words.',
-  'Do not use quotes, prefixes, markdown, or trailing punctuation unless necessary.',
+  'You generate short, action-oriented titles for Pluse session quests.',
+  'Return only the title text, nothing else.',
+  'PRIORITY: Capture what the user is DOING, not just the topic.',
+  '  - Lead with a verb+object when possible (e.g. "修复登录跳转 bug", "设计用户注册流程", "分析 Q1 销售数据")',
+  '  - If the first user message contains a clear intent or task, use that as the anchor.',
+  'Language: match the primary language of the conversation.',
+  'Length: Chinese 3–6 characters preferred; English/mixed 2–5 words preferred.',
+  'Avoid generic filler words: never use "讨论", "问题", "帮助", "关于", "chat", "question", "help", "topic".',
+  'Do not use quotes, markdown, emoji, prefixes, or trailing punctuation.',
 ].join('\n')
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -530,10 +532,11 @@ function buildAutoRenameSnapshot(questId: string): AutoRenameSnapshot | null {
 
 function buildAutoRenamePrompt(snapshot: AutoRenameSnapshot): string {
   return [
-    'Generate a short title for this Pluse session based on the first round conversation.',
+    'Generate a short title that captures what the user is DOING in this session.',
+    'Focus on the user\'s intent from their first message — prefer "verb + object" phrasing.',
     'Conversation:',
     snapshot.transcript,
-    'Return only the title.',
+    'Return only the title text.',
   ].join('\n\n')
 }
 

@@ -219,12 +219,14 @@ function sortCheckIns(items: CheckIn[]): CheckIn[] {
 function formatEmptyMessage(
   source: SourceTab,
   t?: (key: string) => string,
+  scope?: TodoPanelScope,
 ): string {
+  const isProject = scope === 'project'
   if (source === 'progress') return t ? t('当前会话尚无计划项。') : '当前会话尚无计划项。'
-  if (source === 'reminder') return t ? t('当前范围暂无提醒。') : '当前范围暂无提醒。'
-  if (source === 'check_in') return t ? t('当前范围暂无打卡。') : '当前范围暂无打卡。'
+  if (source === 'reminder') return t ? (isProject ? t('该项目暂无提醒。') : t('当前暂无提醒。')) : (isProject ? '该项目暂无提醒。' : '当前暂无提醒。')
+  if (source === 'check_in') return t ? (isProject ? t('该项目暂无打卡。') : t('当前暂无打卡。')) : (isProject ? '该项目暂无打卡。' : '当前暂无打卡。')
   if (source === 'automation') return t ? t('当前项目暂无自动化。') : '当前项目暂无自动化。'
-  return t ? t('当前范围暂无待办。') : '当前范围暂无待办。'
+  return t ? (isProject ? t('该项目暂无待办。') : t('当前暂无待办。')) : (isProject ? '该项目暂无待办。' : '当前暂无待办。')
 }
 
 function buildProjectRailGroups(params: {
@@ -796,6 +798,9 @@ export function TodoPanel({
   const loadData = useCallback(async () => {
     const requestId = dataRequestSeqRef.current + 1
     dataRequestSeqRef.current = requestId
+    // project scope：按当前项目过滤，只拉取与该项目相关的数据
+    const todoProjectFilter = scope === 'project' && projectId ? projectId : undefined
+    const contextProjectId = scope === 'project' ? projectId ?? undefined : undefined
     const [
       [
         globalTodoResult,
@@ -806,10 +811,10 @@ export function TodoPanel({
       projectResults,
     ] = await Promise.all([
       Promise.all([
-        api.getTodos({ deleted: false }),
-        api.getTodos({ deleted: true }),
-        api.getReminders({ order: 'attention' }),
-        api.getCheckIns({ order: 'attention' }),
+        api.getTodos({ deleted: false, projectId: todoProjectFilter }),
+        api.getTodos({ deleted: true, projectId: todoProjectFilter }),
+        api.getReminders({ order: 'attention', projectId: contextProjectId }),
+        api.getCheckIns({ order: 'attention', projectId: contextProjectId }),
       ]),
       projectId ? api.getProjectTags(projectId) : Promise.resolve(null),
     ])
@@ -845,7 +850,7 @@ export function TodoPanel({
 
     setError(null)
     setProjectTags(projectResults.ok ? projectResults.data.tags : [])
-  }, [projectId])
+  }, [projectId, scope])
 
   useEffect(() => {
     void loadData()
@@ -903,9 +908,15 @@ export function TodoPanel({
 
   useEffect(() => {
     if (!activeQuestId && sourceTab === 'progress') {
-      setSourceTab('human')
+      setSourceTab(scope === 'project' ? 'automation' : 'human')
     }
-  }, [activeQuestId, sourceTab])
+  }, [activeQuestId, scope, sourceTab])
+
+  useEffect(() => {
+    if (scope === 'project' && (sourceTab === 'human' || sourceTab === 'reminder' || sourceTab === 'check_in')) {
+      setSourceTab(activeQuestId ? 'progress' : 'automation')
+    }
+  }, [activeQuestId, scope, sourceTab])
 
   useSseEvent(
     (event) => {
@@ -1507,33 +1518,37 @@ export function TodoPanel({
                 {t('Progress')}
                 {progressCount > 0 ? <span className="pluse-tab-count">{progressCount}</span> : null}
               </button>
-              <button
-                type="button"
-                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab('human')}
-                aria-selected={sourceTab === 'human'}
-              >
-                {t('待办')}
-                {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
-              </button>
-              <button
-                type="button"
-                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab('reminder')}
-                aria-selected={sourceTab === 'reminder'}
-              >
-                {t('提醒')}
-                {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
-              </button>
-              <button
-                type="button"
-                className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'check_in' ? ' is-active' : ''}`}
-                onClick={() => setSourceTab('check_in')}
-                aria-selected={sourceTab === 'check_in'}
-              >
-                {t('打卡')}
-                {checkInCount > 0 ? <span className="pluse-tab-count">{checkInCount}</span> : null}
-              </button>
+              {scope !== 'project' ? (
+                <>
+                  <button
+                    type="button"
+                    className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'human' ? ' is-active' : ''}`}
+                    onClick={() => setSourceTab('human')}
+                    aria-selected={sourceTab === 'human'}
+                  >
+                    {t('待办')}
+                    {humanCount > 0 ? <span className="pluse-tab-count">{humanCount}</span> : null}
+                  </button>
+                  <button
+                    type="button"
+                    className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
+                    onClick={() => setSourceTab('reminder')}
+                    aria-selected={sourceTab === 'reminder'}
+                  >
+                    {t('提醒')}
+                    {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
+                  </button>
+                  <button
+                    type="button"
+                    className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'check_in' ? ' is-active' : ''}`}
+                    onClick={() => setSourceTab('check_in')}
+                    aria-selected={sourceTab === 'check_in'}
+                  >
+                    {t('打卡')}
+                    {checkInCount > 0 ? <span className="pluse-tab-count">{checkInCount}</span> : null}
+                  </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'automation' ? ' is-active' : ''}`}
@@ -1592,6 +1607,9 @@ export function TodoPanel({
           <div className="pluse-task-list">
           {sourceTab === 'reminder' ? (
             <div className="pluse-note-list">
+              {scope === 'project' && projectName ? (
+                <p className="pluse-task-list-scope-kicker">{t('「{name}」的提醒', { name: projectName })}</p>
+              ) : null}
               {sortedReminders.map((reminder) => (
                 <ReminderRailItem
                   key={reminder.id}
@@ -1696,7 +1714,7 @@ export function TodoPanel({
                   {!hasGroupContent ? (
                     <div className="pluse-rail-empty pluse-task-empty-state">
                       <strong>{t('暂无任务')}</strong>
-                      <p>{formatEmptyMessage(sourceTab, t)}</p>
+                      <p>{formatEmptyMessage(sourceTab, t, scope)}</p>
                     </div>
                   ) : null}
                 </div>
@@ -1708,7 +1726,7 @@ export function TodoPanel({
           {!hasVisibleContent && projectRailGroups.length === 0 ? (
             <div className="pluse-rail-empty pluse-task-empty-state">
               <strong>{t('暂无任务')}</strong>
-              <p>{formatEmptyMessage(sourceTab, t)}</p>
+              <p>{formatEmptyMessage(sourceTab, t, scope)}</p>
             </div>
           ) : null}
 
@@ -1767,7 +1785,13 @@ export function TodoPanel({
               disabled={!projectId}
             >
               <PlusIcon className="pluse-icon" />
-              <span>{sourceTab === 'check_in' ? t('新建打卡') : t('新建待办')}</span>
+              <span>
+                {scope === 'project' && projectName
+                  ? (sourceTab === 'check_in'
+                    ? t('在「{name}」新建打卡', { name: projectName })
+                    : t('在「{name}」新建待办', { name: projectName }))
+                  : (sourceTab === 'check_in' ? t('新建打卡') : t('新建待办'))}
+              </span>
             </button>
           </section>
         ) : null}

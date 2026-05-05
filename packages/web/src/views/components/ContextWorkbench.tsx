@@ -1,29 +1,36 @@
 /**
  * ContextWorkbench — 右侧上下文工作台
  *
- * 统一 tab 层级：
- *   项目     — DomainSidebar（项目选择器）
- *   进度     — 当前会话 Pluse Plan 流水
- *   待办     — 项目/全局待办
- *   提醒     — 全局提醒
- *   打卡     — 全局打卡
- *   自动化   — 当前项目自动化任务
- *
- * TodoPanel(embedded) 负责"进度/待办/提醒/打卡/自动化"五个 tab 的内容渲染，
- * ContextWorkbench 统一管理外层 tab 按钮，通过 initialTab 驱动 TodoPanel 切换。
+ * tabs：进度 / 待办 / 提醒 / 打卡 / 自动化
+ * 所有内容均为当前项目/会话级别，头部展示当前项目切换器。
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import type { Domain, Project } from '@pluse/types'
+import type { Domain, Project, ProjectPriority } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
-import { PlusIcon } from './icons'
-import { DomainSidebar } from './DomainSidebar'
+import { RouteIcon } from './icons'
 import { TodoPanel } from './TodoPanel'
 
-type WorkbenchTab = 'projects' | 'progress' | 'human' | 'reminder' | 'check_in' | 'automation'
+const PROJECT_PRIORITY_ORDER: ProjectPriority[] = ['mainline', 'priority', 'normal', 'low']
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
+}
+
+function sortProjects(list: Project[]): Project[] {
+  return [...list].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+  })
+}
+
+type WorkbenchTab = 'progress' | 'automation'
 
 interface ContextWorkbenchProps {
   projectId: string | null
@@ -47,7 +54,10 @@ export function ContextWorkbench({
   const { t } = useI18n()
   const navigate = useNavigate()
 
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>('projects')
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('progress')
+  const prevQuestIdRef = useRef<string | null | undefined>(activeQuestId)
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [expandedPriorityGroups, setExpandedPriorityGroups] = useState<Record<string, boolean>>({})
   const [domains, setDomains] = useState<Domain[]>([])
   const [newProjectModalOpen, setNewProjectModalOpen] = useState(false)
   const [projectName_, setProjectName_] = useState('')
@@ -76,10 +86,16 @@ export function ContextWorkbench({
     reloadTimerRef.current = window.setTimeout(() => { void loadDomains() }, 300)
   })
 
-  // 切换会话时自动跳到进度 tab
+  // 切换到新会话时自动跳到进度 tab；无会话时若停留在进度 tab 则回退到自动化
   useEffect(() => {
-    if (activeQuestId) setActiveTab('progress')
-  }, [activeQuestId])
+    const prev = prevQuestIdRef.current
+    prevQuestIdRef.current = activeQuestId
+    if (activeQuestId && activeQuestId !== prev) {
+      setActiveTab('progress')
+    } else if (!activeQuestId && activeTab === 'progress') {
+      setActiveTab('automation')
+    }
+  }, [activeQuestId, activeTab])
 
   async function handleCreateProject(event: FormEvent) {
     event.preventDefault()
@@ -105,25 +121,126 @@ export function ContextWorkbench({
 
   function handleSelectProject(pid: string) {
     onSelectProject(pid)
+    setProjectPickerOpen(false)
     setActiveTab('progress')
+    navigate(`/projects/${pid}`)
   }
 
-  // TodoPanel embedded 模式下 initialTab 映射
-  const todoInitialTab = activeTab === 'progress' ? 'progress'
-    : activeTab === 'reminder' ? 'reminder'
-    : activeTab === 'check_in' ? 'check_in'
-    : activeTab === 'automation' ? 'automation'
-    : 'human'
+  const activeProject = useMemo(
+    () => projects.find((p) => p.id === projectId) ?? null,
+    [projects, projectId],
+  )
+
+  const activeDomainName = useMemo(() => {
+    if (!activeProject?.domainId) return t('未分组')
+    return domains.find((d) => d.id === activeProject.domainId)?.name ?? t('未分组')
+  }, [activeProject, domains, t])
+
+  const activeProjectContextLabel = useMemo(() => (
+    activeProject
+      ? `${projectPriorityLabel(activeProject.priority, t)} · ${activeDomainName}`
+      : activeDomainName
+  ), [activeDomainName, activeProject, t])
+
+  type ProjectPickerGroup = { key: string; label: string; priority: ProjectPriority; projects: Project[] }
+  const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() =>
+    PROJECT_PRIORITY_ORDER
+      .map((priority) => ({
+        key: priority,
+        label: projectPriorityLabel(priority, t),
+        priority,
+        projects: sortProjects(projects.filter((p) => p.priority === priority)),
+      }))
+      .filter((g) => g.projects.length > 0),
+  [projects, t])
+
+  function projectDomainName(project: Project): string {
+    if (!project.domainId) return t('未分组')
+    return domains.find((d) => d.id === project.domainId)?.name ?? t('未分组')
+  }
 
   return (
     <>
       <aside className="pluse-rail pluse-context-workbench">
-        {/* 头部：统一 tab 控制层 */}
+        {/* 头部：项目上下文 + tab 控制 */}
         <div className="pluse-rail-head pluse-rail-head-sidebar">
           <div className="pluse-sidebar-project-context pluse-workbench-project-context">
             <div className="pluse-workbench-project-strip">
-              <div className="pluse-workbench-project-copy">
-                <strong>{projectName || t('当前项目')}</strong>
+              <div className="pluse-project-switcher pluse-rail-project-switcher">
+                <button
+                  type="button"
+                  className={`pluse-project-switcher-btn${projectPickerOpen ? ' is-open' : ''}`}
+                  onClick={() => setProjectPickerOpen((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={projectPickerOpen}
+                >
+                  <div className="pluse-project-switcher-label">
+                    <strong>{activeProject?.name ?? t('选择项目')}</strong>
+                    <span>{activeProjectContextLabel}</span>
+                  </div>
+                  <span className="pluse-project-switcher-chevron" aria-hidden="true">{projectPickerOpen ? '▴' : '▾'}</span>
+                </button>
+
+                {projectPickerOpen ? (
+                  <div className="pluse-project-picker">
+                    <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
+                      {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
+                        const groupOpen = expandedPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
+                        return (
+                          <section key={group.key} className="pluse-project-picker-group">
+                            <button
+                              type="button"
+                              className="pluse-project-picker-group-head"
+                              onClick={() => setExpandedPriorityGroups((cur) => ({
+                                ...cur,
+                                [group.key]: !(cur[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')),
+                              }))}
+                            >
+                              <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
+                              <span>{t('{count} 个项目', { count: group.projects.length })}</span>
+                            </button>
+                            {groupOpen ? group.projects.map((project) => (
+                              <button
+                                key={project.id}
+                                type="button"
+                                className={`pluse-project-picker-item${project.id === projectId ? ' is-active' : ''}`}
+                                onClick={() => handleSelectProject(project.id)}
+                              >
+                                <span className="pluse-project-avatar is-compact" aria-hidden="true">
+                                  {project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}
+                                </span>
+                                <div className="pluse-project-picker-item-text">
+                                  <strong>{project.name}</strong>
+                                  <span className="pluse-project-picker-item-meta">
+                                    <span>{projectDomainName(project)}</span>
+                                    <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            )) : null}
+                          </section>
+                        )
+                      }) : (
+                        <p className="pluse-domain-empty">{t('暂无项目')}</p>
+                      )}
+                    </div>
+                    <div className="pluse-project-picker-footer">
+                      <button
+                        type="button"
+                        className="pluse-project-picker-add"
+                        onClick={() => {
+                          setProjectPickerOpen(false)
+                          if (projectId) navigate(`/projects/${projectId}`)
+                        }}
+                        aria-label={t('项目概览')}
+                        title={t('项目概览')}
+                      >
+                        <RouteIcon className="pluse-icon" />
+                        <span>{t('项目概览')}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -132,15 +249,6 @@ export function ContextWorkbench({
             role="tablist"
             aria-label={t('上下文工作台')}
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'projects'}
-              className={`pluse-sidebar-tab pluse-rail-object-tab${activeTab === 'projects' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('projects')}
-            >
-              {t('项目')}
-            </button>
             <button
               type="button"
               role="tab"
@@ -153,33 +261,7 @@ export function ContextWorkbench({
             >
               {t('进度')}
             </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'human'}
-              className={`pluse-sidebar-tab pluse-rail-object-tab${activeTab === 'human' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('human')}
-            >
-              {t('待办')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'reminder'}
-              className={`pluse-sidebar-tab pluse-rail-object-tab${activeTab === 'reminder' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('reminder')}
-            >
-              {t('提醒')}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'check_in'}
-              className={`pluse-sidebar-tab pluse-rail-object-tab${activeTab === 'check_in' ? ' is-active' : ''}`}
-              onClick={() => setActiveTab('check_in')}
-            >
-              {t('打卡')}
-            </button>
+
             <button
               type="button"
               role="tab"
@@ -190,35 +272,21 @@ export function ContextWorkbench({
               {t('自动化')}
             </button>
           </div>
-          <div className="pluse-rail-content-divider" aria-hidden="true" />
         </div>
 
-        {/* 内容区 */}
+        {/* 内容区：进度/待办/提醒/打卡/自动化 */}
         <div className="pluse-workbench-body">
-          {activeTab === 'projects' ? (
-            <DomainSidebar
-              domains={domains}
-              projects={projects}
-              activeProjectId={projectId}
-              onSelectProject={handleSelectProject}
-              onProjectsChanged={onProjectsChanged}
-              onDomainsChanged={loadDomains}
-              onCreateProject={() => setNewProjectModalOpen(true)}
-              onNavigate={onRequestClose}
-            />
-          ) : (
-            /* 进度/待办/提醒/打卡/自动化 — 由 TodoPanel embedded 统一承载 */
-            <TodoPanel
-              projectId={projectId}
-              projectName={projectName ?? null}
-              projects={projects}
-              activeQuestId={activeQuestId}
-              onRequestClose={onRequestClose}
-              onSelectProject={handleSelectProject}
-              embedded
-              initialTab={todoInitialTab}
-            />
-          )}
+          <TodoPanel
+            projectId={projectId}
+            projectName={projectName ?? null}
+            projects={projects}
+            activeQuestId={activeQuestId}
+            onRequestClose={onRequestClose}
+            onSelectProject={handleSelectProject}
+            embedded
+            scope="project"
+            initialTab={activeTab}
+          />
         </div>
       </aside>
 

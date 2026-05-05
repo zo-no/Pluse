@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander'
+import { assetCommand } from './controllers/cli/asset'
 import { authCommand } from './controllers/cli/auth'
 import { checkInCommand } from './controllers/cli/check-in'
 import { commandsCommand } from './controllers/cli/commands'
@@ -18,6 +19,7 @@ program
   .description('Pluse CLI — manage projects, quests, todos, and runs')
   .version('0.1.0')
 
+program.addCommand(assetCommand)
 program.addCommand(authCommand)
 program.addCommand(checkInCommand)
 program.addCommand(commandsCommand)

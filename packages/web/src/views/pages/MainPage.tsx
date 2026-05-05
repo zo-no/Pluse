@@ -1513,10 +1513,12 @@ function WorkspaceHeader(props: {
   overlayOpen?: boolean
   hideContext?: boolean
   sidebarVisible: boolean
+  railVisible: boolean
   showSidebarToggle: boolean
   showSettingsToggle: boolean
   onToggleTheme: () => void
-  onToggleSidebar: () => void
+  onToggleLeftSidebar: () => void
+  onToggleRightRail: () => void
   onOpenSettings: () => void
   onOpenWorkspace: () => void
 }) {
@@ -1541,7 +1543,7 @@ function WorkspaceHeader(props: {
         <button
           type="button"
           className="pluse-icon-button pluse-mobile-only"
-          onClick={props.onToggleSidebar}
+          onClick={props.onToggleLeftSidebar}
           aria-label={t('打开侧栏')}
           title={t('打开侧栏')}
         >
@@ -1596,8 +1598,8 @@ function WorkspaceHeader(props: {
         {props.showSidebarToggle ? (
           <button
             type="button"
-            className={`pluse-icon-button pluse-header-action-icon${props.sidebarVisible ? ' is-active' : ''}`}
-            onClick={props.onToggleSidebar}
+            className={`pluse-icon-button pluse-header-action-icon${props.railVisible ? ' is-active' : ''}`}
+            onClick={props.onToggleRightRail}
             aria-label={t('切换侧栏')}
             title={t('切换侧栏')}
           >
@@ -1630,6 +1632,7 @@ function Shell({
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 861 : true)
   const [desktopSidebarVisible, setDesktopSidebarVisible] = useState(true)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const [mobileRailOpen, setMobileRailOpen] = useState(false)
   const projectsReloadTimerRef = useRef<number | null>(null)
 
   const activeQuestId = activeQuest?.id ?? (location.pathname.startsWith('/quests/') ? location.pathname.split('/')[2] : null)
@@ -1644,6 +1647,7 @@ function Shell({
   const routeState = location.state as QuestRouteState | null
   const backgroundLocation = routeState?.backgroundLocation ?? null
   const sidebarVisible = isDesktop ? desktopSidebarVisible : mobileSidebarOpen
+  const railVisible = isDesktop ? true : mobileRailOpen
   const isSessionRoute = activeQuest?.kind === 'session'
 
   useEffect(() => {
@@ -1710,13 +1714,14 @@ function Shell({
 
   useEffect(() => {
     setMobileSidebarOpen(false)
+    setMobileRailOpen(false)
   }, [location.pathname])
 
   useEffect(() => {
-    const hasOverlay = mobileSidebarOpen
+    const hasOverlay = mobileSidebarOpen || mobileRailOpen
     document.body.classList.toggle('pluse-overlay-open', hasOverlay)
     return () => document.body.classList.remove('pluse-overlay-open')
-  }, [mobileSidebarOpen])
+  }, [mobileSidebarOpen, mobileRailOpen])
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 861px)')
@@ -1779,15 +1784,20 @@ function Shell({
         title={isSettingsRoute ? t('设置') : undefined}
         subtitle={isSettingsRoute ? t('全局系统 Prompt') : undefined}
         floating={!isDesktop && isQuestRoute && isSessionRoute}
-        overlayOpen={!isDesktop && mobileSidebarOpen}
-        hideContext={!isDesktop && mobileSidebarOpen}
+        overlayOpen={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
+        hideContext={!isDesktop && (mobileSidebarOpen || mobileRailOpen)}
         sidebarVisible={sidebarVisible}
-        showSidebarToggle={isDesktop}
+        railVisible={railVisible}
+        showSidebarToggle
         showSettingsToggle={!isSettingsRoute}
         onToggleTheme={onToggleTheme}
-        onToggleSidebar={() => {
+        onToggleLeftSidebar={() => {
           if (isDesktop) setDesktopSidebarVisible((value) => !value)
           else setMobileSidebarOpen((value) => !value)
+        }}
+        onToggleRightRail={() => {
+          if (isDesktop) setDesktopSidebarVisible((value) => !value)
+          else setMobileRailOpen((value) => !value)
         }}
         onOpenSettings={() => navigate('/settings')}
         onOpenWorkspace={() => {
@@ -1814,9 +1824,10 @@ function Shell({
       >
         <button
           type="button"
-          className={`pluse-backdrop${mobileSidebarOpen ? ' is-visible' : ''}`}
+          className={`pluse-backdrop${(mobileSidebarOpen || mobileRailOpen) ? ' is-visible' : ''}`}
           onClick={() => {
             setMobileSidebarOpen(false)
+            setMobileRailOpen(false)
           }}
           aria-label={t('关闭面板')}
           title={t('关闭面板')}
@@ -1881,7 +1892,7 @@ function Shell({
           </div>
         </main>
 
-        <div className="pluse-rail-shell is-open">
+        <div className={`pluse-rail-shell${railVisible ? ' is-open' : ''}`}>
           <ContextWorkbench
             projectId={activeProjectId}
             projectName={activeProject?.name ?? null}
@@ -1889,7 +1900,7 @@ function Shell({
             activeQuestId={activeQuestId}
             onSelectProject={handleProjectSelected}
             onProjectsChanged={loadProjects}
-            onRequestClose={() => setMobileSidebarOpen(false)}
+            onRequestClose={() => setMobileRailOpen(false)}
           />
         </div>
       </div>

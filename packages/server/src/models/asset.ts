@@ -44,3 +44,9 @@ export function getAsset(id: string): UploadedAsset | null {
   const row = db.query<AssetRow, [string]>('SELECT * FROM assets WHERE id = ?').get(id)
   return row ? rowToAsset(row) : null
 }
+
+export function listAssets(questId: string): UploadedAsset[] {
+  const db = getDb()
+  const rows = db.query<AssetRow, [string]>('SELECT * FROM assets WHERE quest_id = ? ORDER BY created_at DESC').all(questId)
+  return rows.map(rowToAsset)
+}
