@@ -1,15 +1,13 @@
-import { randomBytes } from 'node:crypto'
 import type { QuestOp } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'qop_' + randomBytes(8).toString('hex')
-}
+function genId(): string { return _genId('qop') }
 
 export function createQuestOp(input: Omit<QuestOp, 'id' | 'createdAt'>): QuestOp {
   const db = getDb()
   const id = genId()
-  const createdAt = new Date().toISOString()
+  const createdAt = now()
   db.run(
     `INSERT INTO quest_ops (
       id, quest_id, op, from_kind, to_kind, from_status, to_status, actor, note, created_at

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import type {
   AiPromptConfig,
   CreateQuestInput,
@@ -13,14 +12,9 @@ import type {
   UpdateQuestInput,
 } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'qst_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+function genId(): string { return _genId('qst') }
 
 type QuestRow = {
   id: string

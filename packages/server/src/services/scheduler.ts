@@ -3,6 +3,7 @@ import type { Quest } from '@pluse/types'
 import { getDb } from '../db'
 import { getQuest, listQuests, updateQuest } from '../models/quest'
 import { startQuestRun } from '../runtime/session-runner'
+import { now } from '../support/db-utils'
 
 const cronJobs = new Map<string, Cron>()
 let schedulerStarted = false
@@ -16,7 +17,7 @@ function stopJob(id: string): void {
 
 export function reconcile(): void {
   const db = getDb()
-  const ts = new Date().toISOString()
+  const ts = now()
   db.run(
     `UPDATE runs
         SET state = 'failed',
@@ -88,7 +89,7 @@ export function refreshQuestSchedule(quest: Quest): void {
     updateQuest(quest.id, {
       scheduleConfig: {
         ...(fresh.scheduleConfig ?? {}),
-        lastRunAt: new Date().toISOString(),
+        lastRunAt: now(),
         nextRunAt: job.nextRun()?.toISOString(),
       },
     })

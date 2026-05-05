@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import type {
   CheckIn,
   CheckInCreatedBy,
@@ -8,18 +7,10 @@ import type {
   UpdateCheckInInput,
 } from '@pluse/types'
 import { getDb } from '../db'
+import { genId, now } from '../support/db-utils'
 
-function genCheckInId(): string {
-  return 'cin_' + randomBytes(8).toString('hex')
-}
-
-function genRecordId(): string {
-  return 'chk_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+function genCheckInId(): string { return genId('cin') }
+function genRecordId(): string { return genId('chk') }
 
 type CheckInRow = {
   id: string

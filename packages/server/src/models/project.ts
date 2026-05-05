@@ -1,14 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import type { CreateProjectInput, Project, ProjectPriority, ProjectVisibility, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'proj_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+function genId(): string { return _genId('proj') }
 
 type ProjectRow = {
   id: string

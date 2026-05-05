@@ -1,14 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import type { Run, CreateRunInput, TokenUsageSummary } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'run_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+function genId(): string { return _genId('run') }
 
 type RunRow = {
   id: string
@@ -194,7 +188,7 @@ export function appendRunSpoolLine(runId: string, line: string): void {
   const db = getDb()
   db.run(
     `INSERT INTO run_spool (run_id, ts, line) VALUES (?, ?, ?)`,
-    [runId, new Date().toISOString(), line],
+    [runId, now(), line],
   )
 }
 

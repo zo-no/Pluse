@@ -1,15 +1,13 @@
-import { randomBytes } from 'node:crypto'
 import type { ProjectActivityItem } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'pact_' + randomBytes(8).toString('hex')
-}
+function genId(): string { return _genId('pact') }
 
 export function createProjectActivity(input: Omit<ProjectActivityItem, 'id' | 'createdAt'>): ProjectActivityItem {
   const db = getDb()
   const id = genId()
-  const createdAt = new Date().toISOString()
+  const createdAt = now()
   db.run(
     `INSERT INTO project_activity (
       id, project_id, subject_type, subject_id, quest_id, title, op, actor,

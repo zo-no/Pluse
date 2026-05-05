@@ -1,10 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import type { UploadedAsset } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'asset_' + randomBytes(8).toString('hex')
-}
+function genId(): string { return _genId('asset') }
 
 type AssetRow = {
   id: string
@@ -31,7 +29,7 @@ function rowToAsset(row: AssetRow): UploadedAsset {
 export function createAsset(input: Omit<UploadedAsset, 'id' | 'createdAt'>): UploadedAsset {
   const db = getDb()
   const id = genId()
-  const createdAt = new Date().toISOString()
+  const createdAt = now()
   db.run(
     `INSERT INTO assets (
       id, quest_id, filename, saved_path, mime_type, size_bytes, created_at

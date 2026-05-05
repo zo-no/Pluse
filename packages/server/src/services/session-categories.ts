@@ -10,6 +10,7 @@ import {
 } from '../models/session-category'
 import { getProject } from '../models/project'
 import { emit } from './events'
+import { now } from '../support/db-utils'
 
 function emitProjectUpdated(projectId: string): void {
   emit({ type: 'project_updated', data: { projectId } })
@@ -52,7 +53,7 @@ export function deleteSessionCategoryWithEffects(id: string): void {
   if (!existing) throw new Error(`Session category not found: ${id}`)
 
   const db = getDb()
-  const ts = new Date().toISOString()
+  const ts = now()
   const tx = db.transaction(() => {
     db.run(
       'UPDATE quests SET session_category_id = NULL, updated_at = ? WHERE session_category_id = ?',

@@ -1,8 +1,6 @@
 import { getDb } from '../db'
+import { now } from '../support/db-utils'
 
-function now(): string {
-  return new Date().toISOString()
-}
 
 export function getSetting(key: string): string | null {
   const db = getDb()

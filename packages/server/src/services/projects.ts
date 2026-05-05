@@ -18,6 +18,7 @@ import { getRunsByProject } from '../models/run'
 import { listQuests } from '../models/quest'
 import { listTodos } from '../models/todo'
 import { emit } from './events'
+import { now } from '../support/db-utils'
 import {
   ensureDir,
   getDefaultEntryProjectDir,
@@ -38,9 +39,6 @@ const DEFAULT_ENTRY_PROJECT_ICON = '人'
 const DEFAULT_ENTRY_PROJECT_GOAL = '在这里和 AI 一起挖掘真实需求、许下愿望、抒发欲望，并把混沌的想法整理成可以继续推进的 Quest / Todo。'
 const DEFAULT_ENTRY_PROJECT_DESCRIPTION = '自我对话是 Pluse 的默认入口。首次使用和回到首页时，用户会优先进入这里，把还没有归属的念头、冲动、焦虑、愿望和需求先说出来，再逐步澄清它们是否要变成具体项目、会话、自动化或待办。'
 
-function now(): string {
-  return new Date().toISOString()
-}
 
 function demoteOtherMainlineProjects(projectId: string, fallback: ProjectPriority = 'priority'): void {
   const db = getDb()

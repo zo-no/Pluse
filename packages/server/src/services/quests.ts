@@ -13,6 +13,7 @@ import { emit } from './events'
 import { refreshQuestSchedule } from './scheduler'
 import { deleteSessionCategoryIfEmptyWithEffects } from './session-categories'
 import { getAssetsDir, getHistoryRoot, getPluseRoot } from '../support/paths'
+import { now } from '../support/db-utils'
 
 function emitQuestUpdated(quest: Quest): void {
   emit({ type: 'quest_updated', data: { questId: quest.id, projectId: quest.projectId } })
@@ -260,7 +261,7 @@ export function moveQuestWithEffects(id: string, input: MoveQuestInput): Quest {
   assertProjectContextAvailable(before, input.targetProjectId)
 
   const db = getDb()
-  const movedAt = new Date().toISOString()
+  const movedAt = now()
   const tx = db.transaction(() => {
     db.run(
       'UPDATE quests SET project_id = ?, session_category_id = NULL, updated_at = ? WHERE id = ?',

@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto'
 import type {
   CreateNotificationInput,
   Notification,
@@ -7,14 +6,9 @@ import type {
   UpdateNotificationInput,
 } from '@pluse/types'
 import { getDb } from '../db'
+import { genId as _genId, now } from '../support/db-utils'
 
-function genId(): string {
-  return 'ntf_' + randomBytes(8).toString('hex')
-}
-
-function now(): string {
-  return new Date().toISOString()
-}
+function genId(): string { return _genId('ntf') }
 
 type NotificationRow = {
   id: string
