@@ -14,7 +14,7 @@ interface SessionListProps {
   projects: Project[]
   activeProjectId: string | null
   activeQuestId: string | null
-  onSelectProject: (projectId: string) => void
+  onSelectProject: (projectId: string | null) => void
   onProjectsChanged: () => Promise<void>
   onOverviewChanged?: (projectId?: string) => Promise<void>
   onNavigate?: () => void
@@ -203,9 +203,9 @@ export function SessionList({
 
   const loadQuests = useCallback(async () => {
     if (!activeProjectId) {
-      // 全部视图：只加载所有项目中 pinned 的会话
+      // 全部视图：加载所有项目的会话
       const result = await api.getQuests({ kind: 'session', deleted: false })
-      if (result.ok) setSessions(result.data.filter((q) => q.pinned))
+      if (result.ok) setSessions(result.data)
       setArchivedSessions([])
       return
     }
@@ -327,6 +327,11 @@ export function SessionList({
     onSelectProject(projectId)
     onNavigate?.()
     navigate(`/projects/${projectId}`)
+  }
+
+  function handleSelectAllProjects() {
+    onSelectProject(null)
+    setSidebarTab('sessions')
   }
 
   async function handleCreateProject(event: FormEvent) {
@@ -699,6 +704,35 @@ export function SessionList({
           />
         ) : (
           <>
+            {/* 项目选择器 */}
+            <div className="pluse-sidebar-project-context">
+              <div className="pluse-project-switcher">
+                <button
+                  type="button"
+                  className="pluse-project-switcher-btn"
+                  onClick={() => setSidebarTab('projects')}
+                  aria-label={t('切换项目')}
+                >
+                  <div className="pluse-project-switcher-label">
+                    <strong>{activeProjectId === null ? t('全部项目') : (activeProject?.name ?? t('选择项目'))}</strong>
+                    <span>{activeProjectId === null ? t('{count} 个项目', { count: projects.length }) : t('切换项目')}</span>
+                  </div>
+                  <span className="pluse-project-switcher-chevron" aria-hidden="true">▾</span>
+                </button>
+                {activeProjectId !== null ? (
+                  <button
+                    type="button"
+                    className="pluse-project-switcher-all-btn"
+                    onClick={handleSelectAllProjects}
+                    title={t('全部项目')}
+                    aria-label={t('全部项目')}
+                  >
+                    {t('全部')}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
             <div className="pluse-sidebar-scroll-pane">
               <section className="pluse-sidebar-section pluse-sidebar-section-list">
                 <div className="pluse-sidebar-list pluse-sidebar-list-dense">

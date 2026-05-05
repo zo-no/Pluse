@@ -4046,12 +4046,19 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   -webkit-backdrop-filter: none;
 }
 
+.pluse-project-switcher {
+  display: flex;
+  gap: 4px;
+  align-items: stretch;
+}
+
 .pluse-project-switcher-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   border-radius: 8px;
@@ -4060,6 +4067,25 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   cursor: pointer;
   text-align: left;
   transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pluse-project-switcher-all-btn {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.pluse-project-switcher-all-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .pluse-project-switcher-btn:hover,
