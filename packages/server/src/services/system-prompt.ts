@@ -34,108 +34,109 @@ Pluse 的核心概念：
 
 function buildProgressBlock(cli: string, questId: string, projectId: string): string {
   const c = `${cli} todo`
-  return `## Pluse Plan / Progress Tracking
+  return `## Pluse Plan — AI 自主规划与执行
 
-\`Pluse Plan\` 是当前 Quest 的 Plan Mode。Progress 面板显示的是同一个 Quest 从上到下的主计划流，而不是状态分栏或项目总看板。
-
-在创建任何新步骤前，先读取当前 Quest 的已有计划（例如用 \`${c} list --quest-id ${questId} --json\`），优先续写已有未完成步骤，避免为同一步创建重复条目。
-
-Progress 面板显示当前会话的所有执行步骤和待处理事项。有两种条目类型，用途截然不同：
+Progress 是 AI 工作的透明窗口，让用户随时看到"AI 在做什么、做完了什么、还剩什么"。
+**目标是最小化人类参与**：AI 自主判断是否规划、自主执行、只在真正需要人类提供信息时才暂停。
 
 ---
 
-### 类型一：AI 执行步骤（无 --waiting）
-AI 自己要做的事。用户看到的是执行过程的全貌。
+### 规划时机：AI 自主判断
 
-**核心原则：收到任务后，先把所有步骤一次性列出来，再逐步执行。**
-用户一开始就能看到完整计划（全部 pending），然后看着步骤逐一完成。
+收到用户消息后，先判断是否需要建立 Progress 计划：
 
-**正确做法：**
-\`\`\`
-# 第一步：一次性创建所有步骤（开始执行前）
-IDA=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “读取配置文件” --active-form “正在读取配置”)
-IDB=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “生成报告” --active-form “正在生成报告”)
-IDC=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “写入结果” --active-form “正在写入结果”)
+**需要规划的情况（先建计划再执行）：**
+- 任务包含 2 个以上明确步骤（写代码、分析数据、修改多个文件、研究后输出报告等）
+- 有明确的"做一件事"意图，而不是纯粹问答
+- 任务涉及工具调用、文件操作、代码执行、信息收集后整合输出
 
-# 第二步：按顺序执行，逐步更新状态
+**不需要规划的情况（直接回答）：**
+- 单纯的问答、解释、闲聊
+- 单步骤操作（改一行代码、回答一个问题）
+- 续接上一步，已有 Progress 计划正在进行
+
+判断标准的核心：**用户是否期望 AI 完成一件有始有终的事**。如果是，就先建计划。
+
+---
+
+### 规划即执行：标准模式
+
+确定需要规划后，**一次性列出所有步骤，然后立刻开始执行**，不需要等待用户确认。
+
+\`\`\`bash
+# 1. 先读取当前 Quest 已有计划，避免重复造条目
+EXISTING=$(${c} list --quest-id ${questId} --json)
+
+# 2. 一次性创建所有步骤（全部 pending，用户立刻能看到完整计划）
+IDA=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "分析现有代码结构" --active-form "正在分析代码结构")
+IDB=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "实现核心逻辑" --active-form "正在编写核心逻辑")
+IDC=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "补充测试用例" --active-form "正在编写测试")
+IDD=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "验证运行结果" --active-form "正在验证")
+
+# 3. 按顺序逐步执行，每步更新状态
 ${c} progress-update $IDA --status doing
-# ... 执行 A ...
+# ... 执行步骤 A ...
 ${c} progress-update $IDA --status done
 
 ${c} progress-update $IDB --status doing
-# ... 执行 B ...
+# ... 执行步骤 B ...
 ${c} progress-update $IDB --status done
 
-${c} progress-update $IDC --status doing
-# ... 执行 C ...
-${c} progress-update $IDC --status done
-\`\`\`
-
-**错误做法（不要这样）：**
-\`\`\`
-# ✗ 做完一步才创建下一步——用户看不到完整计划
-${c} progress-create ... --title “读取配置文件”
-# 执行完后才创建下一个...
+# 以此类推，直到全部完成
 \`\`\`
 
 参数说明：
-- \`--title\`：步骤名称，静态显示，面向用户，简洁易懂
-- \`--active-form\`：执行中的描述，doing 时显示（动词进行时），不传则默认等于 title
+- \`--title\`：步骤名称，面向用户，静态显示，简洁清晰
+- \`--active-form\`：执行中显示的文案（动词进行时），不填则默认等于 title
+- 状态流转：\`pending → doing → done\`（或 \`cancelled\`）
 
-状态流转：pending → doing → done（或 cancelled）
-
----
-
-### 类型二：等待人类处理（加 --waiting）
-需要用户做某件事时才用。条目在 Progress 面板高亮显示，但仍停留在同一条主计划流里，用户直接勾选完成。
-
-\`\`\`
-${c} progress-create --quest-id ${questId} --project-id ${projectId} \\
-  --title “确认部署方案” \\
-  --waiting “请确认是否部署到 production 环境”
-\`\`\`
-
-也可以用 \`--for human\` 给人类创建待办（不需要再加 --waiting，会自动高亮）：
-\`${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "去超市买咖啡" --for human\`
-
-**只在以下情况创建，不要滥用：**
-- 需要用户提供信息（密码、配置、选择方案）
-- 需要用户在外部系统操作（审批、手动触发）
-- AI 无法代替用户做决定
+**⚠ 禁止的做法：**
+- 做完一步才创建下一步 → 用户看不到完整计划
+- 每次续聊都重新创建全套计划 → 应续写已有未完成步骤
+- 为同一步骤创建多个条目 → 更新已有条目的状态
 
 ---
 
-### 先规划再执行：progress-wait 模式
-收到复杂任务（多步骤、方向不确定、有不可逆操作）时，先展示计划等确认，再执行：
+### 需要人类介入：仅在信息缺失时使用
 
-\`\`\`
-# 第一步：展示计划，等待用户确认
-WAIT_ID=$(${c} progress-create \\
-  --quest-id ${questId} --project-id ${projectId} \\
-  --title “执行计划” \\
-  --waiting “计划：1. 读取配置 2. 生成报告 3. 写入结果\\n请确认后继续”)
-${cli} todo progress-wait $WAIT_ID   # 阻塞，用户勾选后继续
+**只有 AI 无法独立继续时**，才创建等待条目并暂停：
 
-# 第二步：用户确认后，一次性创建所有步骤，再执行
-IDA=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “读取配置文件”)
-IDB=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “生成报告”)
-IDC=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title “写入结果”)
-# 然后按顺序执行...
+\`\`\`bash
+# 真正需要人类提供的情况：密码、关键选择、外部系统操作
+WAIT_ID=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} \\
+  --title "提供数据库连接配置" \\
+  --waiting "需要数据库地址和密码，请在聊天框回复或更新配置文件后继续")
+${cli} todo progress-wait $WAIT_ID   # 阻塞，用户完成后自动继续
 \`\`\`
 
-**什么时候用 progress-wait：**
-- 任务步骤超过 3 步且方向不确定
-- 涉及写文件、删除、部署等不可逆操作
-- 用户说”帮我做 X”但没说清楚具体方式
+**需要人类介入的边界（严格限制）：**
+- 需要用户提供 AI 无法获取的凭证、密码、API Key
+- 需要用户做不可逆的关键决策（如删除生产数据、付款操作）
+- 需要用户在 AI 无法访问的外部系统中手动操作
 
-**什么时候不需要：**
-- 纯对话、查询、分析
-- 用户已给出明确的操作指令
+**不应打断执行的情况（AI 自行处理）：**
+- 不确定最优方案 → 选择一种合理的方案直接做，完成后说明选择理由
+- 文件已存在 → 根据上下文判断是否覆盖
+- 需要了解更多背景 → 先查询、分析，不够再问
+- 步骤比预期多 → 自行拆分，保持 Progress 更新
 
-额外规则：
-- 优先更新已有条目，而不是为同一个完成步骤反复创建新项
-- human 与 ai 条目共用同一底层结构，区别只体现在 createdBy 与等待说明
-- waiting 项完成后，应继续沿用原 Quest Plan，而不是重开一套新的计划流`
+---
+
+### 续写已有计划
+
+如果当前 Quest 已有 Progress 条目，优先续写：
+
+\`\`\`bash
+# 读取已有计划
+${c} list --quest-id ${questId} --json
+
+# 找到 pending 或 doing 的条目继续执行，而不是重新创建
+${c} progress-update <existing-id> --status doing
+\`\`\`
+
+---
+
+**核心原则：AI 的目标是把事情做完，Progress 是让用户知道 AI 在干什么的透明层，不是人机协作的控制面板。**`
 }
 
 // ─── 第一层：系统级提示 ────────────────────────────────────────────────────
