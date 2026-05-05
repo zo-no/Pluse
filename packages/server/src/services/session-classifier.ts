@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { statSync } from 'node:fs'
 import type { Quest } from '@pluse/types'
 import { listEvents } from '../models/history'
 import { getQuest } from '../models/quest'
@@ -8,10 +7,16 @@ import { getProject } from '../models/project'
 import { getSessionCategory } from '../models/session-category'
 import { syncManagedCodexHome } from '../support/codex-home'
 import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId } from '../runtime/catalog'
+import {
+  isRuntimeCommandAvailable,
+  resolveRuntimeCommandSpec,
+  resolveRuntimeToolFamily,
+  type RuntimeToolName,
+} from '../runtime/command'
 import { createOrReuseSessionCategory, listSessionCategoryViews } from './session-categories'
 import { updateQuestWithEffects } from './quests'
 
-type ToolName = 'codex' | 'claude'
+type ToolFamily = 'claude' | 'codex' | 'gemini'
 
 type ClassificationDecision =
   | { mode: 'noop' }
@@ -103,25 +108,31 @@ function resolveFailureReason(
   return stderr || `exited with code ${code ?? 'null'}${signal ? ` (${signal})` : ''}`
 }
 
-function resolveTool(tool?: string | null): ToolName {
-  return tool?.trim().toLowerCase() === 'claude' ? 'claude' : 'codex'
+function resolveToolFamily(questTool?: string | null): ToolFamily {
+  return resolveRuntimeToolFamily(questTool)
 }
 
-function resolveModel(tool: ToolName, requested?: string | null): string {
+function resolveToolName(questTool?: string | null): RuntimeToolName {
+  const normalized = questTool?.trim().toLowerCase()
+  if (normalized === 'codex') return 'codex'
+  if (normalized === 'gemini') return 'gemini'
+  if (normalized === 'mc') return 'mc'
+  // claude 及其他未知值都走 mc（默认的 claude proxy）
+  return 'mc'
+}
+
+function resolveModel(family: ToolFamily, requested?: string | null): string {
   const next = requested?.trim()
-  if (next) return tool === 'codex' ? normalizeCodexModelId(next) : normalizeClaudeModelId(next)
-  return getRuntimeModelCatalog(tool).defaultModel ?? (tool === 'claude' ? 'sonnet[1m]' : 'gpt-5.4')
-}
-
-function resolveToolCommand(tool: ToolName): string {
-  if (tool === 'claude') {
-    return process.env['PLUSE_CLAUDE_COMMAND']?.trim() || 'claude'
+  if (next) {
+    if (family === 'codex') return normalizeCodexModelId(next)
+    return normalizeClaudeModelId(next)
   }
-  return process.env['PLUSE_CODEX_COMMAND']?.trim() || 'codex'
+  return getRuntimeModelCatalog(family === 'codex' ? 'codex' : 'claude').defaultModel
+    ?? (family === 'codex' ? 'gpt-5.4' : 'sonnet')
 }
 
-function runtimeEnvForTool(tool: ToolName): NodeJS.ProcessEnv {
-  if (tool !== 'codex') return process.env
+function runtimeEnvForToolName(toolName: RuntimeToolName): NodeJS.ProcessEnv {
+  if (toolName !== 'codex') return process.env
   return {
     ...process.env,
     CODEX_HOME: syncManagedCodexHome(),
@@ -316,17 +327,23 @@ async function classifySessionWithProvider(quest: Quest): Promise<Classification
   const prompt = buildClassificationPrompt(quest)
   if (!prompt) return null
 
-  const tool = resolveTool(quest.tool)
-  const model = resolveModel(tool, quest.model)
-  const command = resolveToolCommand(tool)
-  const args = tool === 'claude'
-    ? buildClaudeArgs(prompt, { model })
-    : buildCodexArgs(prompt, { model })
+  const toolName = resolveToolName(quest.tool)
+  const family = resolveToolFamily(quest.tool)
+  const commandSpec = resolveRuntimeCommandSpec(toolName)
+  if (!isRuntimeCommandAvailable(commandSpec)) {
+    console.warn('[session-classifier] tool not available:', toolName, commandSpec.display)
+    return null
+  }
+  const model = resolveModel(family, quest.model)
+  const extraArgs = family === 'codex'
+    ? buildCodexArgs(prompt, { model })
+    : buildClaudeArgs(prompt, { model })
+  const args = [...commandSpec.args, ...extraArgs]
 
   return await new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(commandSpec.file, args, {
       cwd: project.workDir,
-      env: runtimeEnvForTool(tool),
+      env: runtimeEnvForToolName(toolName),
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -345,7 +362,7 @@ async function classifySessionWithProvider(quest: Quest): Promise<Classification
     }, SESSION_CLASSIFY_TIMEOUT_MS)
 
     wireLineStream(child.stdout, (line) => {
-      const parsed = tool === 'claude' ? parseClaudeAssistantText(line) : parseCodexAssistantText(line)
+      const parsed = family === 'codex' ? parseCodexAssistantText(line) : parseClaudeAssistantText(line)
       if (parsed.assistantText?.trim()) lastAssistantText = parsed.assistantText
       if (parsed.providerError) lastProviderError = parsed.providerError
     })

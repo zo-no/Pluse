@@ -2,7 +2,7 @@ import type { CreateQuestInput, MoveQuestInput, Quest, QuestOp, Run, UpdateQuest
 import { cpSync, existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getDb } from '../db'
-import { listEvents } from '../models/history'
+import { findFirstEvent } from '../models/history'
 import { createProjectActivity } from '../models/project-activity'
 import { createQuestOp, getQuestOps } from '../models/quest-op'
 import { createQuest, getQuest, listQuests, updateQuest } from '../models/quest'
@@ -82,10 +82,10 @@ function compactSessionName(source: string): string {
 
 function deriveSessionListName(quest: Quest): string | undefined {
   if (quest.kind !== 'session' || hasStableSessionName(quest.name)) return quest.name
-  const firstUserMessage = listEvents(quest.id)
-    .find((event) => event.type === 'message' && event.role === 'user' && event.content?.trim())
-    ?.content
-    ?.trim()
+  const firstUserMessage = findFirstEvent(
+    quest.id,
+    (event) => event.type === 'message' && event.role === 'user' && Boolean(event.content?.trim()),
+  )?.content?.trim()
   return firstUserMessage ? compactSessionName(firstUserMessage) : quest.name
 }
 

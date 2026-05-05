@@ -237,8 +237,22 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
     throw new Error('Cannot change quest kind while a run is active')
   }
 
-  const sets: string[] = ['updated_at = ?']
-  const params: Array<string | number | null> = [now()]
+  // 这些字段变更代表用户可感知的内容变化，应刷新 updated_at（影响列表排序）
+  const TOUCH_UPDATED_AT_FIELDS: Array<keyof UpdateQuestInput> = [
+    'kind', 'name', 'title', 'description', 'sessionCategoryId',
+    'status', 'enabled', 'pinned', 'tool', 'model', 'effort', 'thinking',
+    'scheduleKind', 'scheduleConfig', 'executorKind', 'executorConfig', 'executorOptions',
+    'completionOutput', 'reviewOnComplete', 'order', 'deleted',
+  ]
+  const shouldTouchUpdatedAt = TOUCH_UPDATED_AT_FIELDS.some((f) => f in input)
+
+  const sets: string[] = []
+  const params: Array<string | number | null> = []
+
+  if (shouldTouchUpdatedAt) {
+    sets.push('updated_at = ?')
+    params.push(now())
+  }
 
   const setField = (column: string, value: string | number | null) => {
     sets.push(`${column} = ?`)
@@ -299,6 +313,8 @@ export function updateQuest(id: string, input: UpdateQuestInput): Quest {
       if (!('name' in input)) setField('name', existing.name ?? existing.title ?? '新会话')
     }
   }
+
+  if (sets.length === 0) return getQuest(id)!
 
   params.push(id)
   db.run(`UPDATE quests SET ${sets.join(', ')} WHERE id = ?`, params)

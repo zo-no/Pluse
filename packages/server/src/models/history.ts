@@ -64,6 +64,34 @@ export function listEvents(
   })
 }
 
+/**
+ * Find the first event matching a predicate, reading files one by one (early exit).
+ * Much cheaper than listEvents() when you only need the first match.
+ */
+export function findFirstEvent(
+  questId: string,
+  predicate: (event: QuestEvent) => boolean,
+): QuestEvent | undefined {
+  let files: string[]
+  try {
+    files = readdirSync(eventsDir(questId))
+      .filter((file) => file.endsWith('.json'))
+      .sort()
+  } catch {
+    return undefined
+  }
+
+  for (const file of files) {
+    try {
+      const event = JSON.parse(readFileSync(resolve(eventsDir(questId), file), 'utf8')) as QuestEvent
+      if (predicate(event)) return event
+    } catch {
+      // skip corrupt file
+    }
+  }
+  return undefined
+}
+
 export function appendEvent(questId: string, event: Omit<QuestEvent, 'seq'>): QuestEvent {
   const meta = getHistoryMeta(questId)
   const nextSeq = (meta?.latestSeq ?? -1) + 1
