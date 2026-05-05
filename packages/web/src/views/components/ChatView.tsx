@@ -1159,18 +1159,18 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
                       ))}
                     </select>
                   ) : null}
+                  {(isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? (
+                    <ComposerToggle
+                      label={t('Think')}
+                      active={runtimeSelection.thinking}
+                      onToggle={() => {
+                        const thinking = !runtimeSelection.thinking
+                        setRuntimeSelection((current) => ({ ...current, thinking }))
+                        void patchQuest({ thinking })
+                      }}
+                    />
+                  ) : null}
                 </div>
-                {(isClaudeRuntimeTool(runtimeSelection.tool) || isGeminiRuntimeTool(runtimeSelection.tool)) ? (
-                  <ComposerToggle
-                    label={t('Think')}
-                    active={runtimeSelection.thinking}
-                    onToggle={() => {
-                      const thinking = !runtimeSelection.thinking
-                      setRuntimeSelection((current) => ({ ...current, thinking }))
-                      void patchQuest({ thinking })
-                    }}
-                  />
-                ) : null}
               </div>
               <div className="pluse-composer-bottom-right">
                 <button

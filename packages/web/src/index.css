@@ -1975,12 +1975,14 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
 }
 
 .pluse-runtime-controls-composer-compact {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   width: auto;
   min-width: 0;
   max-width: none;
   flex: 0 0 auto;
   gap: 4px;
-  grid-template-columns: repeat(3, minmax(96px, max-content));
 }
 
 .pluse-runtime-controls-composer-compact select {
@@ -2638,7 +2640,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   justify-content: space-between;
   gap: 6px;
   padding: 5px 8px 7px 10px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
   min-width: 0;
   flex-shrink: 0;
 }
@@ -2699,9 +2700,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   box-shadow: none;
 }
 
-:root[data-theme='dark'] .pluse-composer-bottom-bar {
-  border-top-color: color-mix(in srgb, var(--border) 30%, transparent);
-}
 
 :root[data-theme='dark'] input,
 :root[data-theme='dark'] textarea,
@@ -6661,7 +6659,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   .pluse-runtime-controls-composer-compact {
     width: auto;
     gap: 2px;
-    grid-template-columns: repeat(3, minmax(64px, max-content));
   }
 
   .pluse-inline-status-compact {

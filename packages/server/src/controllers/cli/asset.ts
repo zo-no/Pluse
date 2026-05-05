@@ -1,26 +1,50 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Command } from 'commander'
 import type { UploadedAsset } from '@pluse/types'
 import { getOrCreateApiToken, hasAuth } from '../../models/auth'
-import { createAsset } from '../../models/asset'
+import { createAsset, listAssets } from '../../models/asset'
 import { getQuest } from '../../models/quest'
 import { getAssetsDir } from '../../support/paths'
 import { daemonRequest, getCliMode, resolveDaemonBaseUrl } from '../../support/cli-runtime'
+
+function printJson(value: unknown): void {
+  console.log(JSON.stringify(value, null, 2))
+}
 
 function getApiToken(): string {
   return process.env['PLUSE_API_TOKEN']?.trim()
     || (hasAuth() ? getOrCreateApiToken() : '')
 }
 
-async function uploadFileToDaemon(baseUrl: string, questId: string, filePath: string): Promise<UploadedAsset> {
-  const fileBuffer = readFileSync(filePath)
-  const filename = basename(filePath)
+function guessMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  const map: Record<string, string> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    pdf: 'application/pdf',
+    txt: 'text/plain',
+    md: 'text/markdown',
+    json: 'application/json',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+  }
+  return map[ext] ?? 'application/octet-stream'
+}
+
+async function uploadFileToDaemon(baseUrl: string, questId: string, absolutePath: string): Promise<UploadedAsset> {
+  const file = Bun.file(absolutePath)
+  const filename = basename(absolutePath)
   const mimeType = guessMimeType(filename)
-  const blob = new Blob([fileBuffer], { type: mimeType })
   const formData = new FormData()
   formData.append('questId', questId)
-  formData.append('file', blob, filename)
+  formData.append('file', new Blob([await file.arrayBuffer()], { type: mimeType }), filename)
 
   const token = getApiToken()
   const headers: Record<string, string> = {}
@@ -38,8 +62,14 @@ async function uploadFileToDaemon(baseUrl: string, questId: string, filePath: st
   return json.data
 }
 
-function printJson(value: unknown): void {
-  console.log(JSON.stringify(value, null, 2))
+function shareOffline(questId: string, absolutePath: string): UploadedAsset {
+  const quest = getQuest(questId)
+  if (!quest) throw new Error(`Quest not found: ${questId}`)
+  const filename = basename(absolutePath)
+  const mimeType = guessMimeType(filename)
+  const sizeBytes = statSync(absolutePath).size
+  getAssetsDir(questId) // 确保目录存在
+  return createAsset({ questId, filename, savedPath: absolutePath, mimeType, sizeBytes })
 }
 
 export const assetCommand = new Command('asset')
@@ -67,51 +97,13 @@ assetCommand
     const baseUrl = await resolveDaemonBaseUrl(mode)
 
     let asset: UploadedAsset
-
-    if (baseUrl) {
-      // Daemon 模式：通过 HTTP 上传
-      const fileBuffer = readFileSync(absolutePath)
-      const filename = basename(absolutePath)
-      const mimeType = guessMimeType(filename)
-      const blob = new Blob([fileBuffer], { type: mimeType })
-      const formData = new FormData()
-      formData.append('questId', opts.questId)
-      formData.append('file', blob, filename)
-
-      const token = process.env['PLUSE_API_TOKEN']?.trim()
-      const headers: Record<string, string> = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const res = await fetch(`${baseUrl}/api/assets/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      })
-      const json = await res.json() as { ok: boolean; data?: UploadedAsset; error?: string }
-      if (!json.ok || !json.data) {
-        console.error(`Upload failed: ${json.error ?? 'unknown error'}`)
-        process.exit(1)
-      }
-      asset = json.data
-    } else {
-      // 离线模式：直接写入数据库（文件保持原路径）
-      const quest = getQuest(opts.questId)
-      if (!quest) {
-        console.error(`Quest not found: ${opts.questId}`)
-        process.exit(1)
-      }
-      const filename = basename(absolutePath)
-      const mimeType = guessMimeType(filename)
-      const sizeBytes = statSync(absolutePath).size
-      // 确保 assets 目录存在（getAssetsDir 会自动创建）
-      getAssetsDir(opts.questId)
-      asset = createAsset({
-        questId: opts.questId,
-        filename,
-        savedPath: absolutePath,
-        mimeType,
-        sizeBytes,
-      })
+    try {
+      asset = baseUrl
+        ? await uploadFileToDaemon(baseUrl, opts.questId, absolutePath)
+        : shareOffline(opts.questId, absolutePath)
+    } catch (err) {
+      console.error(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+      process.exit(1)
     }
 
     if (opts.json) {
@@ -124,12 +116,11 @@ assetCommand
 // asset upload --quest-id <id> --file <path>
 assetCommand
   .command('upload')
-  .description('上传 Quest 附件（multipart，与 share 等价）')
+  .description('上传 Quest 附件（与 share 等价）')
   .requiredOption('--quest-id <questId>', 'Quest ID')
   .requiredOption('--file <filePath>', '本地文件路径')
   .option('--json', '以 JSON 格式输出')
   .action(async (opts: { questId: string; file: string; json?: boolean }) => {
-    // 复用 share 逻辑
     const absolutePath = resolve(opts.file)
     if (!existsSync(absolutePath)) {
       console.error(`File not found: ${absolutePath}`)
@@ -140,48 +131,13 @@ assetCommand
     const baseUrl = await resolveDaemonBaseUrl(mode)
 
     let asset: UploadedAsset
-
-    if (baseUrl) {
-      const fileBuffer = readFileSync(absolutePath)
-      const filename = basename(absolutePath)
-      const mimeType = guessMimeType(filename)
-      const blob = new Blob([fileBuffer], { type: mimeType })
-      const formData = new FormData()
-      formData.append('questId', opts.questId)
-      formData.append('file', blob, filename)
-
-      const token = process.env['PLUSE_API_TOKEN']?.trim()
-      const headers: Record<string, string> = {}
-      if (token) headers['Authorization'] = `Bearer ${token}`
-
-      const res = await fetch(`${baseUrl}/api/assets/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      })
-      const json = await res.json() as { ok: boolean; data?: UploadedAsset; error?: string }
-      if (!json.ok || !json.data) {
-        console.error(`Upload failed: ${json.error ?? 'unknown error'}`)
-        process.exit(1)
-      }
-      asset = json.data
-    } else {
-      const quest = getQuest(opts.questId)
-      if (!quest) {
-        console.error(`Quest not found: ${opts.questId}`)
-        process.exit(1)
-      }
-      const filename = basename(absolutePath)
-      const mimeType = guessMimeType(filename)
-      const sizeBytes = statSync(absolutePath).size
-      getAssetsDir(opts.questId)
-      asset = createAsset({
-        questId: opts.questId,
-        filename,
-        savedPath: absolutePath,
-        mimeType,
-        sizeBytes,
-      })
+    try {
+      asset = baseUrl
+        ? await uploadFileToDaemon(baseUrl, opts.questId, absolutePath)
+        : shareOffline(opts.questId, absolutePath)
+    } catch (err) {
+      console.error(`Failed: ${err instanceof Error ? err.message : String(err)}`)
+      process.exit(1)
     }
 
     if (opts.json) {
@@ -205,7 +161,6 @@ assetCommand
     if (baseUrl) {
       assets = await daemonRequest<UploadedAsset[]>(baseUrl, `/api/assets?questId=${opts.questId}`)
     } else {
-      const { listAssets } = await import('../../models/asset')
       assets = listAssets(opts.questId)
     }
 
@@ -233,36 +188,15 @@ assetCommand
     const mode = getCliMode()
     const baseUrl = await resolveDaemonBaseUrl(mode)
 
-    if (baseUrl) {
-      const result = await daemonRequest<{ deleted: boolean }>(baseUrl, `/api/assets/${id}`, { method: 'DELETE' })
-      if (opts.json) {
-        printJson({ ok: true, data: result })
-      } else {
-        console.log(`Deleted: ${id}`)
-      }
-    } else {
+    if (!baseUrl) {
       console.error('Delete requires the Pluse daemon to be running')
       process.exit(1)
     }
-  })
 
-function guessMimeType(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  const map: Record<string, string> = {
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    svg: 'image/svg+xml',
-    pdf: 'application/pdf',
-    txt: 'text/plain',
-    md: 'text/markdown',
-    json: 'application/json',
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
-    mp3: 'audio/mpeg',
-    wav: 'audio/wav',
-  }
-  return map[ext] ?? 'application/octet-stream'
-}
+    const result = await daemonRequest<{ deleted: boolean }>(baseUrl, `/api/assets/${id}`, { method: 'DELETE' })
+    if (opts.json) {
+      printJson({ ok: true, data: result })
+    } else {
+      console.log(`Deleted: ${id}`)
+    }
+  })

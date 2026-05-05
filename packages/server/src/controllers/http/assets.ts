@@ -1,8 +1,8 @@
-import { existsSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { Hono } from 'hono'
 import type { ApiResult, UploadedAsset } from '@pluse/types'
-import { createAsset, getAsset } from '../../models/asset'
+import { createAsset, deleteAsset, getAsset, listAssets } from '../../models/asset'
 import { getQuest } from '../../models/quest'
 import { getAssetsDir } from '../../support/paths'
 
@@ -25,8 +25,6 @@ export function prependAttachmentPaths(
   return `${refs}\n\n${prompt}`
 }
 
-export const assetsRouter = new Hono()
-
 function isInsideDir(root: string, target: string): boolean {
   const resolvedRoot = resolve(root)
   const resolvedTarget = resolve(target)
@@ -38,7 +36,8 @@ function contentDispositionFilename(filename: string): string {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`
 }
 
-assetsRouter.post('/assets/upload', async (c) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function handleUpload(c: any): Promise<Response> {
   let formData: FormData
   try {
     formData = await c.req.formData()
@@ -84,14 +83,31 @@ assetsRouter.post('/assets/upload', async (c) => {
   })
 
   return c.json({ ok: true, data: asset } as ApiResult<UploadedAsset>, 201)
+}
+
+export const assetsRouter = new Hono()
+
+// GET /assets?questId=xxx — list assets for a quest
+assetsRouter.get('/assets', (c) => {
+  const questId = c.req.query('questId')
+  if (!questId) return c.json({ ok: false, error: 'questId is required' } as ApiResult<never>, 400)
+  return c.json({ ok: true, data: listAssets(questId) } as ApiResult<UploadedAsset[]>)
 })
 
+// POST /assets — upload (used by frontend client)
+assetsRouter.post('/assets', handleUpload)
+
+// POST /assets/upload — upload (used by CLI)
+assetsRouter.post('/assets/upload', handleUpload)
+
+// GET /assets/:id — get asset metadata
 assetsRouter.get('/assets/:id', (c) => {
   const asset = getAsset(c.req.param('id'))
   if (!asset) return c.json({ ok: false, error: 'Asset not found' } as ApiResult<never>, 404)
   return c.json({ ok: true, data: asset } as ApiResult<UploadedAsset>)
 })
 
+// GET /assets/:id/file — serve asset file
 assetsRouter.get('/assets/:id/file', (c) => {
   const asset = getAsset(c.req.param('id'))
   if (!asset) return c.json({ ok: false, error: 'Asset not found' } as ApiResult<never>, 404)
@@ -118,4 +134,19 @@ assetsRouter.get('/assets/:id/file', (c) => {
       'Cache-Control': 'private, max-age=3600',
     },
   })
+})
+
+// DELETE /assets/:id — delete asset
+assetsRouter.delete('/assets/:id', (c) => {
+  const asset = getAsset(c.req.param('id'))
+  if (!asset) return c.json({ ok: false, error: 'Asset not found' } as ApiResult<never>, 404)
+
+  // Remove file from disk if it's inside the managed assets dir
+  const root = getAssetsDir(asset.questId)
+  if (isInsideDir(root, asset.savedPath) && existsSync(asset.savedPath)) {
+    try { rmSync(asset.savedPath) } catch { /* ignore */ }
+  }
+
+  deleteAsset(asset.id)
+  return c.json({ ok: true, data: { deleted: true } } as ApiResult<{ deleted: boolean }>)
 })

@@ -50,3 +50,9 @@ export function listAssets(questId: string): UploadedAsset[] {
   const rows = db.query<AssetRow, [string]>('SELECT * FROM assets WHERE quest_id = ? ORDER BY created_at DESC').all(questId)
   return rows.map(rowToAsset)
 }
+
+export function deleteAsset(id: string): boolean {
+  const db = getDb()
+  const result = db.run('DELETE FROM assets WHERE id = ?', [id])
+  return result.changes > 0
+}

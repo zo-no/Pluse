@@ -120,7 +120,7 @@ const QuestItem = memo(function QuestItem({
         {!archived ? (
           <button
             type="button"
-            className={`pluse-sidebar-action-btn${quest.pinned ? ' is-active' : ''}`}
+            className={`pluse-sidebar-action-btn is-pin-btn${quest.pinned ? ' is-active' : ''}`}
             onClick={(event) => {
               event.preventDefault()
               onTogglePin(quest.id, !quest.pinned)
