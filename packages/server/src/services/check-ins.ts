@@ -157,18 +157,9 @@ export function completeCheckInWithEffects(
     subjectId: item.id,
     questId: item.originQuestId,
     title: checkInActivityTitle(item),
-    op: 'completed',
+    op: 'done',
     actor: createdBy,
   })
   emitCheckInDeleted(item)
-  emit({
-    type: 'check_in_recorded',
-    data: {
-      checkInId: item.id,
-      recordId: record.id,
-      projectId: item.projectId,
-      originQuestId: item.originQuestId,
-    },
-  })
   return record
 }

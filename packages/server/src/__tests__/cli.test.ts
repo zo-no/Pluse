@@ -50,7 +50,7 @@ fi
 
 reply="\${PLUSE_FAKE_CODEX_REPLY:-Fake reply}"
 case "$*" in
-  *"Generate a short title for this Pluse session based on the first round conversation."*)
+  *"你是会话标题生成器"*)
     if [ "\${PLUSE_FAKE_CODEX_AUTO_RENAME_FAIL:-}" = "1" ]; then
       printf '%s\n' "auto rename failed" >&2
       exit 1

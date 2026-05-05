@@ -131,7 +131,7 @@ if [ -n "\${PLUSE_FAKE_CODEX_UNSUPPORTED_TOOL_MODEL:-}" ]; then
 fi
 reply="\${PLUSE_FAKE_CODEX_REPLY:-Fake reply}"
 case "$*" in
-  *"Generate a short title for this Pluse session based on the first round conversation."*)
+  *"你是会话标题生成器"*)
     if [ "\${PLUSE_FAKE_CODEX_AUTO_RENAME_FAIL:-}" = "1" ]; then
       printf '%s\\n' "auto rename failed" >&2
       exit 1
@@ -876,7 +876,7 @@ describe('quest/todo/run APIs', () => {
     expect(freshQuest?.codexThreadId).toBe('thread_chat')
     const argsLog = readFileSync(argsLogPath, 'utf8')
     expect(argsLog).toContain('exec --json')
-    expect(argsLog).toContain('Generate a short title for this Pluse session based on the first round conversation.')
+    expect(argsLog).toContain('你是会话标题生成器')
 
     const events = await GET<PagedResult<QuestEvent>>(`/api/quests/${quest.id}/events`)
     expect(events.status).toBe(200)

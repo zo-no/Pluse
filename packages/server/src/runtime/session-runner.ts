@@ -140,9 +140,18 @@ const AUTO_RENAME_SYSTEM_PROMPT = [
   '- 中文标题：3～5 个字，不要标点、不要语气词',
   '- 英文标题：2～5 个词，无标点',
   '- 中英混合时，使用主要语言并保留必要的英文技术词汇（如 bug、API、UI 等）',
-  '- 禁止使用"讨论""问题""帮助""关于""对话""chat""question""help""topic"等空泛词',
+  '- 禁止使用"讨论""问题""帮助""关于""对话""总结""chat""question""help""topic""summary""title"等空泛词',
   '- 无论消息多简短，都要尽力提炼出一个有意义的标题',
   '- 只返回标题本身，不要引号、不要 markdown、不要任何前缀或后缀',
+  '',
+  '示例（用户消息 → 标题）：',
+  '如何用 Python 反转字符串？ → Python 反转字符串',
+  '帮我写一个登录页的 React 组件 → 写登录页组件',
+  '请解释 Transformer 的注意力机制 → Transformer 注意力',
+  '分析一下我们 Q1 的销售数据 → 分析 Q1 销售',
+  '修复用户注册时的 500 错误 → 修复注册 500',
+  'How do I reverse a list in Python? → Python list reversal',
+  '帮我 debug 这段代码 → Debug 代码',
 ].join('\n')
 
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -335,12 +344,23 @@ function validateProjectWorkingDirectory(projectPath: string): string | null {
   }
 }
 
+// Rough token estimate: 1 token ≈ 4 chars. Reserve ~80K tokens for history injection.
+const HISTORY_MAX_CHARS = 80_000 * 4
+
 function buildHistoryPrompt(questId: string, latestText: string): string {
-  const conversation = listEvents(questId)
+  const allMessages = listEvents(questId)
     .filter((event) => event.type === 'message' && (event.role === 'user' || event.role === 'assistant'))
     .slice(-40)
     .map((event) => `${event.role === 'assistant' ? 'Assistant' : 'User'}:\n${event.content ?? ''}`)
-    .join('\n\n')
+
+  // Trim from oldest messages until we're within the character budget
+  let totalChars = allMessages.reduce((sum, m) => sum + m.length, 0)
+  while (allMessages.length > 1 && totalChars > HISTORY_MAX_CHARS) {
+    const removed = allMessages.shift()
+    totalChars -= removed?.length ?? 0
+  }
+
+  const conversation = allMessages.join('\n\n')
   if (!conversation.trim()) return latestText
   return [
     'You are continuing an existing Pluse quest.',
@@ -455,6 +475,11 @@ function shouldRetryResumeFailure(failureReason: string | undefined, sawProvider
   return /resume|thread|session|conversation|context|expired|not found|invalid/i.test(failureReason)
 }
 
+function isApiGenericError(failureReason: string | undefined): boolean {
+  if (!failureReason) return false
+  return /sorry|encountered an error|error processing your request|internal server error|500|503|connection refused|network error|ECONNRESET|ETIMEDOUT|ENOTFOUND/i.test(failureReason)
+}
+
 function shouldRetryClaudeProxyFailure(
   tool: ToolName,
   command: RuntimeCommandSpec,
@@ -502,13 +527,18 @@ function fallbackQuestName(source: string): string {
 }
 
 function normalizeGeneratedQuestName(value: string): string {
-  const singleLine = value
+  // Strip <think>…</think> reasoning blocks from models like DeepSeek-R1 or QwQ
+  const withoutThink = value.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+  const singleLine = withoutThink
     .split('\n')
     .map((line) => line.trim())
     .find(Boolean) ?? ''
   const normalized = singleLine
     .replace(/^title:\s*/i, '')
-    .replace(/^["'`]+|["'`]+$/g, '')
+    // Strip surrounding quotes and backticks
+    .replace(/^["'`“”‘’]+|["'`“”‘’]+$/g, '')
+    // Strip emoji characters (may be injected despite instructions)
+    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
   return fallbackQuestName(normalized)
@@ -702,6 +732,7 @@ function buildClaudeArgs(prompt: string, options: { model?: string; effort?: str
   if (effort) args.push('--effort', effort)
   if (options.systemPrompt?.trim()) args.push('--system-prompt', options.systemPrompt.trim())
   if (options.resumeSessionId?.trim()) args.push('--resume', options.resumeSessionId.trim())
+  args.push('--settings', JSON.stringify({ autoCompactEnabled: true }))
   return args
 }
 
@@ -1329,7 +1360,8 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
         assistantText: lastAssistantText,
         tokenUsage: capturedTokenUsage,
         retryWithClaudeProxy: shouldRetryClaudeProxyFailure(tool, command, claudeProxyCommand, failureReason, sawProviderOutput),
-        retryWithHistory: nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput),
+        retryWithHistory: (nativeResume && shouldRetryResumeFailure(failureReason, sawProviderOutput))
+          || isApiGenericError(failureReason),
         retryWithModel: codexFallbackModel ?? claudeFallbackModel,
       })
     })

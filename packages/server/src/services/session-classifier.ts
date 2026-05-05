@@ -31,13 +31,19 @@ const SESSION_CLASSIFY_TIMEOUT_MS = parsePositiveInt(
 const FALLBACK_CATEGORY_NAME = '临时探索'
 const FALLBACK_CATEGORY_DESCRIPTION = '首轮会话完成后暂未匹配到稳定主题的会话。'
 const SESSION_CLASSIFY_SYSTEM_PROMPT = [
-  'You classify Pluse session quests into reusable project-scoped categories.',
-  'Return JSON only.',
-  'Prefer reusing an existing category when it is clearly compatible.',
-  'For any normal first-round conversation, you must return either assign or create_or_reuse.',
-  `If the topic is broad, temporary, or unclear, classify it into a broad holding category such as ${FALLBACK_CATEGORY_NAME} instead of noop.`,
-  'Use {"mode":"noop"} only when there is no usable user message to classify.',
-  'Allowed JSON shapes:',
+  '你负责将 Pluse 会话归入可复用的项目级分类。',
+  '只返回 JSON，不要任何解释。',
+  '优先复用已有分类（当内容明确兼容时）。',
+  '对任何正常的首轮会话，必须返回 assign 或 create_or_reuse。',
+  `话题宽泛、临时或不明确时，归入"${FALLBACK_CATEGORY_NAME}"这样的兜底分类，而不是返回 noop。`,
+  '只有在没有可用用户消息时才返回 {"mode":"noop"}。',
+  '',
+  '创建新分类时，name 要求：',
+  '- 中文名词短语，4～8 字',
+  '- 反映该类会话的核心主题，而非某次会话的具体内容',
+  '- 示例："前端组件开发"、"数据库优化"、"产品需求分析"、"Bug 排查"',
+  '',
+  '允许的 JSON 格式：',
   '{"mode":"noop"}',
   '{"mode":"assign","sessionCategoryId":"sc_xxx"}',
   '{"mode":"create_or_reuse","name":"...","description":"..."}',
@@ -291,19 +297,19 @@ function buildClassificationPrompt(quest: Quest): string | null {
   if (!transcript) return null
 
   return [
-    'Classify this Pluse session into an existing or new reusable project category.',
+    '将此 Pluse 会话归入现有或新建的项目级分类。',
     `Quest id: ${quest.id}`,
-    `Quest name: ${quest.name ?? ''}`,
-    'Existing categories:',
+    `会话名称：${quest.name ?? ''}`,
+    '现有分类：',
     JSON.stringify(categories, null, 2),
-    'First-round transcript:',
+    '首轮对话记录：',
     transcript,
     [
-      'Return JSON only.',
-      'Prefer assign when an existing category fits.',
-      'For normal conversations you must return assign or create_or_reuse.',
-      `If the topic is ambiguous or temporary, use create_or_reuse with a broad holding category such as ${FALLBACK_CATEGORY_NAME}.`,
-      'Only return {"mode":"noop"} when there is no usable user message to classify.',
+      '只返回 JSON。',
+      '有合适的已有分类时优先使用 assign。',
+      '正常会话必须返回 assign 或 create_or_reuse。',
+      `话题模糊或临时时，用 create_or_reuse 并将名称设为"${FALLBACK_CATEGORY_NAME}"这样的兜底分类。`,
+      '没有可用用户消息时才返回 {"mode":"noop"}。',
     ].join('\n'),
   ].join('\n\n')
 }
@@ -404,7 +410,11 @@ async function classifySessionQuest(questId: string, allowCreateSessionCategory:
     return
   }
 
-  if (!decision || decision.mode === 'noop') {
+  // 工具调用失败（null）：跳过，不写入任何分类
+  if (!decision) return
+
+  // AI 判断无内容可分类：走 fallback
+  if (decision.mode === 'noop') {
     assignFallbackCategory(freshQuest, allowCreateSessionCategory)
     return
   }
@@ -412,6 +422,7 @@ async function classifySessionQuest(questId: string, allowCreateSessionCategory:
   if (decision.mode === 'assign') {
     const category = getSessionCategory(decision.sessionCategoryId)
     if (!category || category.projectId !== freshQuest.projectId) {
+      // AI 返回了不属于本项目的分类 ID，降级到 fallback
       assignFallbackCategory(freshQuest, allowCreateSessionCategory)
       return
     }
@@ -433,7 +444,8 @@ async function classifySessionQuest(questId: string, allowCreateSessionCategory:
   }
 
   if (decision.mode === 'clear') {
-    assignFallbackCategory(freshQuest, allowCreateSessionCategory)
+    // clear：明确清空分类，不归入临时探索
+    updateQuestWithEffects(freshQuest.id, { sessionCategoryId: null })
   }
 }
 

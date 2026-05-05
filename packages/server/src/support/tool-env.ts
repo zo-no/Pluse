@@ -16,7 +16,7 @@ export function expandToolPath(currentPath = process.env.PATH ?? '', home = proc
 
   const seen = new Set<string>()
   const paths: string[] = []
-  for (const path of [...homeBinPaths, ...COMMON_BIN_PATHS, ...currentPath.split(':')]) {
+  for (const path of [...homeBinPaths, ...currentPath.split(':'), ...COMMON_BIN_PATHS]) {
     const normalized = path.trim()
     if (!normalized || seen.has(normalized)) continue
     seen.add(normalized)
