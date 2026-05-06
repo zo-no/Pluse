@@ -1626,6 +1626,8 @@ function Shell({
   const locationPathRef = useRef(location.pathname)
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  // 用户是否主动选择了"全部"视图（区别于初始 null）
+  const userSelectedAllRef = useRef(false)
   const [activeQuest, setActiveQuest] = useState<Quest | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -1664,9 +1666,9 @@ function Shell({
     setProjects(result.data)
 
     setActiveProjectId((current) => {
-      if (current && result.data.some((project) => project.id === current)) {
-        return current
-      }
+      // 用户主动选择了"全部"视图，保持不变
+      if (current === null && userSelectedAllRef.current) return null
+      if (current && result.data.some((project) => project.id === current)) return current
       return result.data[0]?.id ?? null
     })
 
@@ -1697,7 +1699,7 @@ function Shell({
   }, [])
 
   const handleQuestResolved = useCallback((quest: Quest) => {
-    setActiveProjectId(quest.projectId)
+    setActiveProjectId((current) => current === null ? null : quest.projectId)
     setActiveQuest(quest)
     if (quest.kind === 'session') {
       rememberLastSession(quest.projectId, quest.id)
@@ -1705,6 +1707,7 @@ function Shell({
   }, [])
 
   const handleProjectSelected = useCallback((projectId: string | null) => {
+    userSelectedAllRef.current = projectId === null
     setActiveProjectId(projectId)
   }, [])
 

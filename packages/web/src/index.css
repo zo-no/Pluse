@@ -6245,7 +6245,7 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 0;
+  padding: 8px 0 0;
   border-bottom: 0;
 }
 
@@ -6314,6 +6314,13 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
 .pluse-sidebar-project-context-inline {
   padding-top: 2px;
   padding-bottom: 4px;
+}
+
+.pluse-sidebar-project-context-mobile {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
 
 .pluse-task-panel-tabs {
