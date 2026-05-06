@@ -47,6 +47,7 @@ import { getRuntimeModelCatalog, normalizeClaudeModelId, normalizeCodexModelId, 
 import {
   isClaudeRuntimeTool,
   isGeminiRuntimeTool,
+  isRuntimeCommandAvailable,
   normalizeRuntimeToolName,
   resolveClaudeProxyCommandSpec,
   resolveRuntimeCommandSpec,
@@ -511,6 +512,22 @@ function shouldRetryClaude1MUnavailable(
   if (tool !== 'claude' || !failureReason) return false
   if (!model.endsWith('[1m]')) return false
   return /extra usage|1m context|1M context/i.test(failureReason)
+}
+
+export function shouldFallbackToClaudeForTask(args: {
+  questKind: Quest['kind']
+  tool: ToolName
+  failureReason: string | undefined
+  usedToolFallback: boolean
+  claudeAvailable: boolean
+}): boolean {
+  const { questKind, tool, failureReason, usedToolFallback, claudeAvailable } = args
+  if (questKind !== 'task') return false
+  if (tool !== 'codex') return false
+  if (!failureReason) return false
+  if (usedToolFallback) return false
+  if (!claudeAvailable) return false
+  return true
 }
 
 function describeProviderRun(tool: RuntimeToolName, command: RuntimeCommandSpec, nativeResume: boolean): string {
@@ -1207,10 +1224,10 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
     return
   }
 
-  const toolId = resolveTool(run.tool)
-  const tool = resolveRuntimeToolFamily(toolId)
-  const primaryCommand = resolveRuntimeCommandSpec(toolId)
-  const claudeProxyCommand = tool === 'claude' ? resolveClaudeProxyCommandSpec() : null
+  let toolId = resolveTool(run.tool)
+  let tool = resolveRuntimeToolFamily(toolId)
+  let primaryCommand = resolveRuntimeCommandSpec(toolId)
+  let claudeProxyCommand = tool === 'claude' ? resolveClaudeProxyCommandSpec() : null
   const canContinueContext = shouldContinueQuestContext(quest)
   const updateQuestProviderIds = shouldPersistQuestProviderIds(quest)
   const initialNativeResume = tool === 'claude'
@@ -1372,6 +1389,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   let usedHistoryFallback = false
   let usedClaudeProxyFallback = false
   let usedModelFallback = false
+  let usedToolFallback = false
   let finalAttempt: ProviderAttemptResult | null = null
 
   while (!finalAttempt) {
@@ -1394,6 +1412,35 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
       nativeResume = false
       usedHistoryFallback = true
+      continue
+    }
+    if (
+      nextAttempt.state === 'failed'
+      && shouldFallbackToClaudeForTask({
+        questKind: quest.kind,
+        tool,
+        failureReason: nextAttempt.failureReason,
+        usedToolFallback,
+        claudeAvailable: isRuntimeCommandAvailable(resolveRuntimeCommandSpec('claude')),
+      })
+    ) {
+      const claudeModel = getRuntimeModelCatalog('claude').defaultModel ?? 'sonnet'
+      appendQuestEvents(questId, [makeStatusEvent(`Codex run failed (${nextAttempt.failureReason}), falling back to Claude`)])
+      toolId = 'claude'
+      tool = 'claude'
+      primaryCommand = resolveRuntimeCommandSpec('claude')
+      claudeProxyCommand = resolveClaudeProxyCommandSpec()
+      command = primaryCommand
+      nativeResume = false
+      usedHistoryFallback = false
+      usedClaudeProxyFallback = false
+      usedModelFallback = false
+      usedToolFallback = true
+      updateRun(runId, {
+        tool: 'claude',
+        model: claudeModel,
+        codexThreadId: undefined,
+      })
       continue
     }
     finalAttempt = nextAttempt
