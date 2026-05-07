@@ -473,6 +473,20 @@ function shouldPersistQuestProviderIds(quest: Quest): boolean {
   return quest.kind === 'session' || quest.executorOptions?.continueQuest !== false
 }
 
+// Session rotation: if cacheReadTokens in a single run exceeds this threshold,
+// clear the claudeSessionId so the next run starts a fresh session (avoiding infinite growth).
+const SESSION_ROTATION_CACHE_TOKEN_THRESHOLD = 5_000_000
+
+function maybeRotateClaudeSession(questId: string, tokenUsage: TokenUsage | undefined): void {
+  if (!tokenUsage || tokenUsage.cacheReadTokens < SESSION_ROTATION_CACHE_TOKEN_THRESHOLD) return
+  const quest = getQuest(questId)
+  if (!quest?.claudeSessionId) return
+  updateQuest(questId, { claudeSessionId: null })
+  appendQuestEvents(questId, [
+    makeStatusEvent(`session rotated: cacheReadTokens ${tokenUsage.cacheReadTokens.toLocaleString()} exceeded threshold, next run will start a fresh session`),
+  ])
+}
+
 function shouldRetryResumeFailure(failureReason: string | undefined, sawProviderOutput: boolean): boolean {
   if (!failureReason || sawProviderOutput) return false
   return /resume|thread|session|conversation|context|expired|not found|invalid/i.test(failureReason)
@@ -1403,6 +1417,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
   }
 
   if (finalAttempt.tokenUsage) updateRun(runId, finalAttempt.tokenUsage)
+  maybeRotateClaudeSession(questId, finalAttempt.tokenUsage)
   if (finalAttempt.state === 'completed') {
     finalizeRun(runId, 'completed', undefined, finalAttempt.assistantText)
     return
