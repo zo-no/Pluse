@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { basename, sep } from 'node:path'
+import { basename, join, sep } from 'node:path'
 import type { OpenProjectInput, Project, ProjectManifest, ProjectOverview, ProjectPriority, ProjectRecentOutput, Quest, Run, Todo, UpdateProjectInput } from '@pluse/types'
 import { getDb } from '../db'
 import { getDomain } from '../models/domain'
@@ -77,6 +77,18 @@ function writeManifest(manifest: ProjectManifest): void {
   if (!isManagedWorkDir(manifest.workDir)) return
   ensureDir(getProjectManifestDir(manifest.workDir))
   writeFileSync(getProjectManifestPath(manifest.workDir), JSON.stringify(manifest, null, 2))
+}
+
+/**
+ * 在新建项目时落一个空的 `agent.md` 在项目根。
+ * 文件存在即跳过——空白即"无项目级特殊约定，按全局规则走"。
+ * 见 `00-🤖agent/agent-context.md` 的协议设计。
+ */
+function ensureProjectAgentFile(workDir: string): void {
+  if (!existsSync(workDir)) return
+  const path = join(workDir, 'agent.md')
+  if (existsSync(path)) return
+  writeFileSync(path, '')
 }
 
 function manifestFromProject(project: Project): ProjectManifest {
@@ -363,6 +375,7 @@ export function openProject(input: OpenProjectInput): Project {
     })
     if (created.priority === 'mainline') demoteOtherMainlineProjects(created.id)
     writeManifest(manifestFromProject(created))
+    ensureProjectAgentFile(workDir)
     emit({ type: 'project_opened', data: { projectId: created.id } })
     return created
   }
