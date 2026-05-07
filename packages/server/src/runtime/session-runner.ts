@@ -1411,6 +1411,11 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       appendQuestEvents(questId, [makeStatusEvent('resume failed, retrying with history injection')])
       nativeResume = false
       usedHistoryFallback = true
+      // Clear the broken session so next run doesn't attempt resume again
+      const questForRotation = getQuest(questId)
+      if (questForRotation?.claudeSessionId) {
+        updateQuest(questId, { claudeSessionId: null })
+      }
       continue
     }
     finalAttempt = nextAttempt
