@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
-import type { Domain, Project, Quest, SessionCategory } from '@pluse/types'
+import type { Domain, Project, ProjectPriority, Quest, SessionCategory } from '@pluse/types'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 import { useSseEvent } from '@/views/hooks/useSseEvent'
@@ -9,6 +9,7 @@ import { displayQuestName } from '@/views/utils/display'
 import { DomainSidebar } from './DomainSidebar'
 import { TodoPanel } from './TodoPanel'
 import { ArchiveIcon, ClockIcon, CloseIcon, FolderIcon, FolderOpenIcon, PinIcon, PlusIcon, RouteIcon } from './icons'
+import { getPreferredSessionFromList } from '@/views/utils/session-selection'
 
 interface SessionListProps {
   projects: Project[]
@@ -54,6 +55,22 @@ function formatArchiveDateLabel(value?: string, locale = 'zh-CN', t?: (key: stri
     month: 'numeric',
     day: 'numeric',
   }).format(new Date(value))
+}
+
+const PROJECT_PRIORITY_ORDER: ProjectPriority[] = ['mainline', 'priority', 'normal', 'low']
+
+function projectPriorityLabel(priority: ProjectPriority, t: (key: string) => string): string {
+  if (priority === 'mainline') return t('主线')
+  if (priority === 'priority') return t('优先')
+  if (priority === 'low') return t('低优先')
+  return t('普通')
+}
+
+function sortProjectsByPriorityGroup(projectList: Project[]): Project[] {
+  return [...projectList].sort((left, right) => {
+    if (left.pinned !== right.pinned) return left.pinned ? -1 : 1
+    return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+  })
 }
 
 function getSessionPresenceState(quest: Quest, activeQuestId: string | null): 'running' | 'complete' | null {
@@ -169,6 +186,11 @@ export function SessionList({
   const [domains, setDomains] = useState<Domain[]>([])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [mobileProjectPickerOpen, setMobileProjectPickerOpen] = useState(false)
+  const [expandedProjectPriorityGroups, setExpandedProjectPriorityGroups] = useState<Record<string, boolean>>({
+    normal: false,
+    low: false,
+  })
   const [newProjectModalOpen, setNewProjectModalOpen] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDir, setProjectDir] = useState('')
@@ -188,6 +210,23 @@ export function SessionList({
     () => projects.find((project) => project.id === activeProjectId) ?? null,
     [projects, activeProjectId],
   )
+
+  type ProjectPickerGroup = { key: string; label: string; priority: ProjectPriority; projects: Project[] }
+  const projectPickerGroups = useMemo<ProjectPickerGroup[]>(() => {
+    return PROJECT_PRIORITY_ORDER
+      .map((priority) => ({
+        key: priority,
+        label: projectPriorityLabel(priority, t),
+        priority,
+        projects: sortProjectsByPriorityGroup(projects.filter((project) => project.priority === priority)),
+      }))
+      .filter((group) => group.projects.length > 0)
+  }, [projects, t])
+
+  function projectDomainName(project: Project): string {
+    if (!project.domainId) return t('未分组')
+    return domains.find((domain) => domain.id === project.domainId)?.name ?? t('未分组')
+  }
 
   const knownQuests = useMemo(
     () => [...sessions, ...archivedSessions],
@@ -654,7 +693,13 @@ export function SessionList({
           <button
             type="button"
             className={`pluse-sidebar-tab${sidebarTab === 'sessions' ? ' is-active' : ''}`}
-            onClick={() => setSidebarTab('sessions')}
+            onClick={() => {
+              setSidebarTab('sessions')
+              if (activeProjectId) {
+                const preferredId = getPreferredSessionFromList(activeProjectId, sessions)
+                if (preferredId) navigate(`/quests/${preferredId}`)
+              }
+            }}
           >
             {t('会话')}
           </button>
@@ -704,33 +749,81 @@ export function SessionList({
           />
         ) : (
           <>
-            {/* 项目选择器 */}
-            <div className="pluse-sidebar-project-context">
-              <div className="pluse-project-switcher">
+            {/* 项目选择器（仅移动端展示） */}
+            <div className="pluse-sidebar-project-context pluse-mobile-only pluse-sidebar-project-context-mobile">
+              <div className="pluse-project-switcher pluse-rail-project-switcher">
                 <button
                   type="button"
-                  className="pluse-project-switcher-btn"
-                  onClick={() => setSidebarTab('projects')}
-                  aria-label={t('切换项目')}
+                  className={`pluse-project-switcher-btn${mobileProjectPickerOpen ? ' is-open' : ''}`}
+                  onClick={() => setMobileProjectPickerOpen((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={mobileProjectPickerOpen}
                 >
                   <div className="pluse-project-switcher-label">
                     <strong>{activeProjectId === null ? t('全部项目') : (activeProject?.name ?? t('选择项目'))}</strong>
                     <span>{activeProjectId === null ? t('{count} 个项目', { count: projects.length }) : t('切换项目')}</span>
                   </div>
-                  <span className="pluse-project-switcher-chevron" aria-hidden="true">▾</span>
+                  <span className="pluse-project-switcher-chevron" aria-hidden="true">{mobileProjectPickerOpen ? '▴' : '▾'}</span>
                 </button>
-                {activeProjectId !== null ? (
-                  <button
-                    type="button"
-                    className="pluse-project-switcher-all-btn"
-                    onClick={handleSelectAllProjects}
-                    title={t('全部项目')}
-                    aria-label={t('全部项目')}
-                  >
-                    {t('全部')}
-                  </button>
+
+                {mobileProjectPickerOpen ? (
+                  <div className="pluse-project-picker pluse-project-picker-rail">
+                    <div className="pluse-project-picker-list" aria-label={t('选择项目')}>
+                      {projectPickerGroups.length > 0 ? projectPickerGroups.map((group) => {
+                        const groupOpen = expandedProjectPriorityGroups[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')
+                        return (
+                          <section key={group.key} className="pluse-project-picker-group">
+                            <button
+                              type="button"
+                              className="pluse-project-picker-group-head"
+                              onClick={() => setExpandedProjectPriorityGroups((current) => ({
+                                ...current,
+                                [group.key]: !(current[group.key] ?? (group.priority === 'mainline' || group.priority === 'priority')),
+                              }))}
+                            >
+                              <strong><span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span> {group.label}</strong>
+                              <span>{t('{count} 个项目', { count: group.projects.length })}</span>
+                            </button>
+                            {groupOpen ? group.projects.map((project) => (
+                              <button
+                                key={project.id}
+                                type="button"
+                                className={`pluse-project-picker-item${project.id === activeProjectId ? ' is-active' : ''}`}
+                                onClick={() => {
+                                  onSelectProject(project.id)
+                                  setMobileProjectPickerOpen(false)
+                                }}
+                              >
+                                <span className="pluse-project-avatar is-compact" aria-hidden="true">{project.icon?.trim() || project.name.trim()[0]?.toUpperCase() || '#'}</span>
+                                <div className="pluse-project-picker-item-text">
+                                  <strong>{project.name}</strong>
+                                  <span className="pluse-project-picker-item-meta">
+                                    <span>{projectDomainName(project)}</span>
+                                    <span className={`pluse-project-priority-badge is-${project.priority}`}>{projectPriorityLabel(project.priority, t)}</span>
+                                  </span>
+                                </div>
+                              </button>
+                            )) : null}
+                          </section>
+                        )
+                      }) : (
+                        <p className="pluse-domain-empty">{t('暂无项目')}</p>
+                      )}
+                    </div>
+                  </div>
                 ) : null}
               </div>
+              {activeProjectId !== null ? (
+                <button
+                  type="button"
+                  className="pluse-project-switcher-all-btn"
+                  onClick={handleSelectAllProjects}
+                  title={t('全部项目')}
+                  aria-label={t('全部项目')}
+                >
+                  {t('全部')}
+                </button>
+              ) : null}
             </div>
 
             <div className="pluse-sidebar-scroll-pane">

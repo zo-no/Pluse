@@ -21,7 +21,7 @@ export function reconcile(): void {
   db.run(
     `UPDATE runs
         SET state = 'failed',
-            failure_reason = COALESCE(failure_reason, 'reconciled on startup'),
+            failure_reason = COALESCE(failure_reason, '服务重启，请重试'),
             updated_at = ?,
             completed_at = COALESCE(completed_at, ?),
             finalized_at = COALESCE(finalized_at, ?)

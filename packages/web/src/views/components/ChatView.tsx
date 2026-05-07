@@ -417,18 +417,53 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
     return Math.max(72, Math.min(128, Math.round(viewportHeight * 0.115)))
   }
 
-  function addFiles(files: File[]) {
+  async function resizeImageFile(file: File, maxPx = 1568): Promise<File> {
+    return new Promise((resolve) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const { width, height } = img
+        if (width <= maxPx && height <= maxPx) {
+          resolve(file)
+          return
+        }
+        const scale = maxPx / Math.max(width, height)
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(width * scale)
+        canvas.height = Math.round(height * scale)
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { resolve(file); return }
+            resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: file.lastModified }))
+          },
+          'image/jpeg',
+          0.92,
+        )
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+      img.src = url
+    })
+  }
+
+  async function addFiles(files: File[]) {
     const oversized = files.find((file) => file.size > MAX_FILE_SIZE)
     if (oversized) {
       setUploadError(t('文件 {name} 超过 20MB 限制', { name: oversized.name }))
       return
     }
+    // 对图片文件做 resize，避免超出 Anthropic API 最优尺寸导致二次降采样模糊
+    const processedFiles = await Promise.all(
+      files.map((file) => file.type.startsWith('image/') ? resizeImageFile(file) : Promise.resolve(file)),
+    )
     setPendingFiles((previous) => {
-      const merged = [...previous, ...files].slice(0, MAX_ATTACHMENTS)
-      if (previous.length + files.length > MAX_ATTACHMENTS) {
+      const merged = [...previous, ...processedFiles].slice(0, MAX_ATTACHMENTS)
+      if (previous.length + processedFiles.length > MAX_ATTACHMENTS) {
         setUploadError(t('最多附加 {count} 个文件', { count: MAX_ATTACHMENTS }))
       }
-      const newUrls = files
+      const newUrls = processedFiles
         .slice(0, MAX_ATTACHMENTS - previous.length)
         .map((file) => file.type.startsWith('image/') ? URL.createObjectURL(file) : null)
       setPreviewUrls((previousUrls) => [...previousUrls, ...newUrls].slice(0, MAX_ATTACHMENTS))
@@ -1091,7 +1126,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
                 }
                 if (files.length > 0) {
                   event.preventDefault()
-                  addFiles(files)
+                  void addFiles(files)
                 }
               }}
               placeholder={t('给当前会话发送消息…')}
@@ -1224,7 +1259,7 @@ export function ChatView({ questId, initialQuest, onQuestLoaded, onDataChanged }
             multiple
             style={{ display: 'none' }}
             onChange={(event) => {
-              if (event.target.files) addFiles(Array.from(event.target.files))
+              if (event.target.files) void addFiles(Array.from(event.target.files))
               event.target.value = ''
             }}
           />
