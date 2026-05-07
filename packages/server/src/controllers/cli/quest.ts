@@ -73,6 +73,7 @@ type QuestUpdateOptions = SharedTaskOptionFlags & {
   model?: string
   pin?: boolean
   unpin?: boolean
+  clearClaudeSession?: boolean
   json: boolean
 }
 
@@ -496,6 +497,7 @@ const questUpdateCommand = questCommand
   .option('--model <model>', 'Model')
   .option('--pin', 'Pin quest')
   .option('--unpin', 'Unpin quest')
+  .option('--clear-claude-session', 'Clear the stored Claude session ID (forces a fresh session on next run)')
   .option('--json', 'Output as JSON', false)
 addSharedTaskOptions(questUpdateCommand)
 questUpdateCommand
@@ -518,6 +520,7 @@ questUpdateCommand
       effort: opts.effort,
       thinking: opts.thinking,
       pinned: opts.pin ? true : opts.unpin ? false : undefined,
+      claudeSessionId: opts.clearClaudeSession ? null : undefined,
       ...buildTaskUpdatePatch(existing, opts),
     }
     const quest = baseUrl
