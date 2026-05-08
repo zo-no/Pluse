@@ -1607,7 +1607,8 @@ select {
 .pluse-progress-surface-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1700,6 +1701,19 @@ select {
   border-radius: 6px;
   margin-inline: -4px;
   padding-inline: 4px;
+}
+
+/* 人类创建的条目：橙色左边框 + 淡背景 */
+.pluse-progress-item.is-human {
+  border-left: 2px solid #f59e0b;
+  padding-left: 6px;
+  margin-left: -8px;
+  background: color-mix(in srgb, #f59e0b 4%, transparent);
+  border-radius: 0 4px 4px 0;
+}
+
+.pluse-progress-item.is-human.is-done {
+  border-left-color: color-mix(in srgb, #f59e0b 40%, var(--border));
 }
 
 /* Indicator column */

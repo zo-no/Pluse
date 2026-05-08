@@ -156,9 +156,11 @@ function QuestPlanItem({
     </span>
   )
 
+  const isHuman = row.createdBy === 'human'
+
   return (
     <div
-      className={`pluse-progress-item${isDoing ? ' is-doing' : ''}${isDone ? ' is-done' : ''}${isCancelled ? ' is-cancelled' : ''}${isWaiting ? ' is-waiting' : ''}`}
+      className={`pluse-progress-item${isDoing ? ' is-doing' : ''}${isDone ? ' is-done' : ''}${isCancelled ? ' is-cancelled' : ''}${isWaiting ? ' is-waiting' : ''}${isHuman ? ' is-human' : ''}`}
       style={itemStyle}
     >
       {indicatorNode}
@@ -222,20 +224,24 @@ function QuestPlanSurface({
 }) {
   const { rows, summary, loading, error, setTodoDone } = useQuestPlan(questId)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const hasScrolledRef = useRef(false)
+  const prevRowsLengthRef = useRef(0)
 
-  // 首次加载完成后平滑滚到底部（显示最新步骤）
+  // 每次条目数量增加时，滚到底部（显示最新步骤）
   useEffect(() => {
     if (loading || rows.length === 0) return
-    if (hasScrolledRef.current) return
-    hasScrolledRef.current = true
-    const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (rows.length <= prevRowsLengthRef.current) return
+    prevRowsLengthRef.current = rows.length
+    // 等待进入动画完成后再滚动（动画时长 280ms + buffer）
+    const timer = setTimeout(() => {
+      const el = scrollRef.current
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }, 320)
+    return () => clearTimeout(timer)
   }, [loading, rows.length])
 
-  // questId 切换时重置，确保切换会话后重新滚到底
+  // questId 切换时重置计数，确保切换会话后重新滚到底
   useEffect(() => {
-    hasScrolledRef.current = false
+    prevRowsLengthRef.current = 0
   }, [questId])
 
   const summaryText = useMemo(() => {

@@ -64,7 +64,6 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
       filter: { kind: 'session', triggeredBy: ['human'] },
       actions: [
         { type: 'highlight_quest' },
-        { type: 'create_todo', title: '{{quest.name}}', tags: ['review'] },
       ],
     },
     {
@@ -74,7 +73,6 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
       filter: { kind: 'session', triggeredBy: ['human'] },
       actions: [
         { type: 'highlight_quest' },
-        { type: 'create_todo', title: '{{quest.name}}', tags: ['failed'] },
       ],
     },
     {
