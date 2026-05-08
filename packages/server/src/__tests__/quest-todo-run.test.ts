@@ -1429,11 +1429,19 @@ describe('quest/todo/run APIs', () => {
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'reminder' && item.op === 'created' && item.questId === task.id)).toBe(true)
   })
 
-  it('does not create implicit review todos for session completion hooks', async () => {
+  it('does not create implicit todos for session completion or failure hooks', async () => {
     const { commandPath } = installFakeCodex()
     process.env['PLUSE_CODEX_COMMAND'] = commandPath
     process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Session reply'
     saveGlobalHooksConfig(loadGlobalHooksConfig())
+
+    const hooks = await GET<{ hooks: Array<{ id: string }> }>('/api/hooks')
+    expect(hooks.status).toBe(200)
+    const hookIds = mustOk(hooks).hooks.map((hook) => hook.id)
+    expect(hookIds).not.toContain('notify-on-session-complete')
+    expect(hookIds).not.toContain('notify-on-session-failed')
+    expect((await PATCH('/api/hooks/notify-on-session-complete', { enabled: true })).status).toBe(404)
+    expect((await PATCH('/api/hooks/notify-on-session-failed', { enabled: true })).status).toBe(404)
 
     const project = await openProject('session-review-dedupe')
     const quest = await createQuest({
@@ -1477,6 +1485,33 @@ describe('quest/todo/run APIs', () => {
 
     const reviewTodos = listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })
     expect(reviewTodos).toHaveLength(0)
+
+    process.env['PLUSE_RUN_TIMEOUT_MS'] = '50'
+    process.env['PLUSE_FAKE_CODEX_DELAY_SECONDS'] = '2'
+
+    const failedQuest = await createQuest({
+      projectId: project.id,
+      kind: 'session',
+      name: 'Failed Session',
+      autoRenamePending: false,
+      tool: 'codex',
+    })
+
+    const failed = await POST<SubmitQuestMessageResult>(`/api/quests/${failedQuest.id}/messages`, {
+      text: 'This turn should fail',
+      requestId: 'session-review-failed-1',
+      tool: 'codex',
+    })
+    expect(failed.status).toBe(200)
+    expect(mustOk(failed).queued).toBe(false)
+
+    await waitFor(() => {
+      const run = getRunsByQuest(failedQuest.id)[0]
+      expect(run?.state).toBe('failed')
+      return run
+    }, { timeoutMs: 6_000 })
+
+    expect(listTodos({ projectId: project.id, questId: failedQuest.id, tags: ['failed'] })).toHaveLength(0)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

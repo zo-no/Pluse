@@ -2,8 +2,6 @@ import { useEffect, useState } from 'react'
 import * as api from '@/api/client'
 import { useI18n } from '@/i18n'
 
-const NOTIFY_HOOK_ID = 'notify-on-session-complete'
-const NOTIFY_FAILED_HOOK_ID = 'notify-on-session-failed'
 const SPEAK_HOOK_ID = 'speak-on-session-complete'
 const CLASSIFY_HOOK_ID = 'classify-first-session-run'
 
@@ -15,8 +13,6 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const [notifyOnComplete, setNotifyOnComplete] = useState(true)
-  const [notifyOnFailed, setNotifyOnFailed] = useState(true)
   const [hookLoading, setHookLoading] = useState(true)
   const [hookSaving, setHookSaving] = useState(false)
 
@@ -45,10 +41,6 @@ export function SettingsPage() {
       console.error('[hooks] Failed to load hooks config:', result.error)
       return
     }
-    const hook = result.data.hooks.find((h) => h.id === NOTIFY_HOOK_ID)
-    setNotifyOnComplete(hook ? hook.enabled !== false : true)
-    const failedHook = result.data.hooks.find((h) => h.id === NOTIFY_FAILED_HOOK_ID)
-    setNotifyOnFailed(failedHook ? failedHook.enabled !== false : true)
     const speakHook = result.data.hooks.find((h) => h.id === SPEAK_HOOK_ID)
     setSpeakOnComplete(speakHook ? speakHook.enabled === true : false)
     const classifyHook = result.data.hooks.find((h) => h.id === CLASSIFY_HOOK_ID)
@@ -82,20 +74,6 @@ export function SettingsPage() {
     setGlobalSystemPrompt(result.data.globalSystemPrompt ?? '')
     setCliCatalogCommand(result.data.cliCatalogCommand ?? '')
     setError(null)
-  }
-
-  async function handleToggleNotify(enabled: boolean) {
-    setNotifyOnComplete(enabled)
-    setHookSaving(true)
-    await api.updateHook(NOTIFY_HOOK_ID, enabled)
-    setHookSaving(false)
-  }
-
-  async function handleToggleNotifyFailed(enabled: boolean) {
-    setNotifyOnFailed(enabled)
-    setHookSaving(true)
-    await api.updateHook(NOTIFY_FAILED_HOOK_ID, enabled)
-    setHookSaving(false)
   }
 
   async function handleInstallKairos() {
@@ -145,42 +123,6 @@ export function SettingsPage() {
             <header className="pluse-detail-section-head">
               <h2 className="pluse-settings-section-title">{t('通知')}</h2>
             </header>
-            <div className="pluse-settings-toggle-row">
-              <div className="pluse-settings-toggle-info">
-                <span className="pluse-settings-toggle-label">{t('会话完成后创建待办')}</span>
-                <span className="pluse-settings-toggle-desc">
-                  {t('AI 完成一轮会话后，自动在待办列表创建提醒')}
-                </span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={notifyOnComplete}
-                className={`pluse-settings-toggle${notifyOnComplete ? ' is-on' : ''}`}
-                onClick={() => void handleToggleNotify(!notifyOnComplete)}
-                disabled={hookLoading || hookSaving}
-              >
-                <span className="pluse-settings-toggle-thumb" />
-              </button>
-            </div>
-            <div className="pluse-settings-toggle-row">
-              <div className="pluse-settings-toggle-info">
-                <span className="pluse-settings-toggle-label">{t('会话失败后创建待办')}</span>
-                <span className="pluse-settings-toggle-desc">
-                  {t('AI 执行出错时，自动在待办列表创建提醒')}
-                </span>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={notifyOnFailed}
-                className={`pluse-settings-toggle${notifyOnFailed ? ' is-on' : ''}`}
-                onClick={() => void handleToggleNotifyFailed(!notifyOnFailed)}
-                disabled={hookLoading || hookSaving}
-              >
-                <span className="pluse-settings-toggle-thumb" />
-              </button>
-            </div>
             <div className="pluse-settings-toggle-row">
               <div className="pluse-settings-toggle-info">
                 <span className="pluse-settings-toggle-label">{t('会话完成后语音播报')}</span>

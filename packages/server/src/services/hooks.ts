@@ -46,27 +46,14 @@ export interface HooksConfig {
   hooks: Hook[]
 }
 
+const REMOVED_TODO_HOOK_IDS = new Set([
+  'notify-on-session-complete',
+  'notify-on-session-failed',
+])
+
 // 内置默认配置：文件不存在时返回此配置
 const DEFAULT_HOOKS_CONFIG: HooksConfig = {
   hooks: [
-    {
-      id: 'notify-on-session-complete',
-      event: 'run_completed',
-      enabled: true,
-      filter: { kind: 'session', triggeredBy: ['human'] },
-      actions: [
-        { type: 'highlight_quest' },
-      ],
-    },
-    {
-      id: 'notify-on-session-failed',
-      event: 'run_failed',
-      enabled: true,
-      filter: { kind: 'session', triggeredBy: ['human'] },
-      actions: [
-        { type: 'highlight_quest' },
-      ],
-    },
     {
       id: 'speak-on-session-complete',
       event: 'run_completed',
@@ -98,12 +85,18 @@ const DEFAULT_HOOKS_CONFIG: HooksConfig = {
   ],
 }
 
+function stripRemovedTodoHooks(config: HooksConfig): HooksConfig {
+  return {
+    hooks: config.hooks.filter((hook) => !REMOVED_TODO_HOOK_IDS.has(hook.id)),
+  }
+}
+
 function loadHooksFile(path: string): Hook[] {
   if (!existsSync(path)) return []
   try {
     const raw = readFileSync(path, 'utf-8')
     const config = JSON.parse(raw) as HooksConfig
-    return Array.isArray(config.hooks) ? config.hooks : []
+    return Array.isArray(config.hooks) ? stripRemovedTodoHooks(config).hooks : []
   } catch (error) {
     console.error(`[hooks] Failed to load hooks file at ${path}:`, error)
     return []
@@ -160,7 +153,7 @@ export function loadGlobalHooksConfig(): HooksConfig {
   if (!existsSync(path)) return DEFAULT_HOOKS_CONFIG
   try {
     const raw = readFileSync(path, 'utf-8')
-    return JSON.parse(raw) as HooksConfig
+    return stripRemovedTodoHooks(JSON.parse(raw) as HooksConfig)
   } catch {
     return DEFAULT_HOOKS_CONFIG
   }
@@ -173,6 +166,9 @@ export function saveGlobalHooksConfig(config: HooksConfig): void {
 }
 
 export function patchHook(id: string, patch: Partial<Pick<Hook, 'enabled'>>): HooksConfig {
+  if (REMOVED_TODO_HOOK_IDS.has(id)) {
+    throw new Error(`Hook not found: ${id}`)
+  }
   const config = loadGlobalHooksConfig()
   const idx = config.hooks.findIndex((h) => h.id === id)
   if (idx < 0) {
