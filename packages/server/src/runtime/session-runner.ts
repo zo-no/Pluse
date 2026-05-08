@@ -643,7 +643,9 @@ function parseClaudeLine(line: string): ProviderParseResult {
         costUsd: typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : undefined,
       }
     }
-    providerError = normalizeProviderError(obj.error)
+    // Handle both obj.error (string) and obj.errors (array) and is_error flag
+    const errorsArray = Array.isArray(obj.errors) ? (obj.errors as unknown[]).map(String).join('; ') : undefined
+    providerError = normalizeProviderError(obj.error ?? (obj.is_error ? errorsArray : undefined))
   } else if (obj.type === 'error') {
     providerError = normalizeProviderError(obj.error ?? obj.message)
   }
@@ -1315,7 +1317,7 @@ async function executeProviderRun(runId: string, questId: string, latestPrompt: 
       if (parsed.providerError) lastProviderError = parsed.providerError
       if (parsed.tokenUsage) capturedTokenUsage = parsed.tokenUsage
       if (
-        parsed.events.length > 0
+        parsed.events.some(e => e.type !== 'usage')
         || Boolean(parsed.assistantText?.trim())
         || Boolean(parsed.codexThreadId)
         || Boolean(parsed.claudeSessionId)
