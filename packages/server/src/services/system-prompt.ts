@@ -50,8 +50,11 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 
 - 每次收到用户消息后，先运行 \`${c} list --quest-id ${questId} --json\` 读取已有 progress。
 - 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
-- 没有计划时，一次性创建完整步骤，再开始执行。
+- 没有计划时，先创建 3-5 个中层阶段，体现长程规划，再开始执行。
 - Progress 至少覆盖关键节点：分析 / 实现 / 验证。
+- Progress 条目只记录用户可理解的阶段目标，不记录搜索、读文件、改单个函数、运行单条命令这类微动作。
+- 当前阶段可以更具体，后续阶段保持较粗；随着执行推进再细化未来阶段，不要一开始拆成很多碎步骤。
+- 微动作只能写进 \`active-form\`，不要拆成独立 progress 条目。
 - 每次只允许一个步骤处于 \`doing\`。
 - 每完成一步立即更新状态；不要做完一步才创建下一步。
 - 步骤标题要具体、可执行、面向结果，避免空泛描述。
@@ -73,7 +76,7 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 # 先读取已有计划
 ${c} list --quest-id ${questId} --json
 
-# 一次性创建完整步骤
+# 先创建 3-5 个中层阶段
 IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "分析现有实现" --active-form "正在分析现有实现")
 IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "实现变更" --active-form "正在实现变更")
 IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "验证结果" --active-form "正在验证结果")
