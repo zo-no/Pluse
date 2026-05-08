@@ -2805,6 +2805,13 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   scrollbar-gutter: stable;
 }
 
+/* progress tab 宿主：把 scroll 权交给内层 ProgressRailPanel */
+.pluse-task-list.is-progress-host {
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+}
+
 .pluse-task-card,
 .pluse-task-row,
 .pluse-note-item,

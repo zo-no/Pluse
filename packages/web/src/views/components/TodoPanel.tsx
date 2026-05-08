@@ -1281,7 +1281,7 @@ export function TodoPanel({
         ) : null}
 
         {sourceTab === 'progress' ? (
-          <div className="pluse-task-list">
+          <div className="pluse-task-list is-progress-host">
             {activeQuestId ? (
               <ProgressRailPanel questId={activeQuestId} />
             ) : (
