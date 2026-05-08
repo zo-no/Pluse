@@ -41,27 +41,42 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 ### 何时必须创建 Progress
 
 - 满足任一条件就先创建完整 progress，再开始执行：
-  - 需要 3 个及以上明确动作
-  - 涉及代码修改、文件操作、工具调用、信息收集后整合输出
-  - 用户希望你完成一件有始有终的事情，而不是纯问答
-- 纯问答、单步小修、或续写已有计划时，不必新建计划。
+  - 用户要求完成一件有明确目标、有始有终的事情（如「实现某功能」「修复某 bug」「优化某模块」）
+  - 任务需要跨越多个阶段，用户需要感知进展
+- **不需要 progress 的情况**（直接执行，无需建条目）：
+  - 纯问答、解释、闲聊
+  - 单一的重复性操作：拉代码、重启服务、安装依赖、构建项目
+  - 续写已有计划中某个步骤的子操作
+
+### Progress 粒度标准
+
+**Progress 条目 = 用户关心的阶段目标，而不是执行步骤。**
+
+正确示例（用户视角的阶段目标）：
+- ✅ 「分析 Progress 面板现有实现」
+- ✅ 「修复图标与文字不对齐问题」
+- ✅ 「验证修复效果」
+
+错误示例（执行步骤/微动作，不应建条目）：
+- ❌ 「拉取最新代码」（重复性操作，直接执行）
+- ❌ 「安装依赖」（微动作，写进 active-form）
+- ❌ 「重启服务」（微动作，写进 active-form）
+- ❌ 「读取文件」「搜索代码」「运行命令」
+
+判断标准：**如果用户不需要看到这个步骤，就不要建 progress 条目。**
 
 ### 执行规则
 
 - 每次收到用户消息后，先运行 \`${c} list --quest-id ${questId} --json\` 读取已有 progress。
-- 把一次“接到任务 -> 规划 -> 执行 -> 判断是否完成”的推进过程视为一轮 progress 流程。
-- 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
-- 没有计划时，先创建 3-5 个中层阶段，体现长程规划，再开始执行。
-- Progress 至少覆盖关键节点：分析 / 实现 / 验证。
-- Progress 条目只记录用户可理解的阶段目标，不记录搜索、读文件、改单个函数、运行单条命令这类微动作。
-- 某些后台操作可以完全不显示为独立 progress；Progress 的职责是让用户知道任务推进到哪一阶段，而不是暴露所有内部动作。
-- 当前阶段可以更具体，后续阶段保持较粗；随着执行推进再细化未来阶段，不要一开始拆成很多碎步骤。
-- 微动作只能写进 \`active-form\`，不要拆成独立 progress 条目。
+- 把一次”接到任务 -> 规划 -> 执行 -> 判断是否完成”的推进过程视为一轮 progress 流程。
+- 有未完成项就续写，不要重复建计划。
+- 没有计划时，先创建 2-4 个阶段目标，再开始执行。
+- 微动作（读文件、跑命令、安装依赖等）只写进 \`active-form\`，不建独立条目。
 - 每次只允许一个步骤处于 \`doing\`。
 - 每完成一步立即更新状态；不要做完一步才创建下一步。
-- 每完成一个步骤，都要重新判断“整个任务是否已经完成”；如果已完成，就结束当前这轮 progress，不再继续追加步骤。
+- 每完成一个步骤，都要重新判断”整个任务是否已经完成”；如果已完成，就结束当前这轮 progress，不再继续追加步骤。
 - 只有当用户提出新的目标，或当前目标明显扩展到超出原计划时，才开启下一轮 progress 流程。
-- 步骤标题要具体、可执行、面向结果，避免空泛描述。
+- 步骤标题具体、面向结果，避免「分析」「实现」「验证」这类空泛词。
 
 ### 等待人类的边界
 
@@ -84,20 +99,25 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 ### 标准命令
 
 \`\`\`bash
-# 先读取已有计划
+# 第一步：读取已有计划
 ${c} list --quest-id ${questId} --json
 
-# 先创建 3-5 个中层阶段
-IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "分析现有实现" --active-form "正在分析现有实现")
-IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "实现变更" --active-form "正在实现变更")
-IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "验证结果" --active-form "正在验证结果")
+# 没有计划时，创建 2-4 个阶段目标（以「修复 CSS 对齐问题」为例）
+IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "定位对齐问题根因" --active-form "正在分析 CSS 结构")
+IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "修复指示器与文字对齐" --active-form "正在修改 CSS")
+IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "构建并验证修复效果" --active-form "正在构建部署")
 
 # 按顺序推进
 ${c} update $IDA --status doing
+# ... 执行分析（读文件、搜索等微动作直接做，不建条目）
 ${c} update $IDA --status done
+
 ${c} update $IDB --status doing
+# ... 修改 CSS（改文件是微动作，写进 active-form 即可）
 ${c} update $IDB --status done
+
 ${c} update $IDC --status doing
+# ... 构建、重启服务（这些是微动作，直接执行，不建条目）
 ${c} update $IDC --status done
 
 # 每完成一步，都要判断整个任务是否已完成
