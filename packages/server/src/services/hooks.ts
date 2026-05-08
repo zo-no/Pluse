@@ -5,7 +5,6 @@ import type { Run } from '@pluse/types'
 import { getGlobalHooksPath, getProjectHooksPath } from '../support/paths'
 import { getRunsByQuest } from '../models/run'
 import { updateQuest } from '../models/quest'
-import { createTodoWithEffects } from './todos'
 import { getProject } from '../models/project'
 import { runSessionClassificationInBackground } from './session-classifier'
 import { createToolEnv } from '../support/tool-env'
@@ -23,13 +22,6 @@ interface HighlightQuestAction {
   type: 'highlight_quest'
 }
 
-interface CreateTodoAction {
-  type: 'create_todo'
-  title: string
-  description?: string
-  tags?: string[]
-}
-
 interface ShellAction {
   type: 'shell'
   command: string
@@ -40,7 +32,7 @@ interface AgentClassifySessionAction {
   allowCreateSessionCategory?: boolean
 }
 
-type HookAction = HighlightQuestAction | CreateTodoAction | ShellAction | AgentClassifySessionAction
+type HookAction = HighlightQuestAction | ShellAction | AgentClassifySessionAction
 
 export interface Hook {
   id: string
@@ -209,16 +201,6 @@ export function runHooks(event: HookEvent, ctx: { quest: Quest; run: Run }): voi
     for (const action of hook.actions) {
       if (action.type === 'highlight_quest') {
         updateQuest(quest.id, { unread: true })
-      } else if (action.type === 'create_todo') {
-        const todoInput = {
-          projectId: quest.projectId,
-          originQuestId: quest.id,
-          createdBy: 'system' as const,
-          title: renderTemplate(action.title, fullCtx),
-          description: action.description ? renderTemplate(action.description, fullCtx) : undefined,
-          tags: action.tags,
-        }
-        createTodoWithEffects(todoInput)
       } else if (action.type === 'shell') {
         const rendered = renderTemplate(action.command, fullCtx)
         try {

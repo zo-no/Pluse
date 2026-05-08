@@ -37,7 +37,6 @@ import {
   updateRun,
 } from '../models/run'
 import { emit } from '../services/events'
-import { ensureReviewReminderWithEffects } from '../services/reminders'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { runHooks } from '../services/hooks'
 import { syncManagedCodexHome } from '../support/codex-home'
@@ -853,20 +852,6 @@ function requestTermination(runId: string, reason: 'cancelled' | 'timeout'): voi
   }
 }
 
-function ensureTaskReviewReminder(quest: Quest, runId: string, succeeded: boolean): void {
-  if (!succeeded || !quest.reviewOnComplete || quest.kind !== 'task' || quest.deleted) return
-  const questTitle = quest.title ?? quest.name ?? quest.id
-  ensureReviewReminderWithEffects({
-    projectId: quest.projectId,
-    originQuestId: quest.id,
-    originRunId: runId,
-    createdBy: 'system',
-    type: 'review',
-    title: `复核：${questTitle}`,
-    body: `自动化「${questTitle}」已完成。查看输出确认无误后，点击勾选即可删除这条提醒。`,
-  })
-}
-
 async function generateQuestNameWithProvider(quest: Quest, snapshot: AutoRenameSnapshot): Promise<string | null> {
   const project = getProject(quest.projectId)
   if (!project) return null
@@ -1062,7 +1047,6 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
     scheduleAutoRename(quest.id)
   }
 
-  ensureTaskReviewReminder(quest, runId, state === 'completed')
   emitRunUpdated(runId)
   emitQuestUpdated(quest.id)
   if (quest.kind === 'session') maybeStartNextFollowUp(quest.id)
