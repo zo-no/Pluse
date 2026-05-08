@@ -7,7 +7,6 @@ import type {
   Project,
   ProjectPriority,
   Quest,
-  Reminder,
   Todo,
   UpdateTodoInput,
 } from '@pluse/types'
@@ -39,7 +38,7 @@ interface TodoPanelProps {
   /** 嵌入左侧栏时为 true，不渲染外层 aside */
   embedded?: boolean
   /** 嵌入模式下，外部控制的初始 tab */
-  initialTab?: 'human' | 'reminder' | 'check_in' | 'automation' | 'progress'
+  initialTab?: 'human' | 'check_in' | 'automation' | 'progress'
   /**
    * 作用域：'global' 为全局视图（左侧栏默认），'project' 为项目上下文（右侧工作台用）
    * @default 'global'
@@ -47,7 +46,7 @@ interface TodoPanelProps {
   scope?: TodoPanelScope
 }
 
-type SourceTab = 'progress' | 'human' | 'reminder' | 'check_in' | 'automation'
+type SourceTab = 'progress' | 'human' | 'check_in' | 'automation'
 type SnoozePreset = 'later' | 'tomorrow' | 'next_week'
 
 type ProjectRailGroup = {
@@ -136,51 +135,32 @@ function todoStatusLabel(status: Todo['status'], t?: (key: string) => string): s
   return t ? t('待处理') : '待处理'
 }
 
-function reminderPriorityLabel(priority: Reminder['priority'], t?: (key: string) => string): string {
+function attentionPriorityLabel(priority: CheckIn['priority'], t?: (key: string) => string): string {
   if (priority === 'urgent') return t ? t('紧急') : '紧急'
   if (priority === 'high') return t ? t('高优先级') : '高优先级'
   if (priority === 'low') return t ? t('低优先级') : '低优先级'
   return t ? t('普通') : '普通'
 }
 
-function todoPriorityBadgeText(priority: Todo['priority'] | Reminder['priority']): string {
+function todoPriorityBadgeText(priority: Todo['priority'] | CheckIn['priority']): string {
   if (priority === 'urgent') return '!!'
   if (priority === 'high') return '!'
   if (priority === 'low') return '↓'
   return ''
 }
 
-function todoPriorityAriaLabel(priority: Todo['priority'] | Reminder['priority'], t?: (key: string) => string): string {
+function todoPriorityAriaLabel(priority: Todo['priority'] | CheckIn['priority'], t?: (key: string) => string): string {
   if (priority === 'urgent') return t ? t('紧急') : '紧急'
   if (priority === 'high') return t ? t('高优先级') : '高优先级'
   if (priority === 'low') return t ? t('低优先级') : '低优先级'
   return ''
 }
 
-const REMINDER_PRIORITY_RANK: Record<Reminder['priority'], number> = {
+const ATTENTION_PRIORITY_RANK: Record<CheckIn['priority'], number> = {
   urgent: 0,
   high: 1,
   normal: 2,
   low: 3,
-}
-
-function reminderReadyRank(reminder: Reminder): number {
-  if (!reminder.remindAt) return 0
-  return Date.parse(reminder.remindAt) <= Date.now() ? 0 : 1
-}
-
-function reminderTimeValue(reminder: Reminder): number {
-  return reminder.remindAt ? Date.parse(reminder.remindAt) : Number.POSITIVE_INFINITY
-}
-
-function compareRemindersByAttention(left: Reminder, right: Reminder): number {
-  const readyDelta = reminderReadyRank(left) - reminderReadyRank(right)
-  if (readyDelta !== 0) return readyDelta
-  const priorityDelta = REMINDER_PRIORITY_RANK[left.priority] - REMINDER_PRIORITY_RANK[right.priority]
-  if (priorityDelta !== 0) return priorityDelta
-  const timeDelta = reminderTimeValue(left) - reminderTimeValue(right)
-  if (timeDelta !== 0) return timeDelta
-  return Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
 }
 
 function sortByUpdatedAt<T extends { updatedAt: string }>(items: T[]): T[] {
@@ -196,15 +176,11 @@ function sortOpenTodos(items: Todo[]): Todo[] {
   })
 }
 
-function sortReminders(items: Reminder[]): Reminder[] {
-  return [...items].sort(compareRemindersByAttention)
-}
-
 function compareCheckInsByAttention(left: CheckIn, right: CheckIn): number {
   const leftReady = left.remindAt ? (Date.parse(left.remindAt) <= Date.now() ? 0 : 1) : 0
   const rightReady = right.remindAt ? (Date.parse(right.remindAt) <= Date.now() ? 0 : 1) : 0
   if (leftReady !== rightReady) return leftReady - rightReady
-  const priorityDelta = REMINDER_PRIORITY_RANK[left.priority] - REMINDER_PRIORITY_RANK[right.priority]
+  const priorityDelta = ATTENTION_PRIORITY_RANK[left.priority] - ATTENTION_PRIORITY_RANK[right.priority]
   if (priorityDelta !== 0) return priorityDelta
   const leftTime = Date.parse(left.remindAt ?? left.updatedAt)
   const rightTime = Date.parse(right.remindAt ?? right.updatedAt)
@@ -223,7 +199,6 @@ function formatEmptyMessage(
 ): string {
   const isProject = scope === 'project'
   if (source === 'progress') return t ? t('当前会话尚无计划项。') : '当前会话尚无计划项。'
-  if (source === 'reminder') return t ? (isProject ? t('该项目暂无提醒。') : t('当前暂无提醒。')) : (isProject ? '该项目暂无提醒。' : '当前暂无提醒。')
   if (source === 'check_in') return t ? (isProject ? t('该项目暂无打卡。') : t('当前暂无打卡。')) : (isProject ? '该项目暂无打卡。' : '当前暂无打卡。')
   if (source === 'automation') return t ? t('当前项目暂无自动化。') : '当前项目暂无自动化。'
   return t ? (isProject ? t('该项目暂无待办。') : t('当前暂无待办。')) : (isProject ? '该项目暂无待办。' : '当前暂无待办。')
@@ -425,144 +400,6 @@ const TodoRailItem = memo(function TodoRailItem({
   )
 })
 
-const ReminderRailItem = memo(function ReminderRailItem({
-  reminder,
-  activeQuestId,
-  locale,
-  t,
-  snoozeMenuOpen,
-  snoozing,
-  highlighted,
-  onDeleteReminder,
-  onOpenReminder,
-  onOpenSnoozeMenu,
-  onSnoozeReminder,
-  onCustomSnoozeReminder,
-  onRequestClose,
-}: {
-  reminder: Reminder
-  activeQuestId?: string | null
-  locale: string
-  t: (key: string, values?: Record<string, string | number>) => string
-  snoozeMenuOpen: boolean
-  snoozing: boolean
-  highlighted: boolean
-  onDeleteReminder: (reminder: Reminder) => void
-  onOpenReminder: (reminderId: string) => void
-  onOpenSnoozeMenu: (reminderId: string) => void
-  onSnoozeReminder: (reminder: Reminder, preset: SnoozePreset) => void
-  onCustomSnoozeReminder: (reminder: Reminder) => void
-  onRequestClose?: () => void
-}) {
-  const hasSource = Boolean(reminder.originQuestId)
-  const isActive = hasSource && reminder.originQuestId === activeQuestId
-  const timeValue = reminder.remindAt ?? reminder.updatedAt
-  const timeLabel = reminder.remindAt
-    ? `${t('提醒')} ${formatDateTime(reminder.remindAt, locale, t)}`
-    : formatSidebarTime(reminder.updatedAt, t)
-
-  const copy = (
-    <div className="pluse-task-list-copy">
-      <div className="pluse-sidebar-item-title">
-        {reminder.priority !== 'normal' ? (
-          <span
-            className={`pluse-todo-priority-badge is-${reminder.priority}`}
-            aria-label={todoPriorityAriaLabel(reminder.priority, t)}
-            title={todoPriorityAriaLabel(reminder.priority, t)}
-          >
-            {todoPriorityBadgeText(reminder.priority)}
-          </span>
-        ) : null}
-        <strong>{reminder.title}</strong>
-      </div>
-      <div className="pluse-task-list-meta" title={formatDateTime(timeValue, locale, t)}>
-        <span className="pluse-meta-inline">
-          <ClockIcon className="pluse-icon pluse-inline-icon" />
-          {timeLabel}
-        </span>
-      </div>
-      {reminder.body ? <p className="pluse-task-list-note">{reminder.body}</p> : null}
-    </div>
-  )
-  const mainClassName = 'pluse-sidebar-item-main-button pluse-task-list-main pluse-task-list-detail-trigger'
-
-  return (
-    <article
-      className={`pluse-sidebar-item pluse-sidebar-row pluse-task-list-item is-reminder${isActive ? ' is-active' : ''}${highlighted ? ' is-highlighted' : ''}`}
-      data-reminder-id={reminder.id}
-    >
-      {reminder.originQuestId ? (
-        <Link
-          className={mainClassName}
-          to={`/quests/${reminder.originQuestId}`}
-          onClick={() => onRequestClose?.()}
-          aria-label={`${t('来源会话')} · ${reminder.title}`}
-        >
-          {copy}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className={mainClassName}
-          onClick={() => onOpenReminder(reminder.id)}
-          aria-label={`${t('提醒详情')} · ${reminder.title}`}
-        >
-          {copy}
-        </button>
-      )}
-      <div className="pluse-sidebar-item-actions">
-        {reminder.originQuestId ? (
-          <button
-            type="button"
-            className={`pluse-sidebar-action-btn pluse-task-source-link${isActive ? ' is-active' : ''}`}
-            onClick={() => onOpenReminder(reminder.id)}
-            aria-label={t('提醒详情')}
-            title={t('提醒详情')}
-          >
-            <DetailIcon className="pluse-icon" />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="pluse-sidebar-action-btn"
-          onClick={() => onOpenSnoozeMenu(reminder.id)}
-          aria-label={t('延后提醒')}
-          title={t('延后提醒')}
-          disabled={snoozing}
-        >
-          <DelayIcon className="pluse-icon" />
-        </button>
-        <button
-          type="button"
-          className="pluse-sidebar-action-btn"
-          onClick={() => onDeleteReminder(reminder)}
-          aria-label={t('完成提醒')}
-          title={t('完成提醒')}
-          disabled={snoozing}
-        >
-          <CheckIcon className="pluse-icon" />
-        </button>
-      </div>
-      {snoozeMenuOpen ? (
-        <div className="pluse-reminder-snooze-menu" aria-label={t('延后提醒')}>
-          <button type="button" onClick={() => onSnoozeReminder(reminder, 'later')} disabled={snoozing}>
-            {t('稍后')}
-          </button>
-          <button type="button" onClick={() => onSnoozeReminder(reminder, 'tomorrow')} disabled={snoozing}>
-            {t('明早')}
-          </button>
-          <button type="button" onClick={() => onSnoozeReminder(reminder, 'next_week')} disabled={snoozing}>
-            {t('下周')}
-          </button>
-          <button type="button" onClick={() => onCustomSnoozeReminder(reminder)} disabled={snoozing}>
-            {t('指定')}
-          </button>
-        </div>
-      ) : null}
-    </article>
-  )
-})
-
 const CheckInRailItem = memo(function CheckInRailItem({
   item,
   activeQuestId,
@@ -735,7 +572,6 @@ export function TodoPanel({
   const navigate = useNavigate()
   const [globalTodos, setGlobalTodos] = useState<Todo[]>([])
   const [globalArchivedTodos, setGlobalArchivedTodos] = useState<Todo[]>([])
-  const [globalReminders, setGlobalReminders] = useState<Reminder[]>([])
   const [globalCheckIns, setGlobalCheckIns] = useState<CheckIn[]>([])
   const [sourceTab, setSourceTab] = useState<SourceTab>(initialTab ?? (activeQuestId ? 'progress' : 'human'))
 
@@ -749,7 +585,6 @@ export function TodoPanel({
   const [createModalKind, setCreateModalKind] = useState<TaskComposerKind>('human')
   const [createCheckInOpen, setCreateCheckInOpen] = useState(false)
   const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null)
-  const [selectedReminderId, setSelectedReminderId] = useState<string | null>(null)
   const [selectedCheckInId, setSelectedCheckInId] = useState<string | null>(null)
   const [todoEditOpen, setTodoEditOpen] = useState(false)
   const [todoDraft, setTodoDraft] = useState({
@@ -771,14 +606,10 @@ export function TodoPanel({
   const [checkInNoteDraft, setCheckInNoteDraft] = useState('')
   const [todoSaving, setTodoSaving] = useState(false)
   const [checkInSaving, setCheckInSaving] = useState(false)
-  const [snoozeMenuReminderId, setSnoozeMenuReminderId] = useState<string | null>(null)
-  const [snoozingReminderId, setSnoozingReminderId] = useState<string | null>(null)
-  const [customSnoozeReminderId, setCustomSnoozeReminderId] = useState<string | null>(null)
   const [snoozeMenuCheckInId, setSnoozeMenuCheckInId] = useState<string | null>(null)
   const [busyCheckInId, setBusyCheckInId] = useState<string | null>(null)
   const [customSnoozeCheckInId, setCustomSnoozeCheckInId] = useState<string | null>(null)
   const [customSnoozeAt, setCustomSnoozeAt] = useState('')
-  const [highlightedReminderId, setHighlightedReminderId] = useState<string | null>(null)
   const [highlightedCheckInId, setHighlightedCheckInId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
@@ -791,7 +622,6 @@ export function TodoPanel({
     low: false,
   })
   const reloadTimerRef = useRef<number | null>(null)
-  const highlightedReminderTimerRef = useRef<number | null>(null)
   const pendingDataReloadRef = useRef(false)
   const dataRequestSeqRef = useRef(0)
 
@@ -805,7 +635,6 @@ export function TodoPanel({
       [
         globalTodoResult,
         globalArchivedTodoResult,
-        globalReminderResult,
         globalCheckInResult,
       ],
       projectResults,
@@ -813,7 +642,6 @@ export function TodoPanel({
       Promise.all([
         api.getTodos({ deleted: false, projectId: todoProjectFilter }),
         api.getTodos({ deleted: true, projectId: todoProjectFilter }),
-        api.getReminders({ order: 'attention', projectId: contextProjectId }),
         api.getCheckIns({ order: 'attention', projectId: contextProjectId }),
       ]),
       projectId ? api.getProjectTags(projectId) : Promise.resolve(null),
@@ -828,10 +656,6 @@ export function TodoPanel({
       setError(globalArchivedTodoResult.error)
       return
     }
-    if (!globalReminderResult.ok) {
-      setError(globalReminderResult.error)
-      return
-    }
     if (!globalCheckInResult.ok) {
       setError(globalCheckInResult.error)
       return
@@ -839,7 +663,6 @@ export function TodoPanel({
 
     setGlobalTodos(globalTodoResult.data)
     setGlobalArchivedTodos(globalArchivedTodoResult.data)
-    setGlobalReminders(globalReminderResult.data)
     setGlobalCheckIns(globalCheckInResult.data)
 
     if (!projectResults) {
@@ -865,10 +688,6 @@ export function TodoPanel({
         window.clearTimeout(reloadTimerRef.current)
         reloadTimerRef.current = null
       }
-      if (highlightedReminderTimerRef.current) {
-        window.clearTimeout(highlightedReminderTimerRef.current)
-        highlightedReminderTimerRef.current = null
-      }
       pendingDataReloadRef.current = false
     }
   }, [])
@@ -879,21 +698,12 @@ export function TodoPanel({
       window.clearTimeout(reloadTimerRef.current)
       reloadTimerRef.current = null
     }
-    setSnoozeMenuReminderId(null)
-    setSnoozingReminderId(null)
-    setCustomSnoozeReminderId(null)
     setSnoozeMenuCheckInId(null)
     setBusyCheckInId(null)
     setCustomSnoozeCheckInId(null)
     setCustomSnoozeAt('')
-    setHighlightedReminderId(null)
     setHighlightedCheckInId(null)
-    setSelectedReminderId(null)
     setSelectedCheckInId(null)
-    if (highlightedReminderTimerRef.current) {
-      window.clearTimeout(highlightedReminderTimerRef.current)
-      highlightedReminderTimerRef.current = null
-    }
   }, [projectId])
 
   useEffect(() => {
@@ -913,7 +723,7 @@ export function TodoPanel({
   }, [activeQuestId, scope, sourceTab])
 
   useEffect(() => {
-    if (scope === 'project' && (sourceTab === 'human' || sourceTab === 'reminder' || sourceTab === 'check_in')) {
+    if (scope === 'project' && (sourceTab === 'human' || sourceTab === 'check_in')) {
       setSourceTab(activeQuestId ? 'progress' : 'automation')
     }
   }, [activeQuestId, scope, sourceTab])
@@ -923,8 +733,6 @@ export function TodoPanel({
       const shouldReloadData = (
         event.type === 'todo_updated'
         || event.type === 'todo_deleted'
-        || event.type === 'reminder_updated'
-        || event.type === 'reminder_deleted'
         || event.type === 'check_in_updated'
         || event.type === 'check_in_deleted'
         || event.type === 'quest_updated'
@@ -1030,20 +838,6 @@ export function TodoPanel({
     await onDataChanged?.()
   }, [loadData, onDataChanged])
 
-  const handleDeleteReminder = useCallback(async (reminder: Reminder) => {
-    setSnoozingReminderId(reminder.id)
-    const result = await api.deleteReminder(reminder.id)
-    setSnoozingReminderId(null)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    setSelectedReminderId((current) => current === reminder.id ? null : current)
-    setCheckInNoteDraft('')
-    await loadData()
-    await onDataChanged?.()
-  }, [loadData, onDataChanged])
-
   const handleCompleteCheckIn = useCallback(async (item: CheckIn, note?: string) => {
     setBusyCheckInId(item.id)
     const result = await api.completeCheckIn(item.id, {
@@ -1060,24 +854,6 @@ export function TodoPanel({
     await loadData()
     await onDataChanged?.()
   }, [loadData, onDataChanged])
-
-  const handleSnoozeReminder = useCallback(async (reminder: Reminder, remindAt: string) => {
-    setSnoozingReminderId(reminder.id)
-    const result = await api.updateReminder(reminder.id, { remindAt })
-    setSnoozingReminderId(null)
-    if (!result.ok) {
-      setError(result.error)
-      return false
-    }
-    setSnoozeMenuReminderId(null)
-    await loadData()
-    await onDataChanged?.()
-    return true
-  }, [loadData, onDataChanged])
-
-  const handlePresetSnoozeReminder = useCallback((reminder: Reminder, preset: SnoozePreset) => {
-    void handleSnoozeReminder(reminder, snoozeDate(preset))
-  }, [handleSnoozeReminder])
 
   const handleSnoozeCheckIn = useCallback(async (item: CheckIn, remindAt: string) => {
     setBusyCheckInId(item.id)
@@ -1097,12 +873,6 @@ export function TodoPanel({
     void handleSnoozeCheckIn(item, snoozeDate(preset))
   }, [handleSnoozeCheckIn])
 
-  const handleOpenCustomSnooze = useCallback((reminder: Reminder) => {
-    setCustomSnoozeReminderId(reminder.id)
-    setCustomSnoozeAt(toDateTimeLocalValue(reminder.remindAt) || defaultCustomSnoozeValue())
-    setSnoozeMenuReminderId(null)
-  }, [])
-
   const handleOpenCustomSnoozeCheckIn = useCallback((item: CheckIn) => {
     setCustomSnoozeCheckInId(item.id)
     setCustomSnoozeAt(toDateTimeLocalValue(item.remindAt) || defaultCustomSnoozeValue())
@@ -1110,27 +880,21 @@ export function TodoPanel({
   }, [])
 
   async function handleSaveCustomSnooze() {
-    if (!selectedCustomSnoozeReminder && !selectedCustomSnoozeCheckIn) return
+    if (!selectedCustomSnoozeCheckIn) return
     const remindAt = fromDateTimeLocalValue(customSnoozeAt)
     if (!remindAt) {
       setError(t('请选择提醒时间'))
       return
     }
-    const ok = selectedCustomSnoozeReminder
-      ? await handleSnoozeReminder(selectedCustomSnoozeReminder, remindAt)
-      : selectedCustomSnoozeCheckIn
-        ? await handleSnoozeCheckIn(selectedCustomSnoozeCheckIn, remindAt)
-        : false
+    const ok = await handleSnoozeCheckIn(selectedCustomSnoozeCheckIn, remindAt)
     if (ok) {
-      setCustomSnoozeReminderId(null)
       setCustomSnoozeCheckInId(null)
       setCustomSnoozeAt('')
     }
   }
 
   function closeCustomSnooze() {
-    if (snoozingReminderId || busyCheckInId) return
-    setCustomSnoozeReminderId(null)
+    if (busyCheckInId) return
     setCustomSnoozeCheckInId(null)
     setCustomSnoozeAt('')
   }
@@ -1142,11 +906,6 @@ export function TodoPanel({
       filterTags.some((ft) => todo.tags.some((tag) => tag.toLowerCase() === ft.toLowerCase()))
     )
   }, [filterTags, globalTodos])
-
-  const visibleReminders = useMemo(() => {
-    if (sourceTab !== 'reminder') return []
-    return globalReminders
-  }, [globalReminders, sourceTab])
 
   const visibleCheckIns = useMemo(() => {
     if (sourceTab !== 'check_in') return []
@@ -1171,11 +930,6 @@ export function TodoPanel({
     [activeQuestId, globalTodos],
   )
 
-  const reminderCount = useMemo(
-    () => globalReminders.length,
-    [globalReminders],
-  )
-
   const checkInCount = useMemo(
     () => globalCheckIns.length,
     [globalCheckIns],
@@ -1186,28 +940,21 @@ export function TodoPanel({
     [visibleTodos],
   )
 
-  const sortedReminders = useMemo(
-    () => sortReminders(visibleReminders),
-    [visibleReminders],
-  )
-
   const sortedCheckIns = useMemo(
     () => sortCheckIns(visibleCheckIns),
     [visibleCheckIns],
   )
 
   const projectRailGroups = useMemo(
-    () => sourceTab === 'reminder'
-      ? []
-      : buildProjectRailGroups({
-          projects,
-          activeProjectId: sourceTab === 'check_in' ? null : projectId,
-          activeProjectName: sourceTab === 'check_in' ? null : projectName,
-          openTodos: sourceTab === 'human' ? openHumanTodos : [],
-          checkIns: sourceTab === 'check_in' ? sortedCheckIns : [],
-          source: sourceTab === 'check_in' ? 'check_in' : 'human',
-          t,
-        }),
+    () => buildProjectRailGroups({
+      projects,
+      activeProjectId: sourceTab === 'check_in' ? null : projectId,
+      activeProjectName: sourceTab === 'check_in' ? null : projectName,
+      openTodos: sourceTab === 'human' ? openHumanTodos : [],
+      checkIns: sourceTab === 'check_in' ? sortedCheckIns : [],
+      source: sourceTab === 'check_in' ? 'check_in' : 'human',
+      t,
+    }),
     [openHumanTodos, projectId, projectName, projects, sortedCheckIns, sourceTab, t],
   )
 
@@ -1227,17 +974,9 @@ export function TodoPanel({
     () => (selectedTodoId ? allKnownTodos.find((todo) => todo.id === selectedTodoId) ?? null : null),
     [allKnownTodos, selectedTodoId],
   )
-  const selectedReminder = useMemo(
-    () => (selectedReminderId ? globalReminders.find((reminder) => reminder.id === selectedReminderId) ?? null : null),
-    [globalReminders, selectedReminderId],
-  )
   const selectedCheckIn = useMemo(
     () => (selectedCheckInId ? globalCheckIns.find((item) => item.id === selectedCheckInId) ?? null : null),
     [globalCheckIns, selectedCheckInId],
-  )
-  const selectedCustomSnoozeReminder = useMemo(
-    () => (customSnoozeReminderId ? globalReminders.find((reminder) => reminder.id === customSnoozeReminderId) ?? null : null),
-    [customSnoozeReminderId, globalReminders],
   )
   const selectedCustomSnoozeCheckIn = useMemo(
     () => (customSnoozeCheckInId ? globalCheckIns.find((item) => item.id === customSnoozeCheckInId) ?? null : null),
@@ -1247,7 +986,6 @@ export function TodoPanel({
 
   const hasVisibleContent = (
     openHumanTodos.length > 0
-    || sortedReminders.length > 0
     || sortedCheckIns.length > 0
   )
 
@@ -1281,20 +1019,19 @@ export function TodoPanel({
 
   useEffect(() => {
     setCheckInNoteDraft('')
-  }, [selectedCheckInId, selectedReminderId])
+  }, [selectedCheckInId])
 
   useEffect(() => {
-    if (!selectedTodoId && !selectedReminderId && !selectedCheckInId) return
+    if (!selectedTodoId && !selectedCheckInId) return
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelectedTodoId(null)
-        setSelectedReminderId(null)
         setSelectedCheckInId(null)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedCheckInId, selectedReminderId, selectedTodoId])
+  }, [selectedCheckInId, selectedTodoId])
 
   function openCreateModal(kind: TaskComposerKind = 'human') {
     setCreateModalKind(kind)
@@ -1367,21 +1104,12 @@ export function TodoPanel({
   }
 
   const handleOpenTodo = useCallback((todoId: string) => {
-    setSelectedReminderId(null)
     setSelectedCheckInId(null)
     setSelectedTodoId(todoId)
   }, [])
 
-  const handleOpenReminder = useCallback((reminderId: string) => {
-    setSelectedTodoId(null)
-    setSelectedCheckInId(null)
-    setSnoozeMenuReminderId(null)
-    setSelectedReminderId(reminderId)
-  }, [])
-
   const handleOpenCheckIn = useCallback((id: string) => {
     setSelectedTodoId(null)
-    setSelectedReminderId(null)
     setSnoozeMenuCheckInId(null)
     setSelectedCheckInId(id)
   }, [])
@@ -1531,15 +1259,6 @@ export function TodoPanel({
                   </button>
                   <button
                     type="button"
-                    className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'reminder' ? ' is-active' : ''}`}
-                    onClick={() => setSourceTab('reminder')}
-                    aria-selected={sourceTab === 'reminder'}
-                  >
-                    {t('提醒')}
-                    {reminderCount > 0 ? <span className="pluse-tab-count">{reminderCount}</span> : null}
-                  </button>
-                  <button
-                    type="button"
                     className={`pluse-sidebar-tab pluse-rail-object-tab${sourceTab === 'check_in' ? ' is-active' : ''}`}
                     onClick={() => setSourceTab('check_in')}
                     aria-selected={sourceTab === 'check_in'}
@@ -1604,32 +1323,6 @@ export function TodoPanel({
 
         {sourceTab !== 'progress' && sourceTab !== 'automation' ? (
           <div className="pluse-task-list">
-          {sourceTab === 'reminder' ? (
-            <div className="pluse-note-list">
-              {scope === 'project' && projectName ? (
-                <p className="pluse-task-list-scope-kicker">{t('「{name}」的提醒', { name: projectName })}</p>
-              ) : null}
-              {sortedReminders.map((reminder) => (
-                <ReminderRailItem
-                  key={reminder.id}
-                  reminder={reminder}
-                  activeQuestId={activeQuestId}
-                  locale={locale}
-                  t={t}
-                  snoozeMenuOpen={snoozeMenuReminderId === reminder.id}
-                  snoozing={snoozingReminderId === reminder.id}
-                  highlighted={highlightedReminderId === reminder.id}
-                  onDeleteReminder={handleDeleteReminder}
-                  onOpenReminder={handleOpenReminder}
-                  onOpenSnoozeMenu={(reminderId) => setSnoozeMenuReminderId((current) => current === reminderId ? null : reminderId)}
-                  onSnoozeReminder={handlePresetSnoozeReminder}
-                  onCustomSnoozeReminder={handleOpenCustomSnooze}
-                  onRequestClose={onRequestClose}
-                />
-              ))}
-            </div>
-          ) : null}
-
           {projectRailGroups.map((group) => {
             const attentionTab = sourceTab === 'check_in'
             const expanded = attentionTab ? true : expandedProjectGroupKeys.includes(group.key)
@@ -1768,7 +1461,7 @@ export function TodoPanel({
         </div>
         ) : null}
 
-        {sourceTab !== 'reminder' && sourceTab !== 'progress' ? (
+        {sourceTab !== 'progress' ? (
           <section className="pluse-rail-section-new-task">
             <button
               type="button"
@@ -1909,7 +1602,7 @@ export function TodoPanel({
         modalRoot,
       ) : null}
 
-      {(selectedCustomSnoozeReminder || selectedCustomSnoozeCheckIn) && modalRoot ? createPortal(
+      {selectedCustomSnoozeCheckIn && modalRoot ? createPortal(
         <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={closeCustomSnooze}>
           <section
             className="pluse-modal-panel pluse-reminder-snooze-modal"
@@ -1920,12 +1613,12 @@ export function TodoPanel({
           >
             <header className="pluse-todo-detail-head">
               <div className="pluse-todo-detail-identity">
-                <span className="pluse-task-detail-kicker">{selectedCustomSnoozeCheckIn ? t('打卡') : t('提醒')}</span>
+                <span className="pluse-task-detail-kicker">{t('打卡')}</span>
                 <div className="pluse-task-detail-title-row">
                   <h2 id="reminder-snooze-title">{t('指定提醒时间')}</h2>
                 </div>
                 <div className="pluse-task-detail-meta">
-                  <span>{selectedCustomSnoozeReminder?.title ?? selectedCustomSnoozeCheckIn?.title}</span>
+                  <span>{selectedCustomSnoozeCheckIn.title}</span>
                 </div>
               </div>
               <button
@@ -1934,7 +1627,7 @@ export function TodoPanel({
                 onClick={closeCustomSnooze}
                 aria-label={t('关闭')}
                 title={t('关闭')}
-                disabled={Boolean(snoozingReminderId || busyCheckInId)}
+                disabled={Boolean(busyCheckInId)}
               >
                 <CloseIcon className="pluse-icon" />
               </button>
@@ -1957,117 +1650,17 @@ export function TodoPanel({
                 type="button"
                 className="pluse-button"
                 onClick={() => void handleSaveCustomSnooze()}
-                disabled={Boolean(snoozingReminderId || busyCheckInId) || !customSnoozeAt}
+                disabled={Boolean(busyCheckInId) || !customSnoozeAt}
               >
-                {snoozingReminderId || busyCheckInId ? t('保存中…') : t('保存')}
+                {busyCheckInId ? t('保存中…') : t('保存')}
               </button>
               <button
                 type="button"
                 className="pluse-button pluse-button-ghost"
                 onClick={closeCustomSnooze}
-                disabled={Boolean(snoozingReminderId || busyCheckInId)}
+                disabled={Boolean(busyCheckInId)}
               >
                 {t('取消')}
-              </button>
-            </footer>
-          </section>
-        </div>,
-        modalRoot,
-      ) : null}
-
-      {selectedReminder && modalRoot ? createPortal(
-        <div className="pluse-modal-backdrop pluse-todo-detail-backdrop" onClick={() => setSelectedReminderId(null)}>
-          <section
-            className="pluse-modal-panel pluse-todo-detail-modal pluse-reminder-detail-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`reminder-detail-title-${selectedReminder.id}`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="pluse-todo-detail-head">
-              <div className="pluse-todo-detail-identity">
-                <span className="pluse-task-detail-kicker">{t('提醒')}</span>
-                <div className="pluse-task-detail-title-row">
-                  <h2 id={`reminder-detail-title-${selectedReminder.id}`}>{selectedReminder.title}</h2>
-                </div>
-                <div className="pluse-task-detail-meta">
-                  <span>{selectedReminder.remindAt ? `${t('提醒')} ${formatDateTime(selectedReminder.remindAt, locale, t)}` : t('无指定时间')}</span>
-                  <span>{formatDateTime(selectedReminder.updatedAt, locale, t)}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="pluse-icon-button"
-                onClick={() => setSelectedReminderId(null)}
-                aria-label={t('关闭')}
-                title={t('关闭')}
-              >
-                <CloseIcon className="pluse-icon" />
-              </button>
-            </header>
-
-            <div className="pluse-todo-detail-body">
-              {(selectedReminder.priority !== 'normal' || selectedReminder.remindAt) ? (
-                <section className="pluse-todo-detail-section">
-                  <div className="pluse-todo-detail-pills">
-                    {selectedReminder.priority !== 'normal' ? (
-                      <span className={`pluse-sidebar-badge pluse-priority-badge is-${selectedReminder.priority}`}>
-                        {reminderPriorityLabel(selectedReminder.priority, t)}
-                      </span>
-                    ) : null}
-                    {selectedReminder.remindAt ? (
-                      <span className="pluse-sidebar-badge">
-                        {t('提醒')} {formatDateTime(selectedReminder.remindAt, locale, t)}
-                      </span>
-                    ) : null}
-                  </div>
-                </section>
-              ) : null}
-
-              <section className="pluse-todo-detail-section">
-                <h3>{t('内容')}</h3>
-                <p className={selectedReminder.body ? undefined : 'is-empty'}>{selectedReminder.body || t('暂无提醒内容')}</p>
-              </section>
-
-              {selectedReminder.originQuestId ? (
-                <section className="pluse-todo-detail-section">
-                  <h3>{t('来源')}</h3>
-                  <Link
-                    className="pluse-sidebar-chip-link"
-                    to={`/quests/${selectedReminder.originQuestId}`}
-                    onClick={() => {
-                      setSelectedReminderId(null)
-                      onRequestClose?.()
-                    }}
-                  >
-                    <RouteIcon className="pluse-icon" />
-                    <span>{t('来源会话')}</span>
-                  </Link>
-                </section>
-              ) : null}
-            </div>
-
-            <footer className="pluse-todo-detail-actions">
-              <button
-                type="button"
-                className="pluse-button pluse-button-ghost"
-                onClick={() => {
-                  setSelectedReminderId(null)
-                  handleOpenCustomSnooze(selectedReminder)
-                }}
-                disabled={snoozingReminderId === selectedReminder.id}
-              >
-                {t('延后提醒')}
-              </button>
-              <button
-                type="button"
-                className="pluse-button"
-                onClick={() => {
-                  void handleDeleteReminder(selectedReminder)
-                }}
-                disabled={snoozingReminderId === selectedReminder.id}
-              >
-                {t('完成提醒')}
               </button>
             </footer>
           </section>
@@ -2112,7 +1705,7 @@ export function TodoPanel({
                   <div className="pluse-todo-detail-pills">
                     {selectedCheckIn.priority !== 'normal' ? (
                       <span className={`pluse-sidebar-badge pluse-priority-badge is-${selectedCheckIn.priority}`}>
-                        {reminderPriorityLabel(selectedCheckIn.priority, t)}
+                        {attentionPriorityLabel(selectedCheckIn.priority, t)}
                       </span>
                     ) : null}
                     {selectedCheckIn.remindAt ? (

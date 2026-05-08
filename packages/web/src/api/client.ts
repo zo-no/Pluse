@@ -17,8 +17,6 @@ import type {
   Quest,
   QuestEvent,
   QuestOp,
-  Reminder,
-  ReminderListOrder,
   Run,
   RuntimeModelCatalog,
   RuntimeTool,
@@ -31,7 +29,6 @@ import type {
   UpdateCheckInInput,
   UpdateProjectInput,
   UpdateQuestInput,
-  UpdateReminderInput,
   UpdateTodoInput,
   UpdateAppSettingsInput,
   UploadedAsset,
@@ -311,38 +308,6 @@ export function deleteTodo(id: string): Promise<ApiResult<{ deleted: boolean }>>
 
 export function getProjectTags(projectId: string): Promise<ApiResult<{ tags: string[] }>> {
   return request<{ tags: string[] }>('GET', `/todos/tags?projectId=${encodeURIComponent(projectId)}`)
-}
-
-export function getReminders(params: {
-  projectId?: string
-  type?: Reminder['type']
-  priority?: Reminder['priority']
-  originQuestId?: string
-  originRunId?: string
-  time?: 'all' | 'due' | 'future'
-  order?: ReminderListOrder
-} = {}): Promise<ApiResult<Reminder[]>> {
-  const search = new URLSearchParams()
-  if (params.projectId) search.set('projectId', params.projectId)
-  if (params.type) search.set('type', params.type)
-  if (params.priority) search.set('priority', params.priority)
-  if (params.originQuestId) search.set('originQuestId', params.originQuestId)
-  if (params.originRunId) search.set('originRunId', params.originRunId)
-  if (params.time) search.set('time', params.time)
-  if (params.order) search.set('order', params.order)
-  return request<Reminder[]>('GET', `/reminders${search.toString() ? `?${search.toString()}` : ''}`)
-}
-
-export function getReminder(id: string): Promise<ApiResult<Reminder>> {
-  return request<Reminder>('GET', `/reminders/${id}`)
-}
-
-export function updateReminder(id: string, input: UpdateReminderInput): Promise<ApiResult<Reminder>> {
-  return request<Reminder>('PATCH', `/reminders/${id}`, input)
-}
-
-export function deleteReminder(id: string): Promise<ApiResult<{ deleted: boolean }>> {
-  return request<{ deleted: boolean }>('DELETE', `/reminders/${id}`)
 }
 
 export function getCheckIns(params: {

@@ -182,7 +182,7 @@ export function SessionList({
   const [sessionCategories, setSessionCategories] = useState<SessionCategory[]>([])
   const [uncategorizedSessionsExpanded, setUncategorizedSessionsExpanded] = useState(true)
   const [archivedSessionsExpanded, setArchivedSessionsExpanded] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions' | 'automation' | 'todo' | 'reminder' | 'check_in'>(() => (activeProjectId ? 'sessions' : 'projects'))
+  const [sidebarTab, setSidebarTab] = useState<'projects' | 'sessions' | 'automation' | 'todo' | 'check_in'>(() => (activeProjectId ? 'sessions' : 'projects'))
   const [domains, setDomains] = useState<Domain[]>([])
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -712,13 +712,6 @@ export function SessionList({
           </button>
           <button
             type="button"
-            className={`pluse-sidebar-tab${sidebarTab === 'reminder' ? ' is-active' : ''}`}
-            onClick={() => setSidebarTab('reminder')}
-          >
-            {t('提醒')}
-          </button>
-          <button
-            type="button"
             className={`pluse-sidebar-tab${sidebarTab === 'check_in' ? ' is-active' : ''}`}
             onClick={() => setSidebarTab('check_in')}
           >
@@ -737,7 +730,7 @@ export function SessionList({
             onCreateProject={() => setNewProjectModalOpen(true)}
             onNavigate={onNavigate}
           />
-        ) : sidebarTab === 'todo' || sidebarTab === 'reminder' || sidebarTab === 'check_in' ? (
+        ) : sidebarTab === 'todo' || sidebarTab === 'check_in' ? (
           <TodoPanel
             projectId={activeProjectId}
             projectName={activeProject?.name ?? null}
@@ -745,7 +738,7 @@ export function SessionList({
             activeQuestId={activeQuestId}
             onRequestClose={onRequestClose}
             embedded
-            initialTab={sidebarTab === 'todo' ? 'human' : sidebarTab}
+            initialTab={sidebarTab === 'todo' ? 'human' : 'check_in'}
           />
         ) : (
           <>
