@@ -11,7 +11,7 @@
 
 Phase 1 目标：
 
-- Agent 每轮先创建 `3-5` 个中层阶段
+- Agent 每轮先创建 `2-4` 个中层阶段，大型任务最多 `5` 个
 - 每个 Progress item 归属某个 cycle
 - 每完成一步都重新判断任务是否完成
 - 当前 cycle 走完但任务未完成时，可开启下一轮 cycle
@@ -161,13 +161,14 @@ pluse progress cycle update <cycle-id> --status active|completed|superseded|canc
 - 每次先 `progress list`
 - 把一次任务推进视为一轮 progress 流程
 - 无 active cycle 时先创建新 cycle
-- 新 cycle 默认创建 `3-5` 个中层阶段
+- 新 cycle 默认创建 `2-4` 个中层阶段，大型任务最多 `5` 个
 - 某些后台动作不必出现在 Progress 中；只保留用户可理解的阶段推进
 - 微动作只写入 `active-form`
 - 每个 item `done` 后都要判断：
   - 任务已完成 -> 停止并结束 cycle
   - 仍有 future item -> 继续当前 cycle
   - 当前 cycle 已走完且任务未完成 -> 开下一轮 cycle
+- 自然完成时默认用结果回复收口；只有后续人工动作明确、必要、可执行时才创建 Todo / waiting progress / Reminder / Check-in，避免用户信息爆炸
 - 用户聊天若表达计划调整，优先修正当前 cycle 的 future items
 - 若任务进行中用户发来新消息改变方向，优先调整当前计划和执行路径
 - 只有用户提出新的目标，或当前目标明显扩展到超出原计划时，才开启下一轮 progress 流程
@@ -224,13 +225,14 @@ pluse progress cycle update <cycle-id> --status active|completed|superseded|canc
 ## Acceptance
 
 - [ ] Quest 同一时刻最多只有一个 `active` progress cycle
-- [ ] Agent 可为 Quest 创建新 cycle，并在该 cycle 下创建 `3-5` 个 item
+- [ ] Agent 可为 Quest 创建新 cycle，并在该 cycle 下创建 `2-4` 个 item；大型任务最多 `5` 个
 - [ ] Progress item 支持绑定 `progressCycleId`
 - [ ] `GET /api/quests/:id/progress` 能按 cycle 返回全部 Progress
 - [ ] 当前 cycle 走完但任务未完成时，可继续创建下一轮 cycle
 - [ ] 当前 cycle 被计划改向时，可标为 `superseded`
 - [ ] Prompt 明确要求使用中层阶段，而不是微动作
 - [ ] Prompt 明确要求每个 item 完成后重新判断任务是否完成
+- [ ] Prompt 明确要求自然完成默认不追加低价值收尾项，只保留必要且可执行的后续人工动作
 - [ ] 前端 Progress 面板能按 cycle 分组展示全部内容
 
 ## 不做

@@ -53,8 +53,8 @@ progressCommand
   .option('--project-id <id>', 'Project id (optional; inferred from quest when possible)')
   .requiredOption('--title <title>', 'Task description (shown to user)')
   .option('--active-form <text>', 'In-progress description (defaults to title)')
-  .option('--waiting <instructions>', 'Waiting for human: describe what the human needs to do')
-  .option('--for <who>', 'Who this item is for: "ai" (default) or "human"', 'ai')
+  .option('--waiting <instructions>', 'Blocking human input needed before continuing; avoid low-value completion follow-ups')
+  .option('--for <who>', 'Advanced: "ai" (default) or "human" for an explicit human todo, not natural completion follow-up', 'ai')
   .option('--order <n>', 'Display order (number)', '0')
   .option('--json', 'Output as JSON', false)
   .action(async (opts: {

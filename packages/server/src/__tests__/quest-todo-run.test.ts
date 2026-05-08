@@ -1429,7 +1429,7 @@ describe('quest/todo/run APIs', () => {
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'reminder' && item.op === 'created' && item.questId === task.id)).toBe(true)
   })
 
-  it('creates explicit review todos for session completion hooks', async () => {
+  it('does not create implicit review todos for session completion hooks', async () => {
     const { commandPath } = installFakeCodex()
     process.env['PLUSE_CODEX_COMMAND'] = commandPath
     process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Session reply'
@@ -1458,11 +1458,7 @@ describe('quest/todo/run APIs', () => {
       return run
     }, { timeoutMs: 6_000 })
 
-    await waitFor(() => {
-      const todos = listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })
-      expect(todos).toHaveLength(1)
-      return todos
-    })
+    expect(listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })).toHaveLength(0)
 
     const second = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
       text: 'Second turn',
@@ -1480,7 +1476,7 @@ describe('quest/todo/run APIs', () => {
     }, { timeoutMs: 6_000 })
 
     const reviewTodos = listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })
-    expect(reviewTodos).toHaveLength(2)
+    expect(reviewTodos).toHaveLength(0)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

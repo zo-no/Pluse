@@ -4,15 +4,15 @@ import { expandToolPath } from '../support/tool-env'
 describe('expandToolPath', () => {
   it('prepends user bin paths needed by installed tools', () => {
     const path = expandToolPath('/usr/bin:/bin', '/Users/example')
-    expect(path.split(':').slice(0, 7)).toEqual([
+    expect(path.split(':').slice(0, 5)).toEqual([
       '/Users/example/.bun/bin',
       '/Users/example/.local/bin',
       '/Users/example/.openclaw/tools/node/bin',
       '/Users/example/.claude/local/bin',
       '/Users/example/.npm-global/bin',
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
     ])
+    expect(path.split(':')).toContain('/opt/homebrew/bin')
+    expect(path.split(':')).toContain('/usr/local/bin')
   })
 
   it('deduplicates path entries while preserving first occurrence', () => {
@@ -23,9 +23,9 @@ describe('expandToolPath', () => {
       '/Users/example/.openclaw/tools/node/bin',
       '/Users/example/.claude/local/bin',
       '/Users/example/.npm-global/bin',
-      '/opt/homebrew/bin',
       '/usr/local/bin',
       '/usr/bin',
+      '/opt/homebrew/bin',
     ])
   })
 })

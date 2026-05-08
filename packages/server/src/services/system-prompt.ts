@@ -19,7 +19,7 @@ Pluse 的核心概念：
 - Todo（待办 / Progress）：当前作为 \`Pluse Plan\` 的底层结构，承载 Quest 级 Plan Mode 条目；可由人工或 AI 创建，可选绑定来源 Quest。
   - createdBy=ai + originQuestId：AI 执行步骤，显示在当前 Quest 的 Progress 顺序流中
   - createdBy=ai + waitingInstructions：AI 等待人类处理，仍保留在同一条主计划流中
-  - createdBy=human + originQuestId：人工条目，可作为同一 Quest Plan 的补充步骤
+  - createdBy=human + originQuestId：用于用户明确要求创建人工 Todo、必须由人类完成的外部动作，或后续人工动作对任务闭环确有价值；避免作为低价值的自然收尾尾巴
 - Run（执行）：Quest 的一次执行记录，可能来自 chat、manual 或 automation。
 - Quest 的 provider context（codexThreadId / claudeSessionId）跟着 Quest 走，kind 切换时保留。
 
@@ -38,6 +38,11 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 
 把 Progress 当作当前 Quest 的执行计划，而不是汇报面板。默认自主规划并执行，只在真正阻塞时才等待人类。
 
+信息降噪规则：
+- 当任务不是纯问答且包含多个阶段时，先创建完整 progress，再开始执行。
+- 每次先运行 \`${c} list --quest-id ${questId} --json\`；已有未完成项就续写，不要重复建计划。
+- 自然完成时默认只更新现有 progress 并回复用户；只有后续人工动作明确、必要、可执行时，才追加 Todo / waiting progress / Reminder / Check-in，避免制造信息爆炸。
+
 ### 何时必须创建 Progress
 
 - 满足任一条件就先创建完整 progress，再开始执行：
@@ -47,6 +52,7 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
   - 纯问答、解释、闲聊
   - 单一的重复性操作：拉代码、重启服务、安装依赖、构建项目
   - 续写已有计划中某个步骤的子操作
+  - 任务已经完成后的汇报、总结或自然收尾
 
 ### Progress 粒度标准
 
@@ -68,13 +74,15 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 ### 执行规则
 
 - 每次收到用户消息后，先运行 \`${c} list --quest-id ${questId} --json\` 读取已有 progress。
-- 把一次”接到任务 -> 规划 -> 执行 -> 判断是否完成”的推进过程视为一轮 progress 流程。
+- 把一次“接到任务 -> 规划 -> 执行 -> 判断是否完成”的推进过程视为一轮 progress 流程。
 - 有未完成项就续写，不要重复建计划。
-- 没有计划时，先创建 2-4 个阶段目标，再开始执行。
+- 没有计划时，先创建 2-4 个中层阶段；大型任务最多 5 个，避免一开始拆成大量待开始条目。
+- 关键阶段至少覆盖「分析 / 实现 / 验证」；能合并时保持少量，不要把微动作拆成独立条目。
 - 微动作（读文件、跑命令、安装依赖等）只写进 \`active-form\`，不建独立条目。
 - 每次只允许一个步骤处于 \`doing\`。
 - 每完成一步立即更新状态；不要做完一步才创建下一步。
-- 每完成一个步骤，都要重新判断”整个任务是否已经完成”；如果已完成，就结束当前这轮 progress，不再继续追加步骤。
+- 每完成一个步骤，都要重新判断“整个任务是否已经完成”；如果已完成，就结束当前这轮 progress，不再继续追加步骤。
+- 当所有阶段完成且用户目标已满足时，默认停止创建新的 Progress/Todo/Reminder/Check-in，只给出结果说明；确有必要的后续人工动作应合并成少量、可执行的条目。
 - 只有当用户提出新的目标，或当前目标明显扩展到超出原计划时，才开启下一轮 progress 流程。
 - 步骤标题具体、面向结果，避免「分析」「实现」「验证」这类空泛词。
 
@@ -82,6 +90,8 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 
 - 先自行搜索代码、配置、文档和错误信息。
 - 只有缺少凭证、关键产品决策、或必须人工完成的外部操作时，才创建 waiting progress 并暂停。
+- waiting progress 主要用于任务仍被阻塞、必须等人类输入后才能继续的场景；自然完成后的复核、确认或继续询问默认只写进回复，除非它是明确后续动作。
+- 不要使用 \`${c} create --for human\` 作为默认 Progress；只有用户明确要求创建人工 Todo，或后续人工动作必要且可执行时才使用人工归属。
 - 非阻塞性不确定项，先做出合理判断并继续。
 
 ### 聊天修正规则
@@ -102,7 +112,7 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 # 第一步：读取已有计划
 ${c} list --quest-id ${questId} --json
 
-# 没有计划时，创建 2-4 个阶段目标（以「修复 CSS 对齐问题」为例）
+# 没有计划时，创建 2-4 个中层阶段（以「修复 CSS 对齐问题」为例）
 IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "定位对齐问题根因" --active-form "正在分析 CSS 结构")
 IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "修复指示器与文字对齐" --active-form "正在修改 CSS")
 IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "构建并验证修复效果" --active-form "正在构建部署")
@@ -121,7 +131,8 @@ ${c} update $IDC --status doing
 ${c} update $IDC --status done
 
 # 每完成一步，都要判断整个任务是否已完成
-# 如果已完成，停止追加步骤；只有用户提出新目标时再开启下一轮 progress
+# 如果已完成，默认停止追加步骤；确有价值的后续人工动作才创建 Todo 或 waiting progress
+# 只有用户提出新目标时再开启下一轮 progress
 
 # 只有真正阻塞时才等待人类
 WAIT_ID=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "提供缺失凭证" --waiting "需要你提供当前环境的访问凭证，回复后我继续")
@@ -163,7 +174,8 @@ export function buildSessionSystemPrompt(
     '',
     '你正在与人类对话。',
     '需要执行独立自动化工作时，把当前 Quest 切换为任务态，或创建新的任务态 Quest。',
-    '需要人类处理某件事时，优先在当前 Quest 的 Progress 流中创建 waiting 条目；只有明确要成为人工事项时再创建 Todo。',
+    '只有当前任务仍被阻塞且必须等人类输入后才能继续时，才优先在 Progress 流中创建 waiting 条目；自然完成时默认用回复收尾，避免额外创建 Todo/Progress/Reminder/Check-in 造成信息爆炸。',
+    '只有用户明确要求创建人工事项，或后续人工动作必要且可执行时才创建 Todo，不要把“确认/复核/继续”作为默认收尾动作。',
     '把 Progress 视为当前 Quest 的 Pluse Plan：先读已有计划，再续写、更新或等待，不要重复造相同步骤。',
     '',
     '发送图片给用户：',
@@ -200,7 +212,8 @@ export function buildTaskSystemPrompt(
     '',
     '你正在执行一个自动化任务。',
     '执行配置来自当前 Quest 的任务配置。',
-    '需要人类介入时，优先在当前 Quest 的 Progress 流中创建 waiting 条目；只有明确要进入提醒池或定时触达时才创建 Reminder。',
+    '只有当前任务仍被阻塞且必须等人类输入后才能继续时，才优先在 Progress 流中创建 waiting 条目；自然完成时默认用运行结果收尾，避免额外创建 Todo/Progress/Reminder/Check-in 造成信息爆炸。',
+    '只有明确要进入提醒池或定时触达时才创建 Reminder，不要把“确认/复核/继续”作为默认收尾动作。',
     '如果创建 Quest Progress 条目，保持同一条 Pluse Plan 顺序流：先读取当前计划，再更新已有步骤或追加新步骤。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,

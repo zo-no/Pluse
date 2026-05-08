@@ -61,7 +61,9 @@ describe('command catalog', () => {
       'progress wait',
     ])
     expect(progressModule?.commands.find((command) => command.name === 'progress create')?.cli).toContain('pluse progress create')
+    expect(progressModule?.commands.find((command) => command.name === 'progress create')?.cli).not.toContain('--for ai|human')
     expect(progressModule?.commands.find((command) => command.name === 'progress create')?.description).toContain('AI plan/progress tracking')
+    expect(progressModule?.commands.find((command) => command.name === 'progress create')?.description).toContain('默认避免创建低价值收尾项')
 
     const todoModule = catalog.modules.find((module) => module.name === 'todo')
     expect(todoModule?.commands.map((command) => command.name)).toEqual([
@@ -78,5 +80,6 @@ describe('command catalog', () => {
     expect(todoModule?.commands.find((command) => command.name === 'todo list')?.api).toContain('/api/quests/<id>/progress')
     expect(todoModule?.commands.find((command) => command.name === 'todo list')?.description).toContain('兼容入口')
     expect(todoModule?.commands.find((command) => command.name === 'todo progress-create')?.description).toContain('兼容别名')
+    expect(todoModule?.commands.find((command) => command.name === 'todo progress-create')?.description).toContain('仅用于明确人工动作')
   })
 })

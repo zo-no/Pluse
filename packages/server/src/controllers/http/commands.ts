@@ -81,9 +81,9 @@ function moduleCatalog(): CommandCatalog['modules'] {
         },
         {
           name: 'progress create',
-          cli: 'pluse progress create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--for ai|human] [--order <n>] [--json]',
+          cli: 'pluse progress create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--order <n>] [--json]',
           api: 'POST /api/todos',
-          description: '为当前 Quest 创建 Progress 条目；AI plan/progress tracking 首选入口',
+          description: '为当前 Quest 创建 AI Progress 条目；AI plan/progress tracking 首选入口，默认避免创建低价值收尾项',
         },
         {
           name: 'progress update',
@@ -143,7 +143,7 @@ function moduleCatalog(): CommandCatalog['modules'] {
           name: 'todo progress-create',
           cli: 'pluse todo progress-create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--for ai|human] [--json]',
           api: 'POST /api/todos',
-          description: '兼容别名：创建 Quest Progress 条目；推荐改用 pluse progress create',
+          description: '兼容别名：创建 Quest Progress 条目；推荐改用 pluse progress create，--for human 仅用于明确人工动作',
         },
         {
           name: 'todo progress-update',
