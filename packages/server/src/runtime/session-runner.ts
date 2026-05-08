@@ -37,6 +37,7 @@ import {
   updateRun,
 } from '../models/run'
 import { emit } from '../services/events'
+import { ensureReviewReminderWithEffects } from '../services/reminders'
 import { buildSessionSystemPrompt, buildTaskSystemPrompt } from '../services/system-prompt'
 import { runHooks } from '../services/hooks'
 import { syncManagedCodexHome } from '../support/codex-home'
@@ -1045,6 +1046,20 @@ function finalizeRun(runId: string, state: Run['state'], failureReason?: string,
 
   if (quest.kind === 'session' && run.trigger === 'chat' && quest.autoRenamePending) {
     scheduleAutoRename(quest.id)
+  }
+
+  // 任务态 Quest 完成后，按开关决定是否创建复核提醒
+  if (state === 'completed' && quest.reviewOnComplete && quest.kind === 'task' && !quest.deleted) {
+    const questTitle = quest.title ?? quest.name ?? quest.id
+    ensureReviewReminderWithEffects({
+      projectId: quest.projectId,
+      originQuestId: quest.id,
+      originRunId: runId,
+      createdBy: 'system',
+      type: 'review',
+      title: `复核：${questTitle}`,
+      body: `自动化「${questTitle}」已完成。查看输出确认无误后，点击勾选即可删除这条提醒。`,
+    })
   }
 
   emitRunUpdated(runId)
