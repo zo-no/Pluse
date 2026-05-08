@@ -25,12 +25,17 @@ function resolveSummaryColor(summary: { waiting: number; doing: number; done: nu
   return '#9ca3af'
 }
 
-function stateLabel(state: QuestPlanRow['state']): string {
+function stateBadgeLabel(state: QuestPlanRow['state']): string | null {
   if (state === 'doing') return '进行中'
   if (state === 'waiting') return '等待中'
-  if (state === 'done') return '已完成'
   if (state === 'cancelled') return '已取消'
-  return '待开始'
+  return null
+}
+
+function sourceLabel(createdBy: QuestPlanRow['createdBy']): string | null {
+  if (createdBy === 'human') return '人工'
+  if (createdBy === 'system') return '系统'
+  return null
 }
 
 // ─── Spinner ────────────────────────────────────────────────────────────────────
@@ -106,6 +111,9 @@ function QuestPlanItem({
   const toggleable = Boolean(onToggle) && canToggleRow(row)
   const helperText = row.helperText?.trim()
   const isLast = index === total - 1
+  const badgeLabel = stateBadgeLabel(row.state)
+  const metaSource = sourceLabel(row.createdBy)
+  const showMeta = Boolean(badgeLabel || metaSource)
 
   // Text color
   const textColor = isDone || isCancelled
@@ -187,26 +195,26 @@ function QuestPlanItem({
             {helperText}
           </div>
         ) : null}
-        <div className="pluse-progress-item-meta">
-          <span
-            className="pluse-progress-state-badge"
-            style={{
-              color: isDoing
-                ? '#3b82f6'
-                : isWaiting
-                  ? 'var(--warning)'
-                  : isDone
-                    ? '#22c55e'
-                    : 'var(--text-muted)',
-            }}
-          >
-            {stateLabel(row.state)}
-          </span>
-          <span className="pluse-progress-meta-dot" aria-hidden="true">·</span>
-          <span className="pluse-progress-meta-source">
-            {row.createdBy === 'human' ? 'Human' : row.createdBy === 'ai' ? 'AI' : 'System'}
-          </span>
-        </div>
+        {showMeta ? (
+          <div className="pluse-progress-item-meta">
+            {badgeLabel ? (
+              <span
+                className="pluse-progress-state-badge"
+                style={{
+                  color: isDoing
+                    ? '#3b82f6'
+                    : isWaiting
+                      ? 'var(--warning)'
+                      : 'var(--text-muted)',
+                }}
+              >
+                {badgeLabel}
+              </span>
+            ) : null}
+            {badgeLabel && metaSource ? <span className="pluse-progress-meta-dot" aria-hidden="true">·</span> : null}
+            {metaSource ? <span className="pluse-progress-meta-source">{metaSource}</span> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -292,11 +300,13 @@ function QuestPlanSurface({
 
   const summaryText = useMemo(() => {
     const parts: string[] = []
-    if (summary.done > 0) parts.push(`${summary.done} 已完成`)
-    if (summary.doing > 0) parts.push(`${summary.doing} 进行中`)
-    if (summary.waiting > 0) parts.push(`${summary.waiting} 等待中`)
-    if (summary.pending > 0) parts.push(`${summary.pending} 待开始`)
-    return parts.length > 0 ? parts.join(' · ') : '暂无条目'
+    if (summary.doing > 0) parts.push(`${summary.doing} 项进行中`)
+    if (summary.waiting > 0) parts.push(`${summary.waiting} 项等待中`)
+    if (summary.pending > 0) parts.push(`${summary.pending} 项待开始`)
+    if (summary.cancelled > 0) parts.push(`${summary.cancelled} 项已取消`)
+    if (parts.length > 0) return parts.join(' · ')
+    if (summary.total > 0) return '全部完成'
+    return '暂无条目'
   }, [summary])
 
   const accentColor = resolveSummaryColor(summary)

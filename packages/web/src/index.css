@@ -1833,10 +1833,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   transition: color 0.2s ease;
 }
 
-.pluse-progress-item.is-done .pluse-progress-item-title {
-  text-decoration: line-through;
-}
-
 .pluse-progress-item-helper {
   margin-top: 2px;
   font-size: 11px;
