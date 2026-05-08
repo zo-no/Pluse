@@ -1403,7 +1403,7 @@ export function TodoPanel({
   const Wrapper = embedded ? 'div' : 'aside'
   const wrapperClass = embedded ? 'pluse-todo-embedded' : 'pluse-rail'
 
-  // 嵌入左侧栏时，外部 sidebarTab 已负责 tab 切换，不需要内部 tab 栏
+  // 嵌入模式下，外部容器已负责 tab 切换，不需要内部 tab 栏
   const hideInternalTabs = embedded
 
   return (
@@ -1561,8 +1561,7 @@ export function TodoPanel({
           </div>
         ) : null}
 
-        {/* 嵌入左侧栏时不渲染 Progress（会话级内容属于右侧工作台） */}
-        {sourceTab === 'progress' && !hideInternalTabs ? (
+        {sourceTab === 'progress' ? (
           <div className="pluse-task-list">
             {activeQuestId ? (
               <ProgressRailPanel questId={activeQuestId} />

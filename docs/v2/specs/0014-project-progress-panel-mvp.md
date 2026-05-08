@@ -185,6 +185,7 @@ Progress
 **交互规范**：
 - 本期只读，不支持手动编辑
 - 无数据时展示空状态："AI 执行任务时，进度将自动出现在这里"
+- 当 Progress 面板以内嵌模式挂载到右侧 `ContextWorkbench` 时，应隐藏内部 tab 头，但仍正常渲染 Progress 内容区
 - 轮询刷新：每 3 秒请求一次 `GET /api/quests/:id/progress`（Phase 2 改 SSE）
 
 ---
@@ -202,6 +203,7 @@ Progress
 - [ ] `GET /api/quests/:id/progress` 返回该 Quest 的 Todo 列表
 - [ ] AI 执行任务时，Progress 面板中能看到实时更新的步骤
 - [ ] Quest 详情页 Progress 面板正确展示，doing 状态有高亮
+- [ ] 右侧 `ContextWorkbench` 以内嵌模式打开 `progress` tab 时，Progress 内容正常显示，不因隐藏内部 tab 而被一起屏蔽
 - [ ] 无数据时展示空状态文案
 
 ---
