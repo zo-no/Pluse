@@ -84,6 +84,10 @@
   - 核心问题：前端核心文件（TodoPanel 2226 行、MainPage 1972 行等）在多轮需求叠加后已成巨型组件，反向拖慢后续迭代
   - 说明：工程可维护性需求，不是性能优化，不引入全局状态库；待 design 决定拆分边界与分期
 
+- [0015-system-attention-cli-externalization.md](./0015-system-attention-cli-externalization.md)
+  - 核心问题：系统提醒、播报、通知等能力正在把 Pluse 拉向操作系统实现层，缺少独立 CLI 边界来承接这类能力
+  - 说明：先锁定“系统级触达能力外置”，让 Pluse 继续只承接协作语义与 hook 触发，不预设具体 macOS provider
+
 ## 当前顺序
 
 建议默认按以下顺序推进：
@@ -102,6 +106,7 @@
 12. `0012-check-in-reminders` 先按 MVP 实现 Quest 创建 Check-in、人类回执、record 留事实
 13. `0013-cli-catalog-command` 作为设置侧轻量能力，先实现全局查询命令和 prompt 注入
 14. `0014-frontend-component-decomposition` 是工程债，按业务节奏插空推进，不阻塞业务 P0/P1
+15. `0015-system-attention-cli-externalization` 在提醒/播报继续扩张前先锁定系统边界，避免 Pluse 内核继续吸收 OS 集成复杂度
 
 ## 维护规则
 

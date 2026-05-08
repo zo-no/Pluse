@@ -222,7 +222,6 @@ function mergeProjectReferences(fromId: string, toId: string): void {
     db.run('UPDATE reminders SET project_id = ? WHERE project_id = ?', [toId, fromId])
     db.run('UPDATE runs SET project_id = ? WHERE project_id = ?', [toId, fromId])
     db.run('UPDATE project_activity SET project_id = ? WHERE project_id = ?', [toId, fromId])
-    db.run('UPDATE notifications SET project_id = ? WHERE project_id = ?', [toId, fromId])
   })
   tx()
 }

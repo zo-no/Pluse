@@ -288,26 +288,6 @@ function initSchema(db: Database): void {
   db.run(`CREATE INDEX IF NOT EXISTS idx_check_in_records_origin_quest
     ON check_in_records (origin_quest_id, checked_at DESC)`)
 
-  db.run(`CREATE TABLE IF NOT EXISTS notifications (
-    id              TEXT PRIMARY KEY NOT NULL,
-    project_id      TEXT NOT NULL REFERENCES projects(id),
-    created_by      TEXT NOT NULL DEFAULT 'system',
-    origin_quest_id TEXT REFERENCES quests(id),
-    origin_run_id   TEXT REFERENCES runs(id),
-    type            TEXT NOT NULL,
-    title           TEXT NOT NULL,
-    body            TEXT,
-    status          TEXT NOT NULL DEFAULT 'unread',
-    deleted         INTEGER NOT NULL DEFAULT 0,
-    deleted_at      TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-  ) STRICT`)
-  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_project
-    ON notifications (project_id, deleted, status, updated_at DESC)`)
-  db.run(`CREATE INDEX IF NOT EXISTS idx_notifications_origin_quest
-    ON notifications (origin_quest_id, type, deleted, status, updated_at DESC)`)
-
   db.run(`CREATE TABLE IF NOT EXISTS run_spool (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     run_id  TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,

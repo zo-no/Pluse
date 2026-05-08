@@ -1429,7 +1429,7 @@ describe('quest/todo/run APIs', () => {
     expect(overviewData.recentActivity.some((item) => item.subjectType === 'reminder' && item.op === 'created' && item.questId === task.id)).toBe(true)
   })
 
-  it('deduplicates session review reminders created by run_completed hooks', async () => {
+  it('creates explicit review todos for session completion hooks', async () => {
     const { commandPath } = installFakeCodex()
     process.env['PLUSE_CODEX_COMMAND'] = commandPath
     process.env['PLUSE_FAKE_CODEX_REPLY'] = 'Session reply'
@@ -1459,10 +1459,9 @@ describe('quest/todo/run APIs', () => {
     }, { timeoutMs: 6_000 })
 
     await waitFor(() => {
-      const reminders = listReminders({ projectId: project.id, type: 'review' })
-        .filter((reminder) => reminder.originQuestId === quest.id)
-      expect(reminders).toHaveLength(1)
-      return reminders
+      const todos = listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })
+      expect(todos).toHaveLength(1)
+      return todos
     })
 
     const second = await POST<SubmitQuestMessageResult>(`/api/quests/${quest.id}/messages`, {
@@ -1480,9 +1479,8 @@ describe('quest/todo/run APIs', () => {
       return runs
     }, { timeoutMs: 6_000 })
 
-    const pendingReviewReminders = listReminders({ projectId: project.id, type: 'review' })
-      .filter((reminder) => reminder.originQuestId === quest.id)
-    expect(pendingReviewReminders).toHaveLength(1)
+    const reviewTodos = listTodos({ projectId: project.id, questId: quest.id, tags: ['review'] })
+    expect(reviewTodos).toHaveLength(2)
   })
 
   it('rejects misconfigured task runs without crashing subsequent task execution', async () => {

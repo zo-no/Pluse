@@ -159,6 +159,5 @@ export type SseMessage =
   | { type: 'reminder_updated' | 'reminder_deleted'; data: { reminderId: string; projectId: string; originQuestId?: string } }
   | { type: 'check_in_updated' | 'check_in_deleted'; data: { checkInId: string; projectId: string; originQuestId?: string } }
   | { type: 'reminder_project_priority_updated'; data: { projectId: string } }
-  | { type: 'notification_updated' | 'notification_deleted'; data: { notificationId: string; projectId: string; originQuestId?: string } }
   | { type: 'run_updated'; data: { runId: string; questId: string; projectId: string } }
   | { type: 'run_line'; data: { runId: string; questId: string; projectId: string; line: string; ts: string } }
