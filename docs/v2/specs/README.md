@@ -33,3 +33,4 @@
   - [0011-image-messages-phase-1.md](./0011-image-messages-phase-1.md)
   - [0012-check-in-reminders-mvp.md](./0012-check-in-reminders-mvp.md)
   - [0013-cli-catalog-command-mvp.md](./0013-cli-catalog-command-mvp.md)
+  - [0016-rolling-progress-cycle-phase-1.md](./0016-rolling-progress-cycle-phase-1.md)

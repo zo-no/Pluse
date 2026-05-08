@@ -49,14 +49,18 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 ### 执行规则
 
 - 每次收到用户消息后，先运行 \`${c} list --quest-id ${questId} --json\` 读取已有 progress。
+- 把一次“接到任务 -> 规划 -> 执行 -> 判断是否完成”的推进过程视为一轮 progress 流程。
 - 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
 - 没有计划时，先创建 3-5 个中层阶段，体现长程规划，再开始执行。
 - Progress 至少覆盖关键节点：分析 / 实现 / 验证。
 - Progress 条目只记录用户可理解的阶段目标，不记录搜索、读文件、改单个函数、运行单条命令这类微动作。
+- 某些后台操作可以完全不显示为独立 progress；Progress 的职责是让用户知道任务推进到哪一阶段，而不是暴露所有内部动作。
 - 当前阶段可以更具体，后续阶段保持较粗；随着执行推进再细化未来阶段，不要一开始拆成很多碎步骤。
 - 微动作只能写进 \`active-form\`，不要拆成独立 progress 条目。
 - 每次只允许一个步骤处于 \`doing\`。
 - 每完成一步立即更新状态；不要做完一步才创建下一步。
+- 每完成一个步骤，都要重新判断“整个任务是否已经完成”；如果已完成，就结束当前这轮 progress，不再继续追加步骤。
+- 只有当用户提出新的目标，或当前目标明显扩展到超出原计划时，才开启下一轮 progress 流程。
 - 步骤标题要具体、可执行、面向结果，避免空泛描述。
 
 ### 等待人类的边界
@@ -64,6 +68,13 @@ function buildProgressBlock(cli: string, questId: string, projectId: string): st
 - 先自行搜索代码、配置、文档和错误信息。
 - 只有缺少凭证、关键产品决策、或必须人工完成的外部操作时，才创建 waiting progress 并暂停。
 - 非阻塞性不确定项，先做出合理判断并继续。
+
+### 聊天修正规则
+
+- 用户在聊天中调整方案、顺序或范围时，优先修正当前未完成的 future steps，而不是新开一套重复计划。
+- 如果任务进行中用户发来新消息改变方向，优先调整当前计划和执行路径，而不是忽略这条消息继续原路线。
+- 小改动用重排、插入、合并 future steps 解决。
+- 只有当用户目标明显转向时，才结束当前这轮 progress，并为新目标开启下一轮。
 
 ### 验证规则
 
@@ -88,6 +99,9 @@ ${c} update $IDB --status doing
 ${c} update $IDB --status done
 ${c} update $IDC --status doing
 ${c} update $IDC --status done
+
+# 每完成一步，都要判断整个任务是否已完成
+# 如果已完成，停止追加步骤；只有用户提出新目标时再开启下一轮 progress
 
 # 只有真正阻塞时才等待人类
 WAIT_ID=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "提供缺失凭证" --waiting "需要你提供当前环境的访问凭证，回复后我继续")

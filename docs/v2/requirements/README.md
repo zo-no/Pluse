@@ -88,6 +88,10 @@
   - 核心问题：系统提醒、播报、通知等能力正在把 Pluse 拉向操作系统实现层，缺少独立 CLI 边界来承接这类能力
   - 说明：先锁定“系统级触达能力外置”，让 Pluse 继续只承接协作语义与 hook 触发，不预设具体 macOS provider
 
+- [0016-rolling-progress-cycle.md](./0016-rolling-progress-cycle.md)
+  - 核心问题：Quest Progress 缺少轮次语义、默认粒度过细，且用户聊天中的计划修正没有稳定承接
+  - 说明：这条需求锁定“滚动式 Progress Cycle”语义，让 Agent 先给出中层长程计划、逐步执行、逐步判断完成，并支持聊天修正规划
+
 ## 当前顺序
 
 建议默认按以下顺序推进：
@@ -107,6 +111,7 @@
 13. `0013-cli-catalog-command` 作为设置侧轻量能力，先实现全局查询命令和 prompt 注入
 14. `0014-frontend-component-decomposition` 是工程债，按业务节奏插空推进，不阻塞业务 P0/P1
 15. `0015-system-attention-cli-externalization` 在提醒/播报继续扩张前先锁定系统边界，避免 Pluse 内核继续吸收 OS 集成复杂度
+16. `0016-rolling-progress-cycle` 用于收敛 Progress 的默认粒度、轮次推进和聊天修正规则，避免 Progress 继续退化为细碎操作日志
 
 ## 维护规则
 

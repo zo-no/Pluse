@@ -36,3 +36,5 @@
     - 当前用于承接独立 Check-in、Check-in Record、Quest/Agent 创建打卡项和 Todo / Reminder 边界
   - [0013-cli-catalog-command.md](./0013-cli-catalog-command.md)
     - 当前用于承接全局外部 CLI 集合查询命令和 Quest prompt 注入
+  - [0016-rolling-progress-cycle.md](./0016-rolling-progress-cycle.md)
+    - 当前用于承接 Quest Progress 的轮次语义、中层规划粒度、聊天修正规划和“每步后重判任务完成”节奏
