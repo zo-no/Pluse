@@ -143,9 +143,16 @@ pluse todo list --quest-id <id> [--json]   # 按 Quest 过滤（Progress 视图�
 ```
 ## Pluse Plan
 
-- 当任务不是纯问答且包含多个步骤时，先创建完整 progress，再开始执行。
+- 把 Progress 当作当前 Quest 的执行计划，而不是汇报面板。
+- 满足任一条件就先创建完整 progress，再开始执行：
+  - 需要 3 个及以上明确动作
+  - 涉及代码修改、文件操作、工具调用、信息收集后整合输出
+  - 用户希望 AI 完成一件有始有终的事情，而不是纯问答
 - 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
 - Progress 至少覆盖关键节点：分析 / 实现 / 验证。
+- 每次只允许一个步骤处于 doing。
+- 每个实现类步骤后都必须有验证步骤。
+- 只有缺少凭证、关键产品决策、或必须人工完成的外部操作时，才创建 waiting progress 并暂停。
 
 pluse progress list --quest-id <QUEST_ID> --json
 pluse progress create --quest-id <QUEST_ID> --project-id <PROJECT_ID> --title "<步骤描述>" --active-form "<执行中文案>"

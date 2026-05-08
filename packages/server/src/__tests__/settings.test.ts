@@ -89,8 +89,11 @@ describe('settings API', () => {
       expect(prompt).toContain('外部 CLI 集合')
       expect(prompt).toContain('Pluse 未执行校验')
       expect(prompt).toContain('运行 `my-cli commands` 查看所有可用外部 CLI 指令')
-      expect(prompt).toContain('当任务不是纯问答且包含多个步骤时，先创建完整 progress，再开始执行。')
+      expect(prompt).toContain('把 Progress 当作当前 Quest 的执行计划，而不是汇报面板。')
+      expect(prompt).toContain('满足任一条件就先创建完整 progress，再开始执行')
       expect(prompt).toContain('开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。')
+      expect(prompt).toContain('每次只允许一个步骤处于 `doing`。')
+      expect(prompt).toContain('每个实现类步骤后都必须有验证步骤。')
       expect(prompt).toContain('分析 / 实现 / 验证')
       expect(prompt).toContain('progress list --quest-id')
       expect(prompt).toContain('progress create --quest-id')
@@ -98,6 +101,10 @@ describe('settings API', () => {
       expect(prompt).toContain('progress wait')
       expect(prompt).not.toContain('todo progress-create')
     }
+
+    expect(sessionPrompt).toContain('优先在当前 Quest 的 Progress 流中创建 waiting 条目')
+    expect(taskPrompt).toContain('优先在当前 Quest 的 Progress 流中创建 waiting 条目')
+    expect(taskPrompt).not.toContain('需要人类介入时，优先创建 Reminder')
   })
 
   it('does not inject an empty CLI catalog command', () => {

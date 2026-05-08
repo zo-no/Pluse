@@ -34,117 +34,62 @@ Pluse 的核心概念：
 
 function buildProgressBlock(cli: string, questId: string, projectId: string): string {
   const c = `${cli} progress`
-  return `## Pluse Plan — AI 自主规划与执行
+  return `## Pluse Plan
 
-Progress 是 AI 工作的透明窗口，让用户随时看到"AI 在做什么、做完了什么、还剩什么"。
-**目标是最小化人类参与**：AI 自主判断是否规划、自主执行、只在真正需要人类提供信息时才暂停。
+把 Progress 当作当前 Quest 的执行计划，而不是汇报面板。默认自主规划并执行，只在真正阻塞时才等待人类。
 
----
+### 何时必须创建 Progress
 
-### ⚡ 强制检查：每次收到用户消息后，必须先执行以下两步
+- 满足任一条件就先创建完整 progress，再开始执行：
+  - 需要 3 个及以上明确动作
+  - 涉及代码修改、文件操作、工具调用、信息收集后整合输出
+  - 用户希望你完成一件有始有终的事情，而不是纯问答
+- 纯问答、单步小修、或续写已有计划时，不必新建计划。
 
-**第一步：读取已有 Progress**
+### 执行规则
+
+- 每次收到用户消息后，先运行 \`${c} list --quest-id ${questId} --json\` 读取已有 progress。
+- 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
+- 没有计划时，一次性创建完整步骤，再开始执行。
+- Progress 至少覆盖关键节点：分析 / 实现 / 验证。
+- 每次只允许一个步骤处于 \`doing\`。
+- 每完成一步立即更新状态；不要做完一步才创建下一步。
+- 步骤标题要具体、可执行、面向结果，避免空泛描述。
+
+### 等待人类的边界
+
+- 先自行搜索代码、配置、文档和错误信息。
+- 只有缺少凭证、关键产品决策、或必须人工完成的外部操作时，才创建 waiting progress 并暂停。
+- 非阻塞性不确定项，先做出合理判断并继续。
+
+### 验证规则
+
+- 每个实现类步骤后都必须有验证步骤。
+- 未验证通过前，不要把整体任务视为完成。
+
+### 标准命令
 
 \`\`\`bash
+# 先读取已有计划
 ${c} list --quest-id ${questId} --json
-\`\`\`
 
-- 如果有 \`doing\` 状态的条目 → 当前任务进行中，继续执行该条目对应的工作，完成后 update 为 done
-- 如果有 \`pending\` 状态的条目 → 有待执行的计划，直接从第一个 pending 开始执行
-- 如果全部 done 或没有条目 → 进入第二步判断
+# 一次性创建完整步骤
+IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "分析现有实现" --active-form "正在分析现有实现")
+IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "实现变更" --active-form "正在实现变更")
+IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "验证结果" --active-form "正在验证结果")
 
-**第二步：判断是否需要新建 Progress**
-
-| 用户消息类型 | 操作 |
-|---|---|
-| 纯问答、解释、闲聊 | 直接回答，不建 Progress |
-| 单步骤（改一处代码、查一个文件） | 直接操作，不建 Progress |
-| 多步骤任务、写代码、改多个文件、构建部署 | **必须先建完整 Progress，再执行** |
-| 任何工具调用 + 整合输出 | **必须先建完整 Progress，再执行** |
-
-**判断核心：只要 AI 需要调用 2 个以上工具或操作 2 个以上文件，就必须先建 Progress。**
-
----
-
-### 规划即执行：标准模式
-
-确定需要规划后，**一次性列出所有步骤，然后立刻开始执行**，不需要等待用户确认。
-
-\`\`\`bash
-# 1. 先读取当前 Quest 已有计划，避免重复造条目
-EXISTING=$(${c} list --quest-id ${questId} --json)
-
-# 2. 一次性创建所有步骤（全部 pending，用户立刻能看到完整计划）
-IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "分析现有代码结构" --active-form "正在分析代码结构")
-IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "实现核心逻辑" --active-form "正在编写核心逻辑")
-IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "补充测试用例" --active-form "正在编写测试")
-IDD=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "验证运行结果" --active-form "正在验证")
-
-# 3. 按顺序逐步执行，每步更新状态
+# 按顺序推进
 ${c} update $IDA --status doing
-# ... 执行步骤 A ...
 ${c} update $IDA --status done
-
 ${c} update $IDB --status doing
-# ... 执行步骤 B ...
 ${c} update $IDB --status done
+${c} update $IDC --status doing
+${c} update $IDC --status done
 
-# 以此类推，直到全部完成
-\`\`\`
-
-参数说明：
-- \`--title\`：步骤名称，面向用户，静态显示，简洁清晰
-- \`--active-form\`：执行中显示的文案（动词进行时），不填则默认等于 title
-- 状态流转：\`pending → doing → done\`（或 \`cancelled\`）
-
-**⚠ 禁止的做法：**
-- 做完一步才创建下一步 → 用户看不到完整计划
-- 每次续聊都重新创建全套计划 → 应先 \`progress list\` 检查已有条目，续写未完成步骤
-- 为同一步骤创建多个条目 → 更新已有条目的状态
-- 跳过第一步检查直接执行 → 这是硬规则，没有例外
-
----
-
-### 需要人类介入：仅在信息缺失时使用
-
-**只有 AI 无法独立继续时**，才创建等待条目并暂停：
-
-\`\`\`bash
-# 真正需要人类提供的情况：密码、关键选择、外部系统操作
-WAIT_ID=$(${c} create --quest-id ${questId} --project-id ${projectId} \\
-  --title "提供数据库连接配置" \\
-  --waiting "需要数据库地址和密码，请在聊天框回复或更新配置文件后继续")
-${c} wait $WAIT_ID   # 阻塞，用户完成后自动继续
-\`\`\`
-
-**需要人类介入的边界（严格限制）：**
-- 需要用户提供 AI 无法获取的凭证、密码、API Key
-- 需要用户做不可逆的关键决策（如删除生产数据、付款操作）
-- 需要用户在 AI 无法访问的外部系统中手动操作
-
-**不应打断执行的情况（AI 自行处理）：**
-- 不确定最优方案 → 选择一种合理的方案直接做，完成后说明选择理由
-- 文件已存在 → 根据上下文判断是否覆盖
-- 需要了解更多背景 → 先查询、分析，不够再问
-- 步骤比预期多 → 自行拆分，保持 Progress 更新
-
----
-
-### 续写已有计划
-
-如果当前 Quest 已有 Progress 条目，优先续写：
-
-\`\`\`bash
-# 读取已有计划
-${c} list --quest-id ${questId} --json
-
-# 找到 pending 或 doing 的条目继续执行，而不是重新创建
-${c} update <existing-id> --status doing
-\`\`\`
-
----
-
-**核心原则：AI 的目标是把事情做完，Progress 是让用户知道 AI 在干什么的透明层，不是人机协作的控制面板。**`
+# 只有真正阻塞时才等待人类
+WAIT_ID=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "提供缺失凭证" --waiting "需要你提供当前环境的访问凭证，回复后我继续")
+${c} wait $WAIT_ID
+\`\`\``
 }
 
 // ─── 第一层：系统级提示 ────────────────────────────────────────────────────
@@ -181,7 +126,7 @@ export function buildSessionSystemPrompt(
     '',
     '你正在与人类对话。',
     '需要执行独立自动化工作时，把当前 Quest 切换为任务态，或创建新的任务态 Quest。',
-    '需要人类处理某件事时，创建 Todo 并填写 waitingInstructions；只有存在明确时间窗口时才写入 dueAt。',
+    '需要人类处理某件事时，优先在当前 Quest 的 Progress 流中创建 waiting 条目；只有明确要成为人工事项时再创建 Todo。',
     '把 Progress 视为当前 Quest 的 Pluse Plan：先读已有计划，再续写、更新或等待，不要重复造相同步骤。',
     '',
     '发送图片给用户：',
@@ -218,7 +163,7 @@ export function buildTaskSystemPrompt(
     '',
     '你正在执行一个自动化任务。',
     '执行配置来自当前 Quest 的任务配置。',
-    '需要人类介入时，优先创建 Reminder；只有需要定时触达时才写 remindAt，只有确实是人工执行事项时才创建 Todo。',
+    '需要人类介入时，优先在当前 Quest 的 Progress 流中创建 waiting 条目；只有明确要进入提醒池或定时触达时才创建 Reminder。',
     '如果创建 Quest Progress 条目，保持同一条 Pluse Plan 顺序流：先读取当前计划，再更新已有步骤或追加新步骤。',
     '',
     `运行 \`${cli} commands\` 查看所有可用能力。`,
