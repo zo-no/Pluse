@@ -691,6 +691,34 @@ select {
   background: color-mix(in srgb, var(--glass-bg) 92%, transparent);
 }
 
+.pluse-context-workbench,
+.pluse-todo-embedded {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pluse-context-workbench {
+  height: 100%;
+}
+
+.pluse-context-workbench > .pluse-rail-head {
+  flex: 0 0 auto;
+}
+
+.pluse-workbench-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pluse-todo-embedded {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
 .pluse-sidebar {
   display: flex;
   flex-direction: column;
