@@ -25,18 +25,6 @@ function resolveSummaryColor(summary: { waiting: number; doing: number; done: nu
   return '#9ca3af'
 }
 
-function stateBadgeLabel(state: QuestPlanRow['state']): string | null {
-  if (state === 'doing') return '进行中'
-  if (state === 'waiting') return '等待中'
-  if (state === 'cancelled') return '已取消'
-  return null
-}
-
-function sourceLabel(createdBy: QuestPlanRow['createdBy']): string | null {
-  if (createdBy === 'human') return '人工'
-  if (createdBy === 'system') return '系统'
-  return null
-}
 
 // ─── Spinner ────────────────────────────────────────────────────────────────────
 
@@ -111,10 +99,6 @@ function QuestPlanItem({
   const toggleable = Boolean(onToggle) && canToggleRow(row)
   const helperText = row.helperText?.trim()
   const isLast = index === total - 1
-  const badgeLabel = stateBadgeLabel(row.state)
-  const metaSource = sourceLabel(row.createdBy)
-  const showMeta = Boolean(badgeLabel || metaSource)
-
   // Text color
   const textColor = isDone || isCancelled
     ? 'var(--text-muted)'
@@ -197,26 +181,6 @@ function QuestPlanItem({
             {helperText}
           </div>
         ) : null}
-        {showMeta ? (
-          <div className="pluse-progress-item-meta">
-            {badgeLabel ? (
-              <span
-                className="pluse-progress-state-badge"
-                style={{
-                  color: isDoing
-                    ? '#3b82f6'
-                    : isWaiting
-                      ? 'var(--warning)'
-                      : 'var(--text-muted)',
-                }}
-              >
-                {badgeLabel}
-              </span>
-            ) : null}
-            {badgeLabel && metaSource ? <span className="pluse-progress-meta-dot" aria-hidden="true">·</span> : null}
-            {metaSource ? <span className="pluse-progress-meta-source">{metaSource}</span> : null}
-          </div>
-        ) : null}
       </div>
     </div>
   )
@@ -246,32 +210,6 @@ function QuestPlanSequence({
   )
 }
 
-// ─── Summary bar ──────────────────────────────────────────────────────────────
-
-function ProgressSummaryBar({
-  summary,
-}: {
-  summary: { pending: number; doing: number; done: number; waiting: number; total: number }
-}) {
-  if (summary.total === 0) return null
-  const pct = Math.round((summary.done / summary.total) * 100)
-
-  return (
-    <div className="pluse-progress-summary-bar">
-      <div className="pluse-progress-bar-track">
-        <div
-          className="pluse-progress-bar-fill"
-          style={{ width: `${pct}%` }}
-          role="progressbar"
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
-        />
-      </div>
-      <span className="pluse-progress-bar-label">{pct}%</span>
-    </div>
-  )
-}
 
 // ─── Rail surface ──────────────────────────────────────────────────────────────
 
@@ -357,15 +295,10 @@ function QuestPlanSurface({
       {/* Header */}
       <div className="pluse-progress-rail-head">
         <span className="pluse-progress-rail-dot" style={{ background: accentColor }} />
-        <div className="pluse-progress-rail-head-copy">
-          <strong>当前会话计划</strong>
-          <span>{summaryText}</span>
-        </div>
+        <span className="pluse-progress-rail-title">计划</span>
+        <span className="pluse-progress-rail-summary">{summaryText}</span>
         <span className="pluse-progress-rail-count">{summary.total}</span>
       </div>
-
-      {/* Progress bar */}
-      <ProgressSummaryBar summary={summary} />
 
       {/* Items */}
       <div className="pluse-progress-list-scroll" ref={scrollRef}>

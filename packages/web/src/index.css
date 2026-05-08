@@ -1593,9 +1593,6 @@ select {
   50%       { opacity: 0.55; transform: scale(1.4); }
 }
 
-@keyframes pluse-progress-bar-fill {
-  from { width: 0; }
-}
 
 .pluse-progress-spinner {
   display: inline-block;
@@ -1618,39 +1615,32 @@ select {
 .pluse-progress-rail-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px 8px;
+  gap: 6px;
+  padding: 9px 12px 7px;
   flex-shrink: 0;
 }
 
 .pluse-progress-rail-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   transition: background 0.3s ease;
 }
 
-.pluse-progress-rail-head-copy {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.pluse-progress-rail-head-copy strong {
-  font-size: 12px;
-  font-weight: 700;
+.pluse-progress-rail-title {
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--text);
   letter-spacing: 0.01em;
-  line-height: 1.3;
+  flex-shrink: 0;
 }
 
-.pluse-progress-rail-head-copy span {
-  font-size: 10.5px;
+.pluse-progress-rail-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
   color: var(--text-muted);
-  line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1659,47 +1649,12 @@ select {
 .pluse-progress-rail-count {
   flex-shrink: 0;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-muted);
   background: color-mix(in srgb, var(--border) 60%, transparent);
-  border-radius: 10px;
-  padding: 1px 6px;
-  line-height: 16px;
-}
-
-/* Progress bar */
-.pluse-progress-summary-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px 8px;
-  flex-shrink: 0;
-}
-
-.pluse-progress-bar-track {
-  flex: 1;
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--border) 70%, transparent);
-  overflow: hidden;
-}
-
-.pluse-progress-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: #22c55e;
-  transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  animation: pluse-progress-bar-fill 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-.pluse-progress-bar-label {
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
-  min-width: 28px;
-  text-align: right;
+  border-radius: 8px;
+  padding: 1px 5px;
+  line-height: 15px;
 }
 
 /* Scrollable list */
@@ -1707,7 +1662,7 @@ select {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2px 12px 12px;
+  padding: 0 12px 12px;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--border) 60%, transparent) transparent;
 }
@@ -1736,31 +1691,31 @@ select {
   display: flex;
   align-items: flex-start;
   gap: 0;
-  min-height: 36px;
   opacity: 0;
   animation: pluse-progress-item-in 0.28s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .pluse-progress-item.is-doing {
-  background: color-mix(in srgb, #3b82f6 4%, transparent);
-  border-radius: 8px;
-  margin: 1px -4px;
-  padding: 0 4px;
+  background: color-mix(in srgb, #3b82f6 5%, transparent);
+  border-radius: 6px;
+  margin-inline: -4px;
+  padding-inline: 4px;
 }
 
 /* Indicator column */
 .pluse-progress-indicator-btn {
   flex-shrink: 0;
-  width: 28px;
+  width: 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 11px;
+  /* 与 item-body 的 padding-top 保持一致，让图标与第一行文字顶部对齐 */
+  padding-top: 8px;
   background: none;
   border: none;
   cursor: default;
-  position: relative;
   color: inherit;
+  align-self: stretch;
 }
 
 button.pluse-progress-indicator-btn {
@@ -1769,8 +1724,8 @@ button.pluse-progress-indicator-btn {
 
 button.pluse-progress-indicator-btn:hover .pluse-progress-icon,
 button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
-  opacity: 0.75;
-  transform: scale(1.1);
+  opacity: 0.7;
+  transform: scale(1.12);
   transition: opacity 0.15s, transform 0.15s;
 }
 
@@ -1778,9 +1733,9 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
   width: 100%;
   flex: 1;
+  min-height: 0;
 }
 
 .pluse-progress-indicator-core {
@@ -1788,8 +1743,9 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  /* 不设固定高度，跟随图标自然高度 */
+  flex-shrink: 0;
 }
 
 .pluse-progress-icon {
@@ -1802,8 +1758,8 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #3b82f6;
   transform: translate(-50%, -50%);
@@ -1816,27 +1772,28 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   display: block;
   width: 1.5px;
   flex: 1;
-  min-height: 14px;
-  background: color-mix(in srgb, var(--border) 80%, transparent);
+  min-height: 8px;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 1px;
-  margin-top: 4px;
+  margin-top: 3px;
   transition: background 0.3s ease;
 }
 
 .pluse-progress-track.is-done {
-  background: color-mix(in srgb, #22c55e 40%, var(--border));
+  background: color-mix(in srgb, #22c55e 35%, var(--border));
 }
 
 /* Item body */
 .pluse-progress-item-body {
   flex: 1;
   min-width: 0;
-  padding: 8px 0 8px 2px;
+  /* padding-top 与 indicator-btn 的 padding-top 一致，保证图标和文字顶部对齐 */
+  padding: 8px 4px 8px 4px;
 }
 
 .pluse-progress-item-title {
-  font-size: 12.5px;
-  line-height: 19px;
+  font-size: 12px;
+  line-height: 16px;
   word-break: break-word;
   transition: color 0.2s ease;
 }
@@ -1847,35 +1804,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   line-height: 15px;
   word-break: break-word;
   transition: color 0.2s ease;
-}
-
-.pluse-progress-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 3px;
-  flex-wrap: wrap;
-}
-
-.pluse-progress-state-badge {
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 14px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  transition: color 0.2s ease;
-}
-
-.pluse-progress-meta-dot {
-  font-size: 10px;
-  line-height: 14px;
-  color: var(--border);
-}
-
-.pluse-progress-meta-source {
-  font-size: 10px;
-  line-height: 14px;
-  color: var(--text-muted);
 }
 
 /* Loading / error / empty states */
@@ -1913,10 +1841,6 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
 /* Dark mode adjustments */
 :root[data-theme='dark'] .pluse-progress-item.is-doing {
   background: color-mix(in srgb, #3b82f6 6%, transparent);
-}
-
-:root[data-theme='dark'] .pluse-progress-bar-fill {
-  background: #4ade80;
 }
 
 :root[data-theme='dark'] .pluse-progress-track.is-done {
