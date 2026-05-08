@@ -139,11 +139,13 @@ function QuestPlanItem({
       style={{ color: indicatorColor }}
       aria-hidden="true"
     >
-      {isDoing ? (
-        // Glow ring behind spinner for "doing" state
-        <span className="pluse-progress-doing-ring" />
-      ) : null}
-      <StatusIcon row={row} />
+      <span className="pluse-progress-indicator-core">
+        {isDoing ? (
+          // Glow ring behind spinner for "doing" state
+          <span className="pluse-progress-doing-ring" />
+        ) : null}
+        <StatusIcon row={row} />
+      </span>
       {/* Vertical connector line */}
       {!isLast ? (
         <span

@@ -1779,9 +1779,17 @@ button.pluse-progress-indicator-btn:hover .pluse-progress-spinner {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  position: relative;
   width: 100%;
   flex: 1;
+}
+
+.pluse-progress-indicator-core {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
 }
 
 .pluse-progress-icon {
