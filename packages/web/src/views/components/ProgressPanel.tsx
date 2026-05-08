@@ -261,14 +261,13 @@ function QuestPlanSurface({
   }, [questId])
 
   const summaryText = useMemo(() => {
-    const parts: string[] = []
-    if (summary.doing > 0) parts.push(`${summary.doing} 项进行中`)
-    if (summary.waiting > 0) parts.push(`${summary.waiting} 项等待中`)
-    if (summary.pending > 0) parts.push(`${summary.pending} 项待开始`)
-    if (summary.cancelled > 0) parts.push(`${summary.cancelled} 项已取消`)
-    if (parts.length > 0) return parts.join(' · ')
-    if (summary.total > 0) return '全部完成'
-    return '暂无条目'
+    if (summary.waiting > 0) return summary.waiting === 1 ? '等待输入' : `${summary.waiting} 项等待中`
+    if (summary.doing > 0) return summary.doing === 1 ? '正在推进' : `${summary.doing} 项进行中`
+    if (summary.total === 0) return '暂无条目'
+    if (summary.done === summary.total) return '全部完成'
+    if (summary.cancelled === summary.total) return '计划已取消'
+    if (summary.pending > 0) return '计划已就绪'
+    return '计划推进中'
   }, [summary])
 
   const accentColor = resolveSummaryColor(summary)
