@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, type CSSProperties } from 'react'
+import { useEffect, useRef, useMemo, useState, type CSSProperties } from 'react'
 import type { QuestPlanRow } from '@/views/utils/todo'
 import { useQuestPlan } from '@/views/hooks/useQuestPlan'
 
@@ -76,27 +76,29 @@ function StatusIcon({ row }: { row: QuestPlanRow }) {
 
 // ─── Single plan item ──────────────────────────────────────────────────────────
 
-function canToggleRow(row: QuestPlanRow): boolean {
-  return row.createdBy === 'human' || row.state === 'waiting'
-}
-
 function QuestPlanItem({
   row,
   index,
   total,
-  onToggle,
+  visualDone,
+  onVisualToggle,
 }: {
   row: QuestPlanRow
   index: number
   total: number
-  onToggle?: (row: QuestPlanRow) => void
+  visualDone?: boolean
+  onVisualToggle?: (id: string) => void
 }) {
-  const isDone = row.state === 'done'
+  // 纯视觉覆盖：waiting/human 条目可被用户点击标记为视觉完成
+  const isVisuallyDone = visualDone ?? false
+  const canVisualToggle = (row.state === 'waiting' || row.createdBy === 'human') && Boolean(onVisualToggle)
+
+  const isDone = row.state === 'done' || isVisuallyDone
   const isCancelled = row.state === 'cancelled'
-  const isDoing = row.state === 'doing'
-  const isPending = row.state === 'pending'
-  const isWaiting = row.state === 'waiting'
-  const toggleable = Boolean(onToggle) && canToggleRow(row)
+  const isDoing = !isVisuallyDone && row.state === 'doing'
+  const isPending = !isVisuallyDone && row.state === 'pending'
+  const isWaiting = !isVisuallyDone && row.state === 'waiting'
+  const toggleable = canVisualToggle
   const helperText = row.helperText?.trim()
   const isLast = index === total - 1
   // Text color
@@ -144,9 +146,9 @@ function QuestPlanItem({
     <button
       type="button"
       className="pluse-progress-indicator-btn"
-      onClick={() => onToggle?.(row)}
-      aria-label={isDone ? '恢复计划项' : '完成计划项'}
-      title={isDone ? '恢复计划项' : '完成计划项'}
+      onClick={() => onVisualToggle?.(row.id)}
+      aria-label={isVisuallyDone ? '恢复' : '标记完成'}
+      title={isVisuallyDone ? '恢复' : '标记完成'}
     >
       {indicator}
     </button>
@@ -192,10 +194,12 @@ function QuestPlanItem({
 
 function QuestPlanSequence({
   rows,
-  onToggle,
+  visualDoneSet,
+  onVisualToggle,
 }: {
   rows: QuestPlanRow[]
-  onToggle?: (row: QuestPlanRow) => void
+  visualDoneSet: Set<string>
+  onVisualToggle: (id: string) => void
 }) {
   return (
     <div className="pluse-progress-sequence">
@@ -205,7 +209,8 @@ function QuestPlanSequence({
           row={row}
           index={index}
           total={rows.length}
-          onToggle={onToggle}
+          visualDone={visualDoneSet.has(row.id)}
+          onVisualToggle={onVisualToggle}
         />
       ))}
     </div>
@@ -222,7 +227,18 @@ function QuestPlanSurface({
   questId: string
   surface: ProgressSurface
 }) {
-  const { rows, summary, loading, error, setTodoDone } = useQuestPlan(questId)
+  const { rows, summary, loading, error } = useQuestPlan(questId)
+  // 纯视觉完成状态，不写后端
+  const [visualDoneSet, setVisualDoneSet] = useState<Set<string>>(new Set())
+
+  const handleVisualToggle = (id: string) => {
+    setVisualDoneSet(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevRowsLengthRef = useRef(0)
 
@@ -256,10 +272,6 @@ function QuestPlanSurface({
   }, [summary])
 
   const accentColor = resolveSummaryColor(summary)
-
-  const handleToggle = async (row: QuestPlanRow) => {
-    await setTodoDone(row.id, row.state !== 'done')
-  }
 
   if (loading) {
     return (
@@ -308,7 +320,7 @@ function QuestPlanSurface({
 
       {/* Items */}
       <div className="pluse-progress-list-scroll" ref={scrollRef}>
-        <QuestPlanSequence rows={rows} onToggle={handleToggle} />
+        <QuestPlanSequence rows={rows} visualDoneSet={visualDoneSet} onVisualToggle={handleVisualToggle} />
       </div>
     </div>
   )
