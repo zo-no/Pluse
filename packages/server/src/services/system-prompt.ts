@@ -33,13 +33,19 @@ Pluse 的核心概念：
 // ─── Progress 跟踪说明（注入到有 Quest 上下文的执行中） ──────────────────────
 
 function buildProgressBlock(cli: string, questId: string, projectId: string): string {
-  const c = `${cli} todo`
+  const c = `${cli} progress`
   return `## Pluse Plan — AI 自主规划与执行
 
 Progress 是 AI 工作的透明窗口，让用户随时看到"AI 在做什么、做完了什么、还剩什么"。
 **目标是最小化人类参与**：AI 自主判断是否规划、自主执行、只在真正需要人类提供信息时才暂停。
 
 ---
+
+### 硬规则
+
+- 当任务不是纯问答且包含多个步骤时，先创建完整 progress，再开始执行。
+- 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
+- Progress 至少覆盖关键节点：分析 / 实现 / 验证。
 
 ### 规划时机：AI 自主判断
 
@@ -68,19 +74,19 @@ Progress 是 AI 工作的透明窗口，让用户随时看到"AI 在做什么、
 EXISTING=$(${c} list --quest-id ${questId} --json)
 
 # 2. 一次性创建所有步骤（全部 pending，用户立刻能看到完整计划）
-IDA=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "分析现有代码结构" --active-form "正在分析代码结构")
-IDB=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "实现核心逻辑" --active-form "正在编写核心逻辑")
-IDC=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "补充测试用例" --active-form "正在编写测试")
-IDD=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} --title "验证运行结果" --active-form "正在验证")
+IDA=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "分析现有代码结构" --active-form "正在分析代码结构")
+IDB=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "实现核心逻辑" --active-form "正在编写核心逻辑")
+IDC=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "补充测试用例" --active-form "正在编写测试")
+IDD=$(${c} create --quest-id ${questId} --project-id ${projectId} --title "验证运行结果" --active-form "正在验证")
 
 # 3. 按顺序逐步执行，每步更新状态
-${c} progress-update $IDA --status doing
+${c} update $IDA --status doing
 # ... 执行步骤 A ...
-${c} progress-update $IDA --status done
+${c} update $IDA --status done
 
-${c} progress-update $IDB --status doing
+${c} update $IDB --status doing
 # ... 执行步骤 B ...
-${c} progress-update $IDB --status done
+${c} update $IDB --status done
 
 # 以此类推，直到全部完成
 \`\`\`
@@ -103,10 +109,10 @@ ${c} progress-update $IDB --status done
 
 \`\`\`bash
 # 真正需要人类提供的情况：密码、关键选择、外部系统操作
-WAIT_ID=$(${c} progress-create --quest-id ${questId} --project-id ${projectId} \\
+WAIT_ID=$(${c} create --quest-id ${questId} --project-id ${projectId} \\
   --title "提供数据库连接配置" \\
   --waiting "需要数据库地址和密码，请在聊天框回复或更新配置文件后继续")
-${cli} todo progress-wait $WAIT_ID   # 阻塞，用户完成后自动继续
+${c} wait $WAIT_ID   # 阻塞，用户完成后自动继续
 \`\`\`
 
 **需要人类介入的边界（严格限制）：**
@@ -131,7 +137,7 @@ ${cli} todo progress-wait $WAIT_ID   # 阻塞，用户完成后自动继续
 ${c} list --quest-id ${questId} --json
 
 # 找到 pending 或 doing 的条目继续执行，而不是重新创建
-${c} progress-update <existing-id> --status doing
+${c} update <existing-id> --status doing
 \`\`\`
 
 ---

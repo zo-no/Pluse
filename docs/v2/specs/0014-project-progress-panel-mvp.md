@@ -22,7 +22,7 @@ AI 在执行任务时，通过 CLI 命令主动创建和更新 Todo（`created_b
 1. `TodoStatus` 新增 `doing`
 2. `todos` 表新增 `order` 字段
 3. Todo model 层支持按 `origin_quest_id` 查询并按 `order` 排序
-4. `pluse todo` CLI 新增 Progress 相关快捷命令
+4. `pluse progress` CLI 成为 Progress 一等入口，并保留 `pluse todo progress-*` 兼容别名
 5. 注入 AI system prompt，AI 执行任务时自动写入 Progress
 6. 前端：Quest 详情页新增 Progress 面板
 
@@ -101,25 +101,32 @@ export interface UpdateTodoInput {
 
 ## CLI
 
-### 新增快捷命令（基于现有 `pluse todo`）
+### 新增快捷命令（首选：`pluse progress`）
 
 AI 执行任务时使用：
 
 ```bash
+# 读取当前 Quest 已有 Progress，优先续写
+pluse progress list --quest-id <id> [--json]
+
 # 创建 Progress 条目（AI 专用，自动绑定当前 Quest）
-pluse todo progress-create --quest-id <id> --title <title> [--order <n>] [--json]
+pluse progress create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--order <n>] [--json]
 
-# 更新状态
-pluse todo progress-update <id> --status doing|done|pending [--json]
+# 更新状态或执行中文案
+pluse progress update <id> --status doing|done|pending [--active-form <text>] [--json]
+
+# 需要等待人类输入时阻塞等待
+pluse progress wait <id> [--timeout <seconds>] [--interval <ms>]
 ```
 
-等价于：
+兼容保留的旧入口：
 ```bash
-pluse todo create --project-id <id> --quest-id <id> --title <title> --created-by ai
-pluse todo update <id> --status doing
+pluse todo progress-create --quest-id <id> --title <title> [--order <n>] [--json]
+pluse todo progress-update <id> --status doing|done|pending [--json]
+pluse todo progress-wait <id> [--timeout <seconds>] [--interval <ms>]
 ```
 
-`progress-create` 是语义化封装，减少 AI 调用时的参数复杂度。
+顶级 `progress` 是面向 Agent discoverability 的首选接口；`todo progress-*` 继续保留，避免破坏已有 prompt 和脚本。
 
 ### `pluse todo list` 新增过滤参数
 
@@ -134,28 +141,20 @@ pluse todo list --quest-id <id> [--json]   # 按 Quest 过滤（Progress 视图�
 在 `services/system-prompt.ts` 构建 system prompt 时，追加以下内容：
 
 ```
-## Progress Tracking
+## Pluse Plan
 
-你在执行任务时，使用以下命令实时汇报进度。这让用户能看到你正在做什么。
+- 当任务不是纯问答且包含多个步骤时，先创建完整 progress，再开始执行。
+- 开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。
+- Progress 至少覆盖关键节点：分析 / 实现 / 验证。
 
-**开始一个任务步骤时：**
-pluse todo progress-create --quest-id <QUEST_ID> --title "<步骤描述>"
-（输出 todo_xxx，记住这个 ID）
-
-**开始执行这个步骤时：**
-pluse todo progress-update <todo_xxx> --status doing
-
-**完成这个步骤时：**
-pluse todo progress-update <todo_xxx> --status done
-
-**规范：**
-- 步骤描述用中文，面向用户，简洁易懂（不要技术术语）
-- 粒度由你自己判断，不要过细（不需要每个文件读写都汇报）
-- 关键节点必须汇报：开始分析、开始写代码、遇到问题、完成
-- QUEST_ID 从环境变量 PLUSE_QUEST_ID 读取（已自动注入）
+pluse progress list --quest-id <QUEST_ID> --json
+pluse progress create --quest-id <QUEST_ID> --project-id <PROJECT_ID> --title "<步骤描述>" --active-form "<执行中文案>"
+pluse progress update <todo_xxx> --status doing
+pluse progress update <todo_xxx> --status done
+pluse progress wait <todo_xxx>
 ```
 
-`PLUSE_QUEST_ID` 在 `session-runner.ts` 启动子进程时通过环境变量注入。
+`QUEST_ID` 和 `PROJECT_ID` 由服务端在生成 system prompt 时直接内插当前 Quest / Project 的真实值，不依赖额外环境变量契约。
 
 ---
 
@@ -194,8 +193,11 @@ Progress
 
 - [ ] `TodoStatus` 包含 `doing`，类型编译通过
 - [ ] `todos` 表有 `order` 字段，旧数据默认值为 0
-- [ ] `pluse todo progress-create --quest-id qst_xxx --title "分析需求"` 创建成功，`created_by = ai`
-- [ ] `pluse todo progress-update <id> --status doing` 更新成功
+- [ ] `pluse progress create --quest-id qst_xxx --title "分析需求"` 创建成功，`created_by = ai`
+- [ ] `pluse progress update <id> --status doing` 更新成功
+- [ ] `pluse progress list --quest-id qst_xxx` 返回该 Quest 下的 Todo，按 order 排序
+- [ ] `pluse progress wait <id>` 对已完成条目立即返回
+- [ ] 旧 `pluse todo progress-create|progress-update|progress-wait` 兼容入口继续可用
 - [ ] `pluse todo list --quest-id qst_xxx` 返回该 Quest 下的 Todo，按 order 排序
 - [ ] `GET /api/quests/:id/progress` 返回该 Quest 的 Todo 列表
 - [ ] AI 执行任务时，Progress 面板中能看到实时更新的步骤

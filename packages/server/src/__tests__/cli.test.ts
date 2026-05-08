@@ -25,6 +25,7 @@ type Sandbox = {
 
 const CLI_PATH = resolve(import.meta.dir, '../cli.ts')
 const REPO_ROOT = resolve(import.meta.dir, '../../../..')
+const BUN_BIN = process.execPath
 
 function decode(bytes: Uint8Array | ArrayBuffer | null | undefined): string {
   if (!bytes) return ''
@@ -100,7 +101,7 @@ function runCli(
   args: string[],
   extraEnv: Record<string, string> = {},
 ): CliResult {
-  const proc = Bun.spawnSync(['bun', CLI_PATH, ...args], {
+  const proc = Bun.spawnSync([BUN_BIN, CLI_PATH, ...args], {
     cwd: REPO_ROOT,
     env: {
       ...process.env,
@@ -152,7 +153,10 @@ describe('pluse cli', () => {
       const catalog = parseJson<{ modules: Array<{ name: string; commands: Array<{ name: string }> }> }>(
         runCli(sandbox, ['commands', '--json']),
       )
+      const moduleNames = catalog.modules.map((module) => module.name)
+      expect(moduleNames).toContain('progress')
       const projectModule = catalog.modules.find((module) => module.name === 'project')
+      const progressModule = catalog.modules.find((module) => module.name === 'progress')
       expect(projectModule?.commands.map((command) => command.name)).toEqual([
         'project list',
         'project get',
@@ -161,6 +165,12 @@ describe('pluse cli', () => {
         'project update',
         'project archive',
         'project delete',
+      ])
+      expect(progressModule?.commands.map((command) => command.name)).toEqual([
+        'progress list',
+        'progress create',
+        'progress update',
+        'progress wait',
       ])
     } finally {
       cleanupSandbox(sandbox)
@@ -1033,6 +1043,34 @@ describe('pluse cli', () => {
       )
       expect(progressList.map((item) => item.id)).toEqual([progressAiId, progressHuman.id])
       expect(progressList.every((item) => item.originQuestId === sessionQuest.id)).toBe(true)
+
+      const progressCreatedViaTopLevel = runCli(sandbox, [
+        'progress',
+        'create',
+        '--quest-id',
+        sessionQuest.id,
+        '--title',
+        'Verify results',
+      ])
+      expect(progressCreatedViaTopLevel.exitCode).toBe(0)
+      const topLevelProgressId = progressCreatedViaTopLevel.stdout.trim()
+      expect(topLevelProgressId).toMatch(/^todo_/)
+
+      const topLevelUpdated = parseJson<{ id: string; status: string; activeForm?: string }>(
+        runCli(sandbox, ['progress', 'update', topLevelProgressId, '--status', 'done', '--active-form', 'Verifying results', '--json']),
+      )
+      expect(topLevelUpdated.status).toBe('done')
+      expect(topLevelUpdated.activeForm).toBe('Verifying results')
+
+      const topLevelList = parseJson<Array<{ id: string; originQuestId?: string; status: string }>>(
+        runCli(sandbox, ['progress', 'list', '--quest-id', sessionQuest.id, '--json']),
+      )
+      expect(topLevelList.map((item) => item.id)).toEqual([progressAiId, progressHuman.id, topLevelProgressId])
+      expect(topLevelList.find((item) => item.id === topLevelProgressId)?.status).toBe('done')
+
+      const waitDone = runCli(sandbox, ['progress', 'wait', topLevelProgressId, '--timeout', '1', '--interval', '10'])
+      expect(waitDone.exitCode).toBe(0)
+      expect(waitDone.stdout).toContain(`${topLevelProgressId}  done  Verify results`)
 
       const deleted = runCli(sandbox, ['todo', 'delete', todo.id, '--confirm'])
       expect(deleted.exitCode).toBe(0)

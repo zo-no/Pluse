@@ -89,6 +89,14 @@ describe('settings API', () => {
       expect(prompt).toContain('外部 CLI 集合')
       expect(prompt).toContain('Pluse 未执行校验')
       expect(prompt).toContain('运行 `my-cli commands` 查看所有可用外部 CLI 指令')
+      expect(prompt).toContain('当任务不是纯问答且包含多个步骤时，先创建完整 progress，再开始执行。')
+      expect(prompt).toContain('开始执行前先读取已有 progress；有未完成项就续写，不要重复建计划。')
+      expect(prompt).toContain('分析 / 实现 / 验证')
+      expect(prompt).toContain('progress list --quest-id')
+      expect(prompt).toContain('progress create --quest-id')
+      expect(prompt).toContain('progress update')
+      expect(prompt).toContain('progress wait')
+      expect(prompt).not.toContain('todo progress-create')
     }
   })
 

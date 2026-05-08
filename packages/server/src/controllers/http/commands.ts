@@ -70,6 +70,36 @@ function moduleCatalog(): CommandCatalog['modules'] {
       ],
     },
     {
+      name: 'progress',
+      description: 'Quest Progress 一等入口，面向 AI plan/progress tracking',
+      commands: [
+        {
+          name: 'progress list',
+          cli: 'pluse progress list --quest-id <id> [--status pending|doing|done|cancelled] [--json]',
+          api: 'GET /api/quests/<id>/progress',
+          description: '列出当前 Quest 的 Progress 条目；AI 续写计划前优先使用',
+        },
+        {
+          name: 'progress create',
+          cli: 'pluse progress create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--for ai|human] [--order <n>] [--json]',
+          api: 'POST /api/todos',
+          description: '为当前 Quest 创建 Progress 条目；AI plan/progress tracking 首选入口',
+        },
+        {
+          name: 'progress update',
+          cli: 'pluse progress update <id> [--status pending|doing|done|cancelled] [--title <title>] [--active-form <text>] [--json]',
+          api: 'PATCH /api/todos/:id',
+          description: '更新当前 Quest 的 Progress 状态或显示文案',
+        },
+        {
+          name: 'progress wait',
+          cli: 'pluse progress wait <id> [--timeout <seconds>] [--interval <ms>]',
+          api: 'GET /api/todos/<id> (poll)',
+          description: '阻塞等待 Progress 条目完成或取消，适用于等待人类输入',
+        },
+      ],
+    },
+    {
       name: 'todo',
       description: 'Todo 管理',
       commands: [
@@ -77,7 +107,7 @@ function moduleCatalog(): CommandCatalog['modules'] {
           name: 'todo list',
           cli: 'pluse todo list [--project-id <id> | --quest-id <id>] [--status pending|doing|done|cancelled] [--json]',
           api: 'GET /api/todos?projectId=<id> | GET /api/quests/<id>/progress',
-          description: '列出项目 Todo；传 --quest-id 时返回该 Quest 的 Progress 条目',
+          description: '列出项目 Todo；传 --quest-id 时返回底层 Quest Progress 视图（兼容入口）',
         },
         {
           name: 'todo get',
@@ -113,19 +143,19 @@ function moduleCatalog(): CommandCatalog['modules'] {
           name: 'todo progress-create',
           cli: 'pluse todo progress-create --quest-id <id> [--project-id <id>] --title <title> [--active-form <text>] [--waiting <text>] [--for ai|human] [--json]',
           api: 'POST /api/todos',
-          description: '创建 Quest Progress 条目；AI 步骤与等待人类处理事项都通过它写入',
+          description: '兼容别名：创建 Quest Progress 条目；推荐改用 pluse progress create',
         },
         {
           name: 'todo progress-update',
           cli: 'pluse todo progress-update <id> [--status pending|doing|done|cancelled] [--title <title>] [--active-form <text>] [--json]',
           api: 'PATCH /api/todos/:id',
-          description: '更新 Progress 条目的状态或显示文案',
+          description: '兼容别名：更新 Progress 条目的状态或显示文案；推荐改用 pluse progress update',
         },
         {
           name: 'todo progress-wait',
           cli: 'pluse todo progress-wait <id> [--timeout <seconds>] [--interval <ms>]',
           api: 'GET /api/todos/<id> (poll)',
-          description: '阻塞等待指定 Progress 条目被标记完成或取消',
+          description: '兼容别名：阻塞等待指定 Progress 条目完成或取消；推荐改用 pluse progress wait',
         },
       ],
     },

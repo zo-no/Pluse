@@ -5,6 +5,7 @@ import { authCommand } from './controllers/cli/auth'
 import { checkInCommand } from './controllers/cli/check-in'
 import { commandsCommand } from './controllers/cli/commands'
 import { domainCommand } from './controllers/cli/domain'
+import { progressCommand } from './controllers/cli/progress'
 import { projectCommand } from './controllers/cli/project'
 import { questCommand } from './controllers/cli/quest'
 import { reminderCommand } from './controllers/cli/reminder'
@@ -24,6 +25,7 @@ program.addCommand(authCommand)
 program.addCommand(checkInCommand)
 program.addCommand(commandsCommand)
 program.addCommand(domainCommand)
+program.addCommand(progressCommand)
 program.addCommand(projectCommand)
 program.addCommand(questCommand)
 program.addCommand(reminderCommand)

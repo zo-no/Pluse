@@ -396,7 +396,7 @@ describe('quest/todo/run APIs', () => {
     expect(commands.status).toBe(200)
     const commandCatalog = mustOk(commands)
     const moduleNames = commandCatalog.modules.map((module) => module.name)
-    expect(moduleNames).toEqual(['quest', 'todo', 'reminder', 'check-in', 'run', 'project', 'domain', 'session-category', 'asset', 'commands'])
+    expect(moduleNames).toEqual(['quest', 'progress', 'todo', 'reminder', 'check-in', 'run', 'project', 'domain', 'session-category', 'asset', 'commands'])
     expect(moduleNames).not.toContain('session')
     expect(moduleNames).not.toContain('task')
     const questModule = commandCatalog.modules.find((module) => module.name === 'quest')
@@ -404,6 +404,13 @@ describe('quest/todo/run APIs', () => {
     expect(questModule?.commands.some((command) => command.name === 'quest update')).toBe(true)
     expect(questModule?.commands.some((command) => command.name === 'quest move')).toBe(true)
     expect(questModule?.commands.find((command) => command.name === 'quest create')?.api).toBe('POST /api/quests')
+    const progressModule = commandCatalog.modules.find((module) => module.name === 'progress')
+    expect(progressModule?.commands.map((command) => command.name)).toEqual([
+      'progress list',
+      'progress create',
+      'progress update',
+      'progress wait',
+    ])
     const todoModule = commandCatalog.modules.find((module) => module.name === 'todo')
     expect(todoModule?.commands.map((command) => command.name)).toEqual([
       'todo list',
